@@ -19,6 +19,7 @@ from spingi.skills import default_registry
 LAB = Path("sim/scenes/lab_small.yaml")
 BLOCKED = Path("sim/scenes/lab_blocked.yaml")
 FENCED = Path("sim/scenes/lab_geofence.yaml")
+WAREHOUSE = Path("sim/scenes/warehouse_small.yaml")
 
 
 def make(scene: Path, human: ScriptedHuman | None = None, sim_perceiver: bool = False, **kw):
@@ -109,3 +110,28 @@ async def test_recording_writes_a_video(tmp_path):
     if video is None:
         pytest.skip("rendering unavailable (no GL context)")
     assert video.exists() and video.stat().st_size > 1000
+
+
+async def test_material_runner_delivers_the_box_in_the_warehouse(tmp_path):
+    executor, adapter, log, state = make(WAREHOUSE, sim_perceiver=True, record_dir=tmp_path)
+    result = await executor.run(load_plan("plans/demo_material_runner.yaml"), state)
+    adapter.close()
+    assert result.ok and result.steps_completed == 8, result.reason
+    assert log.count("human.request") == 0
+    box = result.final_state.objects["red_box_01"].pose
+    assert box is not None and 8.1 < box.x < 8.6 and 6.7 < box.y < 7.3  # on the workstation table, ahead of B
+    assert box.z > 0.85  # resting on the table top (0.85 m), not on the floor
+    assert adapter.held_object is None
+    # the trajectory shows the box moving with the robot while held
+    carried = [s["objects"]["red_box_01"] for s in adapter.trajectory if "objects" in s]
+    assert len(carried) > 5 and carried[0]["x"] != carried[-1]["x"]
+
+
+async def test_straight_line_to_the_shelf_is_blocked_without_waypoints():
+    executor, adapter, log, state = make(WAREHOUSE)
+    plan = TaskPlan(
+        id="direct", steps=[Step(skill="navigate", params={"to": "workstation_B"}, on_failure={"then": "abort"})]
+    )
+    result = await executor.run(plan, state)
+    adapter.close()
+    assert result.status == "aborted" and adapter.blocked_by is not None

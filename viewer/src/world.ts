@@ -8,6 +8,7 @@ export class World {
   readonly root = new THREE.Group(); // Z-up → Y-up
   readonly robot = new THREE.Group();
   private readonly labels: THREE.Sprite[] = [];
+  private readonly objects = new Map<string, { mesh: THREE.Mesh; label: THREE.Sprite; halfHeight: number }>();
 
   constructor(readonly three: THREE.Scene) {
     this.root.rotation.x = -Math.PI / 2;
@@ -18,6 +19,7 @@ export class World {
   build(scene: Scene): void {
     for (const child of [...this.root.children]) if (child !== this.robot) this.root.remove(child);
     this.labels.length = 0;
+    this.objects.clear();
 
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), new THREE.MeshStandardMaterial({ color: 0x3a3d47, roughness: 1 }));
     floor.receiveShadow = true;
@@ -53,7 +55,9 @@ export class World {
       box.castShadow = true;
       box.name = `obj_${id}`;
       this.root.add(box);
-      this.root.add(this.label(id, p.x, p.y, p.z + 0.25));
+      const label = this.label(id, p.x, p.y, p.z + 0.25);
+      this.root.add(label);
+      this.objects.set(id, { mesh: box, label, halfHeight: size[2]! / 2 });
     }
   }
 
@@ -71,6 +75,16 @@ export class World {
     });
     this.robot.clear();
     this.robot.add(gltf.scene);
+  }
+
+  /** Moves the objects whose position the episode reports (carried or placed); the others stay where the scene put them. */
+  setObjectPositions(positions: Record<string, { x: number; y: number; z: number }>): void {
+    for (const [id, p] of Object.entries(positions)) {
+      const entry = this.objects.get(id);
+      if (!entry) continue;
+      entry.mesh.position.set(p.x, p.y, p.z);
+      entry.label.position.set(p.x, p.y, p.z + 0.25);
+    }
   }
 
   setRobotPose(pose: Pose2D): void {

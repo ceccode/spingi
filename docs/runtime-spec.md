@@ -563,7 +563,7 @@ Rule: `spingi/core` imports nothing from `adapters`, `perception`, `planner`. Th
 
 M0–M3 do not require the robot.
 
-**Status as of 2026-10-02: M0 complete, M1 nearly complete.** Skeleton in `spingi/`, `SimAdapter` for MuJoCo with the G1 model (ADR-0006: kinematic base, collisions, head camera, video), `SimPerceiver` with ground truth from the scene, `inspect` skill, independent `SafetyMonitor` (watchdog heartbeat, geofence, speed cap, battery), episode writer, 75 tests green in CI in under three seconds, `make demo` and `make demo-sim`. Decisions recorded in `adr/0001`–`0006`. Still open for M1: the `warehouse_small` scene with waypoints. Two clarifications that emerged during implementation are now normative:
+**Status as of 2026-10-02: M0 and M1 complete, M2 in progress.** Skeleton in `spingi/`, `SimAdapter` for MuJoCo with the G1 model (ADR-0006), `SimPerceiver` with ground truth from the scene, independent `SafetyMonitor`, skills `navigate` (with waypoints), `detect`, `pick`, `place` (kinematic grasp, ADR-0007), `inspect`, `say`, the `warehouse_small` scene with the material-runner plan running end to end, episode writer, 84 tests green in CI in a few seconds. Decisions recorded in `adr/0001`–`0007`. Still open for M2: operator console, robustness tests with perception noise, episode export towards LeRobot. Two clarifications that emerged during implementation are now normative:
 - A `$step.field` reference is always the **whole value** of a parameter, never a substring. `"text": "$navigate.reached"` is valid; `"text": "arrived at $navigate.reached"` is not.
 - `on_failure.then: needs_human` stops the robot before asking; the operator's `retry` answer resets the step's retry budget.
 

@@ -46,6 +46,7 @@ class SimAdapter:
         battery_pct: float = 100.0,
         battery_drain_per_m: float = 0.5,
         watchdog_ms: int | None = None,
+        grasp_range_m: float = 0.9,
         clock=time.monotonic,
     ) -> None:
         self.scene_path = Path(scene_path)
@@ -67,8 +68,11 @@ class SimAdapter:
         self.battery_pct = battery_pct
         self.battery_drain_per_m = battery_drain_per_m
         self.watchdog_ms = watchdog_ms
+        self.grasp_range_m = grasp_range_m  # an object within this distance of the base can be grasped
         self._clock = clock
         self._last_heartbeat = clock()
+        self.held_object: str | None = None  # kinematic grasp (ADR-0007): the object follows the hand
+        self._objects_dirty = False
 
         self.pose = Pose2D(x=float(self.data.qpos[0]), y=float(self.data.qpos[1]), yaw=0.0)
         self.mode: Literal["idle", "walking", "manipulating", "estop"] = "idle"
@@ -156,6 +160,17 @@ class SimAdapter:
     async def gripper(self, arm: Arm, action: Literal["open", "close"]) -> None:
         self._record("gripper", arm=arm, action=action)
         self._guard()
+        if action == "close" and self.held_object is None:
+            self.held_object = self._nearest_object(self.grasp_range_m)
+            if self.held_object is not None:
+                self._objects_dirty = True
+                self._apply_pose()
+        elif action == "open" and self.held_object is not None:
+            self._release(self.held_object)
+            self.held_object = None
+            self._objects_dirty = True
+        self._sample(include_objects=self._objects_dirty)
+        self._objects_dirty = False
 
     # --- sensors -----------------------------------------------------------
     async def get_camera(self, name: str = "head") -> Frame:
@@ -230,7 +245,51 @@ class SimAdapter:
         q[0], q[1], q[2] = self.pose.x, self.pose.y, self.BASE_Z
         q[3], q[4], q[5], q[6] = math.cos(self.pose.yaw / 2), 0.0, 0.0, math.sin(self.pose.yaw / 2)
         self.data.qvel[:] = 0.0
+        if self.held_object is not None:
+            g = self._object_geom(self.held_object)
+            self.model.geom_pos[g] = (
+                self.pose.x + self.HAND_FORWARD_M * math.cos(self.pose.yaw),
+                self.pose.y + self.HAND_FORWARD_M * math.sin(self.pose.yaw),
+                self.HAND_HEIGHT_M,
+            )
         mujoco.mj_forward(self.model, self.data)
+
+    # --- objects (kinematic grasp, ADR-0007) --------------------------------
+    HAND_FORWARD_M = 0.35
+    HAND_HEIGHT_M = 0.95
+
+    def _object_geom(self, object_id: str) -> int:
+        return mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, f"obj_{object_id}")
+
+    def _nearest_object(self, max_dist: float) -> str | None:
+        best, best_d = None, max_dist
+        for oid, pos in self.object_positions().items():
+            d = math.hypot(pos["x"] - self.pose.x, pos["y"] - self.pose.y)
+            if d < best_d:
+                best, best_d = oid, d
+        return best
+
+    def _release(self, object_id: str) -> None:
+        """Puts the object down in front of the robot, on the highest obstacle top below the hand, else on the floor."""
+        g = self._object_geom(object_id)
+        x = self.pose.x + self.HAND_FORWARD_M * math.cos(self.pose.yaw)
+        y = self.pose.y + self.HAND_FORWARD_M * math.sin(self.pose.yaw)
+        half_h = float(self.model.geom_size[g][2])
+        z = self._surface_height(x, y) + half_h
+        self.model.geom_pos[g] = (x, y, z)
+        mujoco.mj_forward(self.model, self.data)
+
+    def _surface_height(self, x: float, y: float) -> float:
+        top = 0.0
+        for g in range(self.model.ngeom):
+            name = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_GEOM, g) or ""
+            if not name.startswith("obs_"):
+                continue
+            cx, cy, cz = (float(v) for v in self.data.geom_xpos[g])
+            hx, hy, hz = (float(v) for v in self.model.geom_size[g])
+            if abs(x - cx) <= hx and abs(y - cy) <= hy:
+                top = max(top, cz + hz)
+        return top
 
     def _collision(self) -> str | None:
         for i in range(self.data.ncon):
@@ -249,7 +308,7 @@ class SimAdapter:
         self.ticks += 1
         self.sim_time_s += self.dt
         if self.ticks % self.sample_every == 0:
-            self._sample()
+            self._sample(include_objects=self.held_object is not None)
         if self._viewer is not None:
             self._viewer.sync()
         if self.record_video and self.record_dir is not None and self.ticks % self.record_every == 0:

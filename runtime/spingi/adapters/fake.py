@@ -43,6 +43,7 @@ class FakeAdapter:
         self.calls: list[tuple[str, dict]] = []
         self.mode: Literal["idle", "walking", "manipulating", "estop"] = "idle"
         self._frame_counter = 0
+        self.gripper_closed = False
         self.sim_time_s = 0.0  # advances by distance/speed on each walk_to: time "as if" it were walking
         self.trajectory: list[dict] = []
         self._sample()
@@ -85,6 +86,7 @@ class FakeAdapter:
     async def gripper(self, arm: Arm, action: Literal["open", "close"]) -> None:
         self._record("gripper", arm=arm, action=action)
         self._guard()
+        self.gripper_closed = action == "close"
 
     # --- sensors -----------------------------------------------------------
     async def get_camera(self, name: str = "head") -> Frame:

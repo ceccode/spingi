@@ -10,5 +10,6 @@ Every significant architectural decision is a file in this folder: `NNNN-title.m
 | [0004](0004-plans-and-scenes-as-yaml.md) | Plans and scenes as YAML data, without control flow | Accepted | M0 |
 | [0005](0005-jsonl-event-log-as-source-of-truth.md) | Append-only JSONL event log as the single source of truth | Accepted | M0 |
 | [0006](0006-kinematic-sim-adapter-with-g1-model.md) | Kinematic SimAdapter in MuJoCo with the G1 model from mujoco_menagerie | Accepted | M1 |
+| [0007](0007-predefined-kinematic-grasp.md) | Predefined grasp on standard containers, simulated kinematically | Accepted | M2 |
 
-Still open (see the spec, section 13): vendor locomotion or pre-trained policy (M1, partially resolved by 0006), predefined or learned grasp (M2), episode format vs LeRobot (M2), runtime on-board or on a laptop (M4), TUI or web console (M2).
+Still open (see the spec, section 13): vendor locomotion or pre-trained policy (M1, partially resolved by 0006), episode format vs LeRobot (M2), runtime on-board or on a laptop (M4), TUI or web console (M2).

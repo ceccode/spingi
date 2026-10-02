@@ -106,6 +106,16 @@ export function poseAt(trajectory: Sample[], t: number): Pose2D & { mode: string
   };
 }
 
+/** Object positions at time t: the latest sample at or before t that carries `objects`, merged over earlier ones. */
+export function objectsAt(trajectory: Sample[], t: number): Record<string, { x: number; y: number; z: number }> {
+  const out: Record<string, { x: number; y: number; z: number }> = {};
+  for (const s of trajectory) {
+    if (s.t > t) break;
+    if (s.objects) Object.assign(out, s.objects);
+  }
+  return out;
+}
+
 /** Time of an event on the trajectory axis: sim_t if present, otherwise wall-clock time since run.start. */
 export function eventTime(ev: Event, events: Event[]): number {
   if (typeof ev.sim_t === "number") return ev.sim_t;

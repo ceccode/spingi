@@ -1,53 +1,118 @@
 # spingi
 
-*Spingi* is Italian for "push!": the word you shout to someone who should keep going. Pronounced *speen-jee*.
+*Spingi* is Italian for "push!", the word you shout at someone who should keep going. Pronounced *speen-jee*.
 
-A **Physical Agent Runtime** (Python, sim-first) that turns a humanoid robot into a reliable executor of simple physical tasks, and the **Spingi Viewer** (web) that replays what the runtime did. The two projects share a single contract: the Episode format.
+Spingi is a **Physical Agent Runtime** for humanoid robots: it turns a robot into a reliable executor of simple physical tasks (go there, look at this, fetch that, put it here), with safety limits, retries and human escalation built in. It is developed **sim-first**: everything runs and is tested in MuJoCo with the Unitree G1 model before any real robot is involved. Every run produces an **episode** that the **Spingi Viewer** replays in the browser.
 
-This repository is a neutral open-source toolkit. Applications built on top of it and any business material live in separate private repositories; this repo keeps only samples (the demo plan and scenes) that show how to use the system.
+This repository is a neutral open-source toolkit. Applications built on top of it live elsewhere; this repo keeps sample plans and scenes that show how to use the system.
 
-Status: **runtime M0 complete, M1 in progress · viewer v0.1 working** · 2026-10-02
+Status: **runtime M1 complete, M2 in progress · viewer v0.2** · 2026-10-02
 
-## Projects
+## What is in the box
 
-| Folder | Project | Status |
-|--------|---------|--------|
-| [runtime/](runtime/README.md) | **Spingi, the Physical Agent Runtime**: executor of simple physical tasks, Python, sim-first, tested on a fake robot and on the G1 in MuJoCo | M0 done, M1 in progress |
-| [viewer/](viewer/README.md) | **Episode Viewer**: web replayer for the episodes produced by the runtime, Three.js, static site deployable on Netlify | v0.1: loads a zip, 3D replay of the G1, event timeline |
-| [docs/episode-format.md](docs/episode-format.md) | **Episode format**: the contract between the two projects, with JSON schemas in `docs/schemas/` | v0.1, written by the runtime |
+| Folder | Project | What it does |
+|--------|---------|--------------|
+| [runtime/](runtime/README.md) | **Spingi runtime** (Python) | Executes a declarative *plan* made of *skills* on a *robot adapter*. Ships with a fake adapter for unit tests and a MuJoCo adapter with the Unitree G1. Writes an episode for every run. |
+| [viewer/](viewer/README.md) | **Spingi Viewer** (web, Three.js) | Loads an episode `.zip` and replays it: robot and objects moving in the 3D scene, event timeline, head-camera frames, safety and operator events. Static site, deployable on Netlify. |
+| [docs/episode-format.md](docs/episode-format.md) | **Episode format** | The contract between the two: a folder with `manifest.json`, `scene.yaml`, `plan.yaml`, `events.jsonl`, `trajectory.jsonl`, `frames/`. JSON schemas in [docs/schemas/](docs/schemas/). |
 
-## Documents
+## Quick start
 
-| File | Audience | Contents |
-|------|----------|----------|
-| [docs/runtime-spec.md](docs/runtime-spec.md) | Engineering | Runtime specification: principles, architecture, contracts, safety, testing, milestones |
-| [docs/episode-format.md](docs/episode-format.md) | Engineering | Episode format: structure, manifest, trajectory, what is missing for v0 |
-| [adr/](adr/README.md) | Engineering | Architecture decisions taken (ADR 0001–0006) and the ones still open |
+Requirements: Python 3.11+ with [uv](https://docs.astral.sh/uv/), Node 20+ for the viewer. No GPU, no robot.
 
-## Quick commands
-
-From the repository root, these delegate to the runtime:
+### 1. Run a plan in simulation
 
 ```bash
-make setup
+cd runtime && make setup
 ```
 
 ```bash
-make test
+make demo-sim
 ```
+
+This runs the inspection round on the G1 in MuJoCo as fast as the CPU allows and leaves an episode in `runtime/runs/<run_id>/`. To watch it live in the MuJoCo viewer (macOS uses `mjpython`, already included):
 
 ```bash
 make demo-sim-view
 ```
 
-For the web viewer, from `viewer/`: `npm install` and `npm run dev`.
+To fetch a box from a shelf and deliver it to a workstation, routing through the aisle of a small warehouse:
 
-## Conventions
+```bash
+uv run spingi run plans/demo_material_runner.yaml --scene sim/scenes/warehouse_small.yaml --adapter sim --record --zip
+```
 
-- Every architectural decision is an ADR; a decision is changed with a new ADR, not by editing the old one.
-- The runtime does not know about the viewer and the viewer does not know about the runtime: they talk only through the episode format.
+`--record` adds a third-person video, `--zip` packs the episode for sharing.
 
-## Next steps
+### 2. Replay the episode in the browser
 
-- Viewer: moving objects, two-episode comparison, Netlify deploy.
-- Runtime: `warehouse_small` scene with waypoint navigation, operator console (M2), `pick`/`place` on standard containers (M2).
+```bash
+cd viewer && npm install && npm run dev
+```
+
+Open http://localhost:5173, drop the `.zip` onto the page or pick one of the bundled samples. Space plays and pauses, the arrow keys step one second, clicking an event jumps to it.
+
+### 3. Write your own plan
+
+A plan is a YAML list of skills with a failure policy per step. No branches, no loops: when a decision is needed, a new plan is generated.
+
+```yaml
+id: fetch_box
+description: "Fetch the red box from shelf A and bring it to workstation B"
+steps:
+  - skill: navigate
+    params: { to: shelf_A, via: [aisle_in] }
+    on_failure: { retry: 2, then: needs_human }
+  - skill: detect
+    params: { cls: red_box, expect: 1 }
+  - skill: pick
+    params: { object_id: "$detect.objects[0].id" }   # reference to the previous step's evidence
+  - skill: navigate
+    params: { to: workstation_B, via: [aisle_out] }
+  - skill: place
+    params: { at: workstation_B }
+```
+
+Skills available today: `navigate`, `detect`, `pick`, `place`, `inspect`, `say`. `uv run spingi skills` prints their parameters. A scene is a YAML file too: named locations, obstacles, objects and safety limits (geofence, speed cap, battery minimum). See [runtime/sim/scenes/](runtime/sim/scenes/).
+
+## How it works
+
+```
+plan.yaml ──► Executor ──► skills ──► RobotAdapter ──► FakeAdapter | SimAdapter (MuJoCo) | real robot
+                 │             │
+                 │             └── Perceiver (markers, detector; ground truth in simulation)
+                 ├── SafetyMonitor: independent task, geofence, speed cap, battery, watchdog
+                 └── EventLog ──► episode: events, trajectory, frames  ──► Spingi Viewer
+```
+
+Eight principles drive the design, written down in [docs/runtime-spec.md](docs/runtime-spec.md) and in the [ADRs](adr/README.md). The two that matter most: a language model may propose a plan but never controls the robot directly, and every component is testable without hardware.
+
+## Documentation
+
+| Document | Content |
+|----------|---------|
+| [docs/runtime-spec.md](docs/runtime-spec.md) | Principles, architecture, contracts, execution model, safety layers, testing strategy, milestones |
+| [docs/episode-format.md](docs/episode-format.md) | The episode folder, manifest, trajectory, frames, compatibility rules |
+| [adr/](adr/README.md) | Architecture decisions 0001–0007 and the ones still open |
+| [runtime/README.md](runtime/README.md) | CLI reference, scenes, plans, skills, episodes, tests, how to add a skill or an adapter |
+| [viewer/README.md](viewer/README.md) | Running, loading episodes, deploying |
+
+## Development
+
+```bash
+make test
+```
+
+runs the runtime suite (unit, adapter contract, MuJoCo scenarios, architecture rules) in a few seconds. The viewer has `npm test` and `npm run build`. CI runs both on every commit without GPU.
+
+Conventions: every architectural decision is an ADR, changed by writing a new one; the runtime never imports the viewer and the viewer never imports the runtime, they only share the episode format; `spingi.core` imports nothing from adapters, skills, planner or perception, and a test enforces it.
+
+## Roadmap
+
+- **M2** (in progress): operator console, robustness tests with perception noise, episode export towards LeRobot datasets.
+- **M3**: LLM planner with golden plans, replay of recorded episodes.
+- **M4**: adapter for the real Unitree G1, sim-to-real gates per skill.
+
+## License
+
+To be decided before the first public release.

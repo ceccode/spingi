@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { describeEvent, episodeDuration, eventTime, loadEpisodeFromZip, poseAt, type Episode } from "./episode";
+import { describeEvent, episodeDuration, eventTime, loadEpisodeFromZip, objectsAt, poseAt, type Episode } from "./episode";
 import { Player } from "./player";
 import { World } from "./world";
 
@@ -34,7 +34,7 @@ const ui = {
   title: $("title"), drop: $("drop"), hud: $("hud"), manifest: $("manifest"), events: $<HTMLOListElement>("events"),
   framesCard: $("framesCard"), frames: $("frames"), frameLarge: $<HTMLImageElement>("frameLarge"), frameCaption: $("frameCaption"), play: $<HTMLButtonElement>("play"), scrub: $<HTMLInputElement>("scrub"),
   clock: $("clock"), speed: $<HTMLSelectElement>("speed"), follow: $<HTMLInputElement>("follow"),
-  file: $<HTMLInputElement>("file"), sample: $<HTMLButtonElement>("sample"),
+  file: $<HTMLInputElement>("file"), sample: $<HTMLSelectElement>("sample"),
 };
 
 function resize(): void {
@@ -72,6 +72,7 @@ player.onTick((t) => {
   if (!episode) return;
   const pose = poseAt(episode.trajectory, t);
   world.setRobotPose(pose);
+  world.setObjectPositions(objectsAt(episode.trajectory, t));
   ui.scrub.value = String(t / player.duration);
   ui.clock.textContent = `${t.toFixed(1)} s`;
   ui.play.textContent = player.playing ? "❚❚" : "▶";
@@ -164,9 +165,12 @@ ui.file.addEventListener("change", async () => {
   const f = ui.file.files?.[0];
   if (f) await loadZip(await f.arrayBuffer());
 });
-ui.sample.addEventListener("click", async () => {
-  const res = await fetch("/samples/demo_inspection_round.zip");
+ui.sample.addEventListener("change", async () => {
+  const name = ui.sample.value;
+  if (!name) return;
+  const res = await fetch(`/samples/${name}.zip`);
   await loadZip(await res.arrayBuffer());
+  ui.sample.value = "";
 });
 ui.play.addEventListener("click", () => player.toggle());
 ui.scrub.addEventListener("input", () => player.seek(Number(ui.scrub.value) * player.duration));

@@ -1,0 +1,22 @@
+# Small warehouse: two shelving racks form an aisle; the box sits on rack A; the workstation is a table.
+# Straight lines from the dock to the shelf cross the racks, so plans route through the aisle waypoints.
+robot:
+  pose: { x: 0.0, y: 0.0, yaw: 0.0 }
+  battery_pct: 100
+locations:
+  dock:          { pose: { x: 0.0, y: 0.0, yaw: 0.0 } }
+  aisle_in:      { pose: { x: 4.0, y: 0.0, yaw: 1.57 } }
+  shelf_A:       { pose: { x: 4.0, y: 3.0, yaw: 0.0 } }     # in the aisle, facing rack A
+  aisle_out:     { pose: { x: 4.0, y: 6.0, yaw: 1.57 } }
+  workstation_B: { pose: { x: 8.0, y: 7.0, yaw: 0.0 }, tolerance_m: 0.2 }
+obstacles:
+  - { x: 5.1, y: 3.0, w: 0.5, d: 4.0, h: 1.6 }   # rack A (east side of the aisle)
+  - { x: 2.9, y: 3.0, w: 0.5, d: 4.0, h: 1.6 }   # rack B (west side)
+  - { x: 8.6, y: 7.0, w: 0.6, d: 1.2, h: 0.85 }  # workstation table
+  - { x: 1.5, y: 5.0, w: 1.0, d: 1.0, h: 1.0 }   # pallet left in the way of the straight line dock -> workstation
+objects:
+  red_box_01: { cls: red_box, marker_id: 7, pose: { x: 4.75, y: 3.0, z: 0.95 } }
+safety:
+  geofence: { x_min: -1.0, x_max: 10.0, y_min: -1.0, y_max: 9.0 }
+  max_speed: 0.8
+  min_battery_pct: 5
