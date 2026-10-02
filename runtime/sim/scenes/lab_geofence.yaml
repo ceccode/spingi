@@ -1,0 +1,11 @@
+# Like lab_small, but the working area ends at x = 4: workstation_B lies outside the geofence.
+robot:
+  pose: { x: 0.0, y: 0.0, yaw: 0.0 }
+  battery_pct: 100
+locations:
+  dock:          { pose: { x: 0.0, y: 0.0, yaw: 0.0 } }
+  shelf_A:       { pose: { x: 0.0, y: 2.0, yaw: 1.57 } }
+  workstation_B: { pose: { x: 6.0, y: 0.5, yaw: 0.0 } }
+safety:
+  geofence: { x_min: -1.0, x_max: 4.0, y_min: -3.0, y_max: 5.0 }
+  max_speed: 0.8

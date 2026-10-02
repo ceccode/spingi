@@ -1,0 +1,22 @@
+# Applications built on top of the runtime and the viewer live in separate private repositories.
+private/
+
+# Editor and assistant configuration
+.claude/
+.DS_Store
+
+# Python / runtime
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+dist/
+*.egg-info/
+runtime/runs/
+runtime/sim/models/unitree_g1/_gen_*.xml
+
+# Viewer (web)
+viewer/node_modules/
+viewer/dist/
+viewer/.netlify/

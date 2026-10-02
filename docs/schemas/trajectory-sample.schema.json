@@ -1,0 +1,114 @@
+{
+  "$defs": {
+    "ObjectSample": {
+      "properties": {
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        },
+        "z": {
+          "title": "Z",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "z"
+      ],
+      "title": "ObjectSample",
+      "type": "object"
+    },
+    "RobotSample": {
+      "properties": {
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        },
+        "yaw": {
+          "title": "Yaw",
+          "type": "number"
+        },
+        "mode": {
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "yaw",
+        "mode"
+      ],
+      "title": "RobotSample",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "t": {
+      "description": "simulated seconds since the start of the run; same axis as `sim_t` in the events",
+      "title": "T",
+      "type": "number"
+    },
+    "robot": {
+      "$ref": "#/$defs/RobotSample"
+    },
+    "battery_pct": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Battery Pct"
+    },
+    "objects": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/ObjectSample"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "only when they change",
+      "title": "Objects"
+    },
+    "joints": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Joints"
+    }
+  },
+  "required": [
+    "t",
+    "robot"
+  ],
+  "title": "TrajectorySample",
+  "type": "object"
+}

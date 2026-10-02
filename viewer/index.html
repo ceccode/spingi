@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Spingi Viewer</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header id="topbar">
+        <strong>Spingi Viewer</strong>
+        <span id="title" class="muted">no episode loaded</span>
+        <span class="spacer"></span>
+        <label class="btn">Load .zip<input id="file" type="file" accept=".zip" hidden /></label>
+        <button id="sample" class="btn">Sample episode</button>
+      </header>
+      <main>
+        <div id="viewport">
+          <canvas id="canvas"></canvas>
+          <div id="drop" class="drop">Drop an episode (.zip) here</div>
+          <div id="hud" class="hud"></div>
+        </div>
+        <aside id="side">
+          <section id="manifest" class="card"></section>
+          <section class="card grow">
+            <h3>Events</h3>
+            <ol id="events"></ol>
+          </section>
+          <section id="framesCard" class="card" hidden>
+            <h3>Head camera</h3>
+            <img id="frameLarge" class="frame-large" alt="latest head-camera frame" hidden />
+            <p id="frameCaption" class="muted small"></p>
+            <div id="frames" class="frames"></div>
+          </section>
+        </aside>
+      </main>
+      <footer id="timeline">
+        <button id="play" class="btn" disabled>▶</button>
+        <input id="scrub" type="range" min="0" max="1" step="0.01" value="0" disabled />
+        <span id="clock" class="mono">0.0 s</span>
+        <select id="speed">
+          <option value="0.5">0.5×</option>
+          <option value="1" selected>1×</option>
+          <option value="2">2×</option>
+          <option value="4">4×</option>
+        </select>
+        <label class="chk"><input id="follow" type="checkbox" checked /> follow robot</label>
+      </footer>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

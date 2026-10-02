@@ -1,0 +1,112 @@
+{
+  "$defs": {
+    "RobotInfo": {
+      "properties": {
+        "model": {
+          "description": "e.g. unitree_g1",
+          "title": "Model",
+          "type": "string"
+        },
+        "adapter": {
+          "description": "e.g. fake, sim_mujoco, unitree_g1",
+          "title": "Adapter",
+          "type": "string"
+        }
+      },
+      "required": [
+        "model",
+        "adapter"
+      ],
+      "title": "RobotInfo",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "format_version": {
+      "const": "0.1",
+      "default": "0.1",
+      "title": "Format Version",
+      "type": "string"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "created_at": {
+      "description": "RFC 3339, UTC",
+      "title": "Created At",
+      "type": "string"
+    },
+    "robot": {
+      "$ref": "#/$defs/RobotInfo"
+    },
+    "plan_id": {
+      "title": "Plan Id",
+      "type": "string"
+    },
+    "status": {
+      "description": "success | aborted | invalid_plan | deadline",
+      "title": "Status",
+      "type": "string"
+    },
+    "steps_completed": {
+      "title": "Steps Completed",
+      "type": "integer"
+    },
+    "steps_total": {
+      "title": "Steps Total",
+      "type": "integer"
+    },
+    "duration_s": {
+      "description": "wall-clock time between run.start and run.end",
+      "title": "Duration S",
+      "type": "number"
+    },
+    "sim_time_s": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "total simulated time, if the adapter provides it",
+      "title": "Sim Time S"
+    },
+    "sample_rate_hz": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "nominal sample rate of trajectory.jsonl",
+      "title": "Sample Rate Hz"
+    },
+    "files": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Files",
+      "type": "array"
+    }
+  },
+  "required": [
+    "run_id",
+    "created_at",
+    "robot",
+    "plan_id",
+    "status",
+    "steps_completed",
+    "steps_total",
+    "duration_s",
+    "files"
+  ],
+  "title": "Manifest",
+  "type": "object"
+}

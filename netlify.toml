@@ -1,0 +1,5 @@
+# Deploys the viewer as a static site. In Netlify: connected repository, base directory "viewer".
+[build]
+  base = "viewer"
+  command = "npm run build"
+  publish = "dist"
