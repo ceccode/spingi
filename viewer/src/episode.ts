@@ -135,7 +135,8 @@ export function describeEvent(ev: Event): string {
     case "step.start": return `step ${d.index}: ${d.skill} ${JSON.stringify(d.params)}`;
     case "skill.end": return `${d.skill} → ${d.outcome}${d.reason ? ` (${d.reason})` : ""}`;
     case "say": return `"${d.text}"`;
-    case "human.request": return `operator: ${d.skill} — ${d.reason}`;
+    case "human.request": return `operator: ${d.skill} — ${d.reason}${Array.isArray(d.options) ? ` [${(d.options as string[]).join(" / ")}]` : ""}`;
+    case "operator.stop": return "operator stop: e-stop engaged";
     case "human.response": return `operator responds: ${d.action}`;
     case "run.end": return `run end: ${d.status}`;
     case "skill.postcondition_failed": case "skill.precondition_failed": return `${d.skill}: ${d.reason}`;

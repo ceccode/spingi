@@ -38,8 +38,13 @@ class EventLog:
         self._clock = clock
         self.sim_clock = sim_clock  # callable -> simulated seconds; adds `sim_t` to every event
         self._path = path
+        self._subscribers: list = []
         if path is not None:
             path.parent.mkdir(parents=True, exist_ok=True)
+
+    def subscribe(self, fn) -> None:
+        """Calls `fn(event)` for every event emitted from now on (live console, metrics). Must not raise."""
+        self._subscribers.append(fn)
 
     def emit(self, kind: str, **data: Any) -> Event:
         if self.sim_clock is not None and "sim_t" not in data:
@@ -49,6 +54,8 @@ class EventLog:
         if self._path is not None:
             with self._path.open("a", encoding="utf-8") as fh:
                 fh.write(event.to_jsonl() + "\n")
+        for fn in self._subscribers:
+            fn(event)
         return event
 
     def count(self, kind: str, **match: Any) -> int:

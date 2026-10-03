@@ -54,16 +54,19 @@ class Perceiver(Protocol):
     async def localize(self, frame: Frame, marker_id: int) -> Pose3D | None: ...
 
 
+OperatorAction = Literal["retry", "skip", "abort", "continue"]
+
+
 class HumanRequest(BaseModel):
     run_id: str
     step_index: int
     skill: str
     reason: str
-    options: list[Literal["retry", "skip", "abort"]] = ["retry", "skip", "abort"]
+    options: list[OperatorAction] = ["retry", "skip", "abort"]  # a confirmation request offers continue / abort
 
 
 class HumanResponse(BaseModel):
-    action: Literal["retry", "skip", "abort"]
+    action: OperatorAction
     note: str = ""
 
 

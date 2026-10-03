@@ -563,7 +563,7 @@ Rule: `spingi/core` imports nothing from `adapters`, `perception`, `planner`. Th
 
 M0–M3 do not require the robot.
 
-**Status as of 2026-10-02: M0 and M1 complete, M2 in progress.** Skeleton in `spingi/`, `SimAdapter` for MuJoCo with the G1 model (ADR-0006), `SimPerceiver` with ground truth from the scene, independent `SafetyMonitor`, skills `navigate` (with waypoints), `detect`, `pick`, `place` (kinematic grasp, ADR-0007), `inspect`, `say`, the `warehouse_small` scene with the material-runner plan running end to end, episode writer, 84 tests green in CI in a few seconds. Decisions recorded in `adr/0001`–`0007`. Still open for M2: operator console, robustness tests with perception noise, episode export towards LeRobot. Two clarifications that emerged during implementation are now normative:
+**Status as of 2026-10-04: M0, M1 and M2 complete.** `SimAdapter` for MuJoCo with the G1 (ADR-0006), `SimPerceiver` with configurable noise, independent `SafetyMonitor`, skills `navigate` (with waypoints), `detect`, `pick`, `place` (kinematic grasp, ADR-0007), `inspect`, `wait_for_human`, `say`; terminal operator console with Ctrl+C as the stop button (ADR-0008); `spingi bench` computes the metrics of section 8.5 from the event log and checks the gate of section 8.4; `spingi export lerobot` writes LeRobotDataset v3.0 (ADR-0009). M2 acceptance: the material runner in `warehouse_small` passed the gate over 100 simulated runs with 20 % perception false negatives and 2 cm position noise (100 % success, 0 operator requests, 0.25 retries per run). 108 tests green in CI in under 10 seconds. Two clarifications that emerged during implementation are now normative:
 - A `$step.field` reference is always the **whole value** of a parameter, never a substring. `"text": "$navigate.reached"` is valid; `"text": "arrived at $navigate.reached"` is not.
 - `on_failure.then: needs_human` stops the robot before asking; the operator's `retry` answer resets the step's retry budget.
 
@@ -575,11 +575,11 @@ M0–M3 do not require the robot.
 |----|----------|------------------|-----------|
 | ADR-001 | ROS2 in the core? | No (see §2.2) | M0 |
 | ADR-002 | Locomotion: vendor controller or our own policy? | Vendor in v0; RL policy only if the vendor's is not enough | M1 |
-| ADR-003 | G1 model for MuJoCo: official `unitree_mujoco` or MJCF from `mujoco_menagerie`? | To be evaluated in M1 on fidelity and maintenance | M1 |
-| ADR-004 | Grasp in v0: predefined positions for a standard container or a learned policy? | Predefined for a standard container (handle) | M2 |
-| ADR-005 | Episode format: our own JSONL or native `LeRobotDataset`? | Our JSONL + exporter to LeRobot | M2 |
+| ADR-003 | G1 model for MuJoCo: official `unitree_mujoco` or MJCF from `mujoco_menagerie`? | Decided: mujoco_menagerie (adr/0006) | M1 |
+| ADR-004 | Grasp in v0: predefined positions for a standard container or a learned policy? | Decided: predefined, kinematic in simulation (adr/0007) | M2 |
+| ADR-005 | Episode format: our own JSONL or native `LeRobotDataset`? | Decided: our episode + LeRobot v3.0 exporter (adr/0009) | M2 |
 | ADR-006 | Where the runtime runs: on-board (Orin) or laptop + network? | Laptop in the lab; on-board for the pilot | M4 |
-| ADR-007 | Console: CLI/TUI or web? | TUI in v0 | M2 |
+| ADR-007 | Console: CLI/TUI or web? | Decided: terminal console in v0 (adr/0008) | M2 |
 
 ADR format: title, context (5 lines), decision (3 lines), consequences (5 lines). One file per ADR in `adr/`.
 

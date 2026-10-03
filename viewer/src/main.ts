@@ -122,7 +122,7 @@ async function show(ep: Episode): Promise<void> {
   ep.events.forEach((e, i) => {
     const li = document.createElement("li");
     if (e.kind.startsWith("safety")) li.classList.add("safety");
-    if (e.kind.startsWith("human")) li.classList.add("human");
+    if (e.kind.startsWith("human") || e.kind === "operator.stop") li.classList.add("human");
     li.innerHTML = `<span class="t">${eventTimes[i]!.toFixed(1)}s</span><span><b>${e.kind}</b> ${describeEvent(e)}</span>`;
     li.addEventListener("click", () => player.seek(eventTimes[i]!));
     ui.events.appendChild(li);

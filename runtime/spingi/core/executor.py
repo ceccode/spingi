@@ -188,7 +188,7 @@ class Executor:
             self.log.emit("human.timeout", index=index, skill=skill)
             return "abort"
         self.log.emit("human.response", index=index, action=response.action, note=response.note)
-        return response.action
+        return response.action if response.action in ("retry", "skip", "abort") else "abort"
 
     async def _finish(self, state, completed: int, outputs, status: RunStatus, reason: str) -> RunResult:
         if status != "success":

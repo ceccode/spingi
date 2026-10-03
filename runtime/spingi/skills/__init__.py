@@ -7,7 +7,10 @@ from spingi.skills.navigate import NavigateSkill
 from spingi.skills.pick import PickSkill
 from spingi.skills.place import PlaceSkill
 from spingi.skills.say import SaySkill
+from spingi.skills.wait_for_human import WaitForHumanSkill
 
 
 def default_registry() -> SkillRegistry:
-    return SkillRegistry([NavigateSkill(), DetectSkill(), PickSkill(), PlaceSkill(), InspectSkill(), SaySkill()])
+    return SkillRegistry(
+        [NavigateSkill(), DetectSkill(), PickSkill(), PlaceSkill(), InspectSkill(), WaitForHumanSkill(), SaySkill()]
+    )

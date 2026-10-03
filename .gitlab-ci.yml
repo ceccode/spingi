@@ -8,7 +8,7 @@ runtime:
   stage: test
   before_script:
     - pip install uv
-    - cd runtime && uv sync --extra dev --extra sim
+    - cd runtime && uv sync --extra dev --extra sim --extra export
   script:
     - uv run ruff check spingi tests scripts
     - uv run pytest

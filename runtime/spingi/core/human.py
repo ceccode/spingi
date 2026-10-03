@@ -1,14 +1,13 @@
-"""Gateway to the operator. In M0: preset answers; the console arrives in M2."""
+"""Scripted gateway to the operator, for tests and unattended runs. The interactive one is spingi.console."""
 
 from __future__ import annotations
 
 import asyncio
 from collections import deque
-from typing import Literal
 
-from spingi.core.ports import HumanRequest, HumanResponse
+from spingi.core.ports import HumanRequest, HumanResponse, OperatorAction
 
-Action = Literal["retry", "skip", "abort"]
+Action = OperatorAction
 
 
 class ScriptedHuman:
@@ -28,4 +27,6 @@ class ScriptedHuman:
             await asyncio.sleep(timeout_s)
             raise TimeoutError
         action = self._queue.popleft() if self._queue else self.default
+        if action not in request.options:  # e.g. the default "abort" policy on a confirmation request is fine,
+            action = "abort" if "abort" in request.options else request.options[0]  # "retry" on one is not
         return HumanResponse(action=action, note="scripted")

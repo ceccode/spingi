@@ -1,7 +1,7 @@
-.PHONY: setup test lint demo demo-sim demo-sim-view demo-sim-record schemas
+.PHONY: setup test lint demo demo-sim demo-sim-view demo-sim-record schemas bench
 
 setup:
-	uv sync --extra dev --extra sim
+	uv sync --extra dev --extra sim --extra export
 
 test:
 	uv run pytest
@@ -23,3 +23,6 @@ demo-sim-view:
 
 schemas:
 	uv run python scripts/gen_schemas.py
+
+bench:
+	uv run spingi bench plans/demo_material_runner.yaml --scene sim/scenes/warehouse_small.yaml --adapter sim --runs 100 --noise 0.2 --sigma 0.02 --gate

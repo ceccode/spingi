@@ -6,7 +6,7 @@ Spingi is a **Physical Agent Runtime** for humanoid robots: it turns a robot int
 
 This repository is a neutral open-source toolkit. Applications built on top of it live elsewhere; this repo keeps sample plans and scenes that show how to use the system.
 
-Status: **runtime M1 complete, M2 in progress · viewer v0.2** · 2026-10-02
+Status: **runtime M2 complete · viewer v0.2** · 2026-10-04
 
 ## What is in the box
 
@@ -54,7 +54,27 @@ cd viewer && npm install && npm run dev
 
 Then open http://localhost:5173. Space plays and pauses, the arrow keys step one second, clicking an event jumps to it.
 
-### 3. Write your own plan
+### 3. Supervise a run, measure it, export it
+
+Answer the robot's requests yourself instead of a fixed policy, with Ctrl+C as the stop button:
+
+```bash
+uv run spingi run plans/demo_material_runner.yaml --scene sim/scenes/warehouse_small.yaml --adapter sim --operator console
+```
+
+Run the same plan 100 times with noisy perception and check the sim-to-real gate (success rate, operator requests, fatal runs, safety violations):
+
+```bash
+uv run spingi bench plans/demo_material_runner.yaml --scene sim/scenes/warehouse_small.yaml --adapter sim --runs 100 --noise 0.2 --gate
+```
+
+Turn episodes into a LeRobotDataset v3.0 for training tools:
+
+```bash
+uv run spingi export lerobot runs/r-* --out runs/dataset
+```
+
+### 4. Write your own plan
 
 A plan is a YAML list of skills with a failure policy per step. No branches, no loops: when a decision is needed, a new plan is generated.
 
@@ -75,7 +95,7 @@ steps:
     params: { at: workstation_B }
 ```
 
-Skills available today: `navigate`, `detect`, `pick`, `place`, `inspect`, `say`. `uv run spingi skills` prints their parameters. A scene is a YAML file too: named locations, obstacles, objects and safety limits (geofence, speed cap, battery minimum). See [runtime/sim/scenes/](runtime/sim/scenes/).
+Skills available today: `navigate`, `detect`, `pick`, `place`, `inspect`, `wait_for_human`, `say`. `uv run spingi skills` prints their parameters. A scene is a YAML file too: named locations, obstacles, objects and safety limits (geofence, speed cap, battery minimum). See [runtime/sim/scenes/](runtime/sim/scenes/).
 
 ## How it works
 
@@ -84,7 +104,7 @@ plan.yaml ──► Executor ──► skills ──► RobotAdapter ──► F
                  │             │
                  │             └── Perceiver (markers, detector; ground truth in simulation)
                  ├── SafetyMonitor: independent task, geofence, speed cap, battery, watchdog
-                 └── EventLog ──► episode: events, trajectory, frames  ──► Spingi Viewer
+                 └── EventLog ──► console · metrics · episode (events, trajectory, frames) ──► Viewer, LeRobot
 ```
 
 Eight principles drive the design, written down in [docs/runtime-spec.md](docs/runtime-spec.md) and in the [ADRs](adr/README.md). The two that matter most: a language model may propose a plan but never controls the robot directly, and every component is testable without hardware.
@@ -95,7 +115,7 @@ Eight principles drive the design, written down in [docs/runtime-spec.md](docs/r
 |----------|---------|
 | [docs/runtime-spec.md](docs/runtime-spec.md) | Principles, architecture, contracts, execution model, safety layers, testing strategy, milestones |
 | [docs/episode-format.md](docs/episode-format.md) | The episode folder, manifest, trajectory, frames, compatibility rules |
-| [adr/](adr/README.md) | Architecture decisions 0001–0007 and the ones still open |
+| [adr/](adr/README.md) | Architecture decisions 0001–0009 and the ones still open |
 | [runtime/README.md](runtime/README.md) | CLI reference, scenes, plans, skills, episodes, tests, how to add a skill or an adapter |
 | [viewer/README.md](viewer/README.md) | Running, loading episodes, deploying |
 
@@ -111,8 +131,8 @@ Conventions: every architectural decision is an ADR, changed by writing a new on
 
 ## Roadmap
 
-- **M2** (in progress): operator console, robustness tests with perception noise, episode export towards LeRobot datasets.
-- **M3**: LLM planner with golden plans, replay of recorded episodes.
+- **M2** (done): operator console, `spingi bench` with the sim-to-real gate, LeRobot v3.0 export, `wait_for_human`.
+- **M3** (next): LLM planner that turns a request into a validated plan, golden plans, replay of recorded episodes.
 - **M4**: adapter for the real Unitree G1, sim-to-real gates per skill.
 
 ## License

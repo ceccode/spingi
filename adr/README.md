@@ -11,5 +11,7 @@ Every significant architectural decision is a file in this folder: `NNNN-title.m
 | [0005](0005-jsonl-event-log-as-source-of-truth.md) | Append-only JSONL event log as the single source of truth | Accepted | M0 |
 | [0006](0006-kinematic-sim-adapter-with-g1-model.md) | Kinematic SimAdapter in MuJoCo with the G1 model from mujoco_menagerie | Accepted | M1 |
 | [0007](0007-predefined-kinematic-grasp.md) | Predefined grasp on standard containers, simulated kinematically | Accepted | M2 |
+| [0008](0008-terminal-operator-console.md) | Operator console v0 in the terminal | Accepted | M2 |
+| [0009](0009-lerobot-export-derived-format.md) | Episodes stay the source of truth; LeRobot v3.0 is an export | Accepted | M2 |
 
-Still open (see the spec, section 13): vendor locomotion or pre-trained policy (M1, partially resolved by 0006), episode format vs LeRobot (M2), runtime on-board or on a laptop (M4), TUI or web console (M2).
+Still open (see the spec, section 13): vendor locomotion or pre-trained policy in simulation (partially resolved by 0006), runtime on-board or on a laptop (M4).
