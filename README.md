@@ -115,4 +115,4 @@ Conventions: every architectural decision is an ADR, changed by writing a new on
 
 ## License
 
-To be decided before the first public release.
+Apache License 2.0, see [LICENSE](LICENSE). The Unitree G1 model in `runtime/sim/models/unitree_g1` is redistributed under its own BSD 3-Clause license, see [NOTICE](NOTICE).

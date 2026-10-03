@@ -1,0 +1,12 @@
+Spingi
+Copyright 2026 Francesco Falanga
+
+This product includes software developed at the Spingi project.
+
+Third-party material:
+
+- Unitree G1 robot description (runtime/sim/models/unitree_g1), from
+  google-deepmind/mujoco_menagerie. Copyright (c) 2016-2023 HangZhou YuShu
+  TECHNOLOGY CO., LTD. ("Unitree Robotics"). Licensed under the BSD 3-Clause
+  License; see runtime/sim/models/unitree_g1/LICENSE. Modified: a head camera
+  was added to g1.xml (see runtime/sim/models/NOTES.md).

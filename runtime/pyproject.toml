@@ -4,7 +4,8 @@ version = "0.1.0"
 description = "Physical Agent Runtime: a reliable executor of simple physical tasks for humanoid robots, developed sim-first."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "Proprietary" }
+license = "Apache-2.0"
+license-files = ["../LICENSE"]
 dependencies = [
   "pydantic>=2.7",
   "pyyaml>=6.0",
