@@ -60,6 +60,8 @@ describe("parsing", () => {
     expect(describeEvent({ ...base, kind: "perception.result", target: "shelf_A", checks: { "present:red_box": {} }, anomalies: [] })).toBe("shelf_A: 1 check(s), all passed");
     expect(describeEvent({ ...base, kind: "perception.result", target: "panel_C", checks: { a: {}, b: {} }, anomalies: ["a"] })).toBe("panel_C: 2 check(s), anomalies: a");
     expect(describeEvent({ ...base, kind: "safety.geofence", pose: { x: 4.5, y: 0.3 } })).toBe("outside the working area at (4.50, 0.30)");
+    expect(describeEvent({ ...base, kind: "perception.result", cls: "red_box", found: ["red_box_01"] })).toBe("looking for red_box: found red_box_01");
+    expect(describeEvent({ ...base, kind: "perception.result", cls: "red_box", found: [] })).toBe("looking for red_box: nothing found");
   });
 });
 

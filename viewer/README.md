@@ -2,6 +2,8 @@
 
 Web replayer for episodes produced by the Spingi runtime (format in [../docs/episode-format.md](../docs/episode-format.md)). Load an episode `.zip` and watch the robot and the objects move in the 3D scene, with the event timeline, the head-camera frames, safety and operator events. A static site: no server, no physics in the browser.
 
+Live at **https://spingi-viewer.netlify.app**. Episodes are read in the browser; nothing is uploaded.
+
 ## Run it
 
 ```bash
@@ -43,7 +45,7 @@ The model is rigid: the base moves, the limbs do not, matching the simulator. Wh
 
 ## Deploy
 
-`netlify.toml` at the repository root sets `viewer` as the base directory, `npm run build` as the command and `dist` as the publish folder. Connect the repository to Netlify and every push deploys.
+`netlify.toml` at the repository root sets `viewer` as the base directory, `npm run build` as the command and `dist` as the publish folder. The repository is connected to Netlify: every push to `main` deploys to https://spingi-viewer.netlify.app.
 
 ## Not yet
 

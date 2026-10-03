@@ -13,7 +13,7 @@ Status: **runtime M1 complete, M2 in progress · viewer v0.2** · 2026-10-02
 | Folder | Project | What it does |
 |--------|---------|--------------|
 | [runtime/](runtime/README.md) | **Spingi runtime** (Python) | Executes a declarative *plan* made of *skills* on a *robot adapter*. Ships with a fake adapter for unit tests and a MuJoCo adapter with the Unitree G1. Writes an episode for every run. |
-| [viewer/](viewer/README.md) | **Spingi Viewer** (web, Three.js) | Loads an episode `.zip` and replays it: robot and objects moving in the 3D scene, event timeline, head-camera frames, safety and operator events. Static site, deployable on Netlify. |
+| [viewer/](viewer/README.md) | **Spingi Viewer** (web, Three.js) | Loads an episode `.zip` and replays it: robot and objects moving in the 3D scene, event timeline, head-camera frames, safety and operator events. Live at **[spingi-viewer.netlify.app](https://spingi-viewer.netlify.app)**. |
 | [docs/episode-format.md](docs/episode-format.md) | **Episode format** | The contract between the two: a folder with `manifest.json`, `scene.yaml`, `plan.yaml`, `events.jsonl`, `trajectory.jsonl`, `frames/`. JSON schemas in [docs/schemas/](docs/schemas/). |
 
 ## Quick start
@@ -46,11 +46,13 @@ uv run spingi run plans/demo_material_runner.yaml --scene sim/scenes/warehouse_s
 
 ### 2. Replay the episode in the browser
 
+Open **https://spingi-viewer.netlify.app** and drop the `.zip` onto the page, or pick one of the bundled samples. Nothing is uploaded: the episode is read in your browser. To run the viewer locally:
+
 ```bash
 cd viewer && npm install && npm run dev
 ```
 
-Open http://localhost:5173, drop the `.zip` onto the page or pick one of the bundled samples. Space plays and pauses, the arrow keys step one second, clicking an event jumps to it.
+Then open http://localhost:5173. Space plays and pauses, the arrow keys step one second, clicking an event jumps to it.
 
 ### 3. Write your own plan
 

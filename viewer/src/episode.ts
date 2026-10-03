@@ -146,6 +146,10 @@ export function describeEvent(ev: Event): string {
       return pose ? `pose (${pose.x.toFixed(2)}, ${pose.y.toFixed(2)})${delta?.battery_pct ? ` · battery ${Number(delta.battery_pct).toFixed(0)}%` : ""}` : "state updated";
     }
     case "perception.result": {
+      if (d.cls !== undefined) {
+        const found = (d.found as string[] | undefined) ?? [];
+        return `looking for ${d.cls}: ${found.length ? `found ${found.join(", ")}` : "nothing found"}`;
+      }
       const anomalies = (d.anomalies as string[] | undefined) ?? [];
       const checks = Object.keys((d.checks as Record<string, unknown> | undefined) ?? {});
       return `${d.target}: ${checks.length} check(s), ${anomalies.length ? `anomalies: ${anomalies.join(", ")}` : "all passed"}`;

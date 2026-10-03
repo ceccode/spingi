@@ -42,4 +42,5 @@ main { flex: 1; display: grid; grid-template-columns: 1fr 360px; min-height: 0; 
 .chk { color: var(--muted); display: flex; gap: 6px; align-items: center; }
 select { background: #262a35; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px; }
 .frame-large { width: 100%; border-radius: 6px; border: 1px solid var(--line); display: block; margin-bottom: 6px; }
+.frame-large[hidden] { display: none; }
 .small { font-size: 12px; margin: 0 0 6px; }
