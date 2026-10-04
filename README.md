@@ -46,7 +46,7 @@ uv run spingi run plans/demo_material_runner.yaml --scene sim/scenes/warehouse_s
 
 ### 2. Replay the episode in the browser
 
-Open **https://spingi-viewer.netlify.app** and drop the `.zip` onto the page, or pick one of the bundled samples. Nothing is uploaded: the episode is read in your browser. To run the viewer locally:
+Open **https://spingi-viewer.netlify.app** and drop the `.zip` onto the page, or pick one of the bundled samples. Nothing is uploaded: the episode is read in your browser. To run the viewer locally, from the repository root:
 
 ```bash
 cd viewer && npm install && npm run dev
@@ -56,7 +56,7 @@ Then open http://localhost:5173. Space plays and pauses, the arrow keys step one
 
 ### 3. Supervise a run, measure it, export it
 
-Answer the robot's requests yourself instead of a fixed policy, with Ctrl+C as the stop button:
+From `runtime/` again. Answer the robot's requests yourself instead of a fixed policy, with Ctrl+C as the stop button:
 
 ```bash
 uv run spingi run plans/demo_material_runner.yaml --scene sim/scenes/warehouse_small.yaml --adapter sim --operator console
@@ -71,7 +71,7 @@ uv run spingi bench plans/demo_material_runner.yaml --scene sim/scenes/warehouse
 Turn episodes into a LeRobotDataset v3.0 for training tools:
 
 ```bash
-uv run spingi export lerobot runs/r-* --out runs/dataset
+uv run spingi export lerobot runs/r-*/ --out runs/dataset
 ```
 
 ### 4. Ask in plain language
@@ -110,9 +110,9 @@ Skills available today: `navigate`, `detect`, `pick`, `place`, `inspect`, `wait_
 ## How it works
 
 ```
-request ──► LLMPlanner ──► plan.yaml ──► Executor ──► skills ──► RobotAdapter ──► FakeAdapter | SimAdapter (MuJoCo) | real robot
+request ──► LLMPlanner ──► plan.yaml ──► Executor ──► skills ──► RobotAdapter ──► FakeAdapter | SimAdapter (MuJoCo) | real robot (M4)
                                              │             │
-                                             │             └── Perceiver (markers, detector; ground truth in simulation)
+                                             │             └── Perceiver (ground truth in simulation; markers and detector later)
                                              ├── SafetyMonitor: independent task, geofence, speed cap, battery, watchdog
                                              └── EventLog ──► console · metrics · episode (events, trajectory, frames) ──► Viewer, LeRobot
 ```
@@ -135,7 +135,7 @@ Eight principles drive the design, written down in [docs/runtime-spec.md](docs/r
 make test
 ```
 
-runs the runtime suite (unit, adapter contract, MuJoCo scenarios, architecture rules) in a few seconds. The viewer has `npm test` and `npm run build`. CI runs both on every commit without GPU.
+runs the runtime suite (unit, adapter contract, MuJoCo scenarios, golden episodes, architecture rules): 138 tests in about 11 seconds. The viewer has `npm test` (14 tests) and `npm run build`. CI (`.gitlab-ci.yml`) runs the runtime lint and tests on every commit without a GPU; the viewer is not in CI yet.
 
 Conventions: every architectural decision is an ADR, changed by writing a new one; the runtime never imports the viewer and the viewer never imports the runtime, they only share the episode format; `spingi.core` imports nothing from adapters, skills, planner or perception, and a test enforces it.
 

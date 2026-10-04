@@ -1,6 +1,6 @@
-# Episode format: draft v0
+# Episode format v0.1
 
-Status: v0.1 implemented in the runtime · Date: 2026-10-02
+Status: v0.1 implemented in the runtime and the viewer · Date: 2026-10-02, updated 2026-10-04
 
 An **episode** is the result of a runtime run, packaged so that anyone can replay it without the runtime and without the simulator. It is the contract between the `runtime/` project (which writes it) and the `viewer/` project (which reads it), and it is the form in which episodes are shared and archived as datasets (ADR-0005).
 
@@ -14,34 +14,55 @@ An **episode** is the result of a runtime run, packaged so that anyone can repla
 ## Structure
 
 ```
-episode-<run_id>/
-├── manifest.json        # format version, run_id, robot, duration, outcome, file list
-├── scene.yaml           # copy of the scene used (locations, obstacles, objects)
+<run_id>/
+├── manifest.json        # format version, run_id, robot, plan, outcome, durations, run settings, file list
+├── scene.yaml           # copy of the scene used (locations, obstacles, objects, safety limits)
 ├── plan.yaml            # copy of the executed plan
 ├── events.jsonl         # runtime event log, unchanged (ADR-0005)
 ├── trajectory.jsonl     # robot and object poses sampled over time
-└── frames/              # camera images, named after the frame_id field of the events
-    └── sim-1.png
+├── frames/              # camera images, named after the frame_id field of the events (optional)
+│   └── sim-1.png
+└── run.mp4              # third-person video, only with `spingi run --record` (optional)
 ```
+
+The zip produced by `--zip` (`runs/<run_id>.zip`) contains the `<run_id>/` folder itself, not only its content.
 
 ## manifest.json
 
 ```json
 {
   "format_version": "0.1",
-  "run_id": "r-20261002-005553-756a",
-  "created_at": "2026-10-02T00:55:53Z",
+  "run_id": "r-20261004-022645-bc34e6",
+  "created_at": "2026-10-04T00:26:45Z",
   "robot": { "model": "unitree_g1", "adapter": "sim_mujoco" },
+  "plan_id": "demo_inspection_round",
   "status": "success",
-  "duration_s": 39.4,
-  "sim_time_s": 39.4,
-  "files": ["scene.yaml", "plan.yaml", "events.jsonl", "trajectory.jsonl", "frames/"]
+  "steps_completed": 9,
+  "steps_total": 9,
+  "duration_s": 0.504,
+  "sim_time_s": 39.36,
+  "sample_rate_hz": 10.0,
+  "config": { "perception_noise": 0.0, "position_sigma_m": 0.0, "seed": 0 },
+  "files": ["events.jsonl", "frames/", "plan.yaml", "scene.yaml", "trajectory.jsonl"]
 }
 ```
 
+| Field | Meaning |
+|-------|---------|
+| `format_version` | Always `"0.1"` for this version. |
+| `run_id`, `created_at` | Run identifier; creation time, RFC 3339 in UTC. |
+| `robot` | `model` (`unitree_g1`, or `fake`) and `adapter` (`fake`, `sim_mujoco`; `unitree_g1` later). |
+| `plan_id`, `steps_total`, `steps_completed` | The executed plan and how far it got. |
+| `status` | `success`, `aborted`, `invalid_plan` or `deadline`, as in the `run.end` event. |
+| `duration_s` | Wall-clock seconds between the first and the last event. In fast simulation it is much shorter than `sim_time_s`. |
+| `sim_time_s` | Total simulated time, when the adapter has a simulated clock (optional). |
+| `sample_rate_hz` | Nominal rate of `trajectory.jsonl`, when the adapter samples at a fixed rate (optional). |
+| `config` | Optional. The run settings needed to run the episode again with `spingi replay`: `perception_noise` (false-negative rate of the perceiver), `position_sigma_m` (Gaussian noise on perceived positions, metres), `seed`. Episodes written before it existed do not have it; replay then uses no noise and seed 0. |
+| `files` | Sorted list of the other entries in the folder; directories end with `/`. |
+
 ## trajectory.jsonl
 
-One line per sample, at a fixed rate declared in the manifest (default 10 Hz of simulated time). The time `t` is simulated time in seconds since the start of the run, on the same axis as the events.
+One line per sample, at the rate declared in the manifest's `sample_rate_hz` (10 Hz of simulated time with `SimAdapter`; `FakeAdapter` has no fixed rate, see below). The time `t` is simulated time in seconds since the start of the run, on the same axis as the events.
 
 ```json
 {"t": 0.0, "robot": {"x": 0.0, "y": 0.0, "yaw": 0.0, "mode": "idle"}}
@@ -49,22 +70,39 @@ One line per sample, at a fixed rate declared in the manifest (default 10 Hz of 
 {"t": 12.2, "robot": {"x": 6.0, "y": 0.5, "yaw": 0.0, "mode": "idle"}, "objects": {"red_box_01": {"x": 0.0, "y": 2.9, "z": 0.9}}}
 ```
 
-Optional fields per line: `objects` (only when they change), `joints` (joint positions, once locomotion is real), `battery_pct`.
+Optional fields per line: `objects` (object positions; `SimAdapter` writes them in the first sample and then only when they change, for example while an object is carried), `joints` (joint positions, once locomotion is real, not written yet), `battery_pct` (written by both adapters today).
 
 ## Aligning events and trajectory
 
 Runtime events carry `ts` in wall-clock time. To align them with the trajectory, the runtime adds a `sim_t` field to every event when the adapter provides it. The viewer uses `sim_t` if present, otherwise `ts - ts[run.start]`.
 
+## Events
+
+`events.jsonl` is the runtime event log, one JSON object per line with `ts`, `run_id`, `kind`, `sim_t` when available, and fields that depend on the kind (event kinds in [runtime-spec.md](runtime-spec.md), section 3.8). The fields a reader is most likely to use:
+
+| Kind | Fields |
+|------|--------|
+| `step.start` | `index`, `skill`, `params` (references already resolved) |
+| `skill.end` | `skill`, `attempt`, `outcome` (`success`, `recoverable`, `needs_human`, `fatal`), `reason`, `duration_s` |
+| `perception.result` from `detect` | `frame_id`, `frame_ref`, `cls`, `found` (list of object ids) |
+| `perception.result` from `inspect` | `frame_id`, `frame_ref`, `target`, `checks` (check → `{passed, ...}`, `passed` is `null` for a check that was not evaluated), `anomalies` (checks that failed) |
+| `human.request` | `skill`, `reason`; `index` for a failed step, whose implicit options are `retry`, `skip`, `abort`; `options` (`["continue", "abort"]`) for `wait_for_human` |
+| `human.response` | `action` (`retry`, `skip`, `abort` or `continue`), `note`; `index` or `skill` as in the request |
+| `human.timeout` | the operator did not answer in time |
+| `operator.stop` | `reason`: the operator pressed Ctrl+C, the robot was e-stopped and the run ends as `aborted` |
+| `safety.geofence`, `safety.battery_low` | the Safety Monitor stopped the robot; `pose` or `battery_pct`, `min_pct` |
+| `run.end` | `status`, `steps_completed`, `reason` |
+
 ## Implementation status
 
-- The runtime writes the episode on every `spingi run`: the `runs/<run_id>/` folder is the episode; `--zip` also produces `runs/<run_id>.zip`.
+- The runtime writes the episode on every `spingi run`: the `runs/<run_id>/` folder is the episode; `--zip` also produces `runs/<run_id>.zip`. `spingi bench` does not write episodes. `spingi replay` reads `plan.yaml`, `scene.yaml`, `events.jsonl`, `trajectory.jsonl` and the manifest's `robot.adapter` and `config` to run an episode again.
 - `SimAdapter` samples the trajectory at 10 Hz of simulated time; `FakeAdapter` samples the start and end of every move with an "as if" time computed from the applied walking speed. Both expose `sim_time_s`, and the event log adds `sim_t` to every event.
-- The JSON schemas in [schemas/](schemas/) are generated from the pydantic models in `runtime/spingi/episode.py` (`make schemas`); a test fails if they diverge.
+- The JSON schemas in [schemas/](schemas/) are generated from the pydantic models in `runtime/spingi/episode.py` (`make schemas` in `runtime/`); a test fails if they diverge.
 - The first reader is the viewer in `viewer/` (`src/episode.ts` reads zip, YAML and JSONL and interpolates the trajectory).
 
 ## Frames
 
-A frame is written by the adapter as `frames/<frame_id>.png` and referenced by the event that produced it: `perception.result` carries `frame_id` (and `frame_ref`, the path the adapter wrote). A reader places frames on the timeline through those events; a frame without a referencing event is shown at t = 0.
+A frame is written by the adapter as `frames/<frame_id>.png` and referenced by the event that produced it: `perception.result` carries `frame_id` (and `frame_ref`, the path the adapter wrote). A reader places frames on the timeline through those events. The viewer ignores frames that no event references, except when no event references any frame: then it shows all of them at t = 0. Only `detect` and `inspect` take frames, so most episodes have few of them, and none when the adapter cannot render (headless machines without OpenGL, `FakeAdapter`).
 
 ## Compatibility
 

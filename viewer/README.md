@@ -26,6 +26,8 @@ Controls: Space plays and pauses, the arrow keys move one second, the speed menu
 npm test
 ```
 
+runs the 14 unit tests (episode reading and the replay clock) with Vitest.
+
 ```bash
 npm run build
 ```
@@ -50,5 +52,6 @@ The model is rigid: the base moves, the limbs do not, matching the simulator. Wh
 ## Not yet
 
 - Head-camera view side by side with the third person.
+- Playing `run.mp4`: the video of an episode recorded with `--record` is read from the zip but not shown yet.
 - Loading an unzipped folder.
 - Comparing two episodes of the same plan.

@@ -15,4 +15,6 @@ Every significant architectural decision is a file in this folder: `NNNN-title.m
 | [0009](0009-lerobot-export-derived-format.md) | Episodes stay the source of truth; LeRobot v3.0 is an export | Accepted | M2 |
 | [0010](0010-llm-planner-structured-output.md) | LLM planner with structured output, validated like any plan | Accepted | M3 |
 
-Still open (see the spec, section 13): vendor locomotion or pre-trained policy in simulation (partially resolved by 0006), runtime on-board or on a laptop (M4).
+Still open (see the spec, section 13, Q10 and Q11): locomotion, vendor controller or a pre-trained policy in simulation (meanwhile the simulator moves the base kinematically, 0006); runtime on-board or on a laptop. Both are to be decided by M4.
+
+New ADRs start from [template.md](template.md).
