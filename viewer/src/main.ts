@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import {
   describeEvent, episodeDuration, eventTime, loadEpisodeFromZip, manifestRows, MAX_ZIP_BYTES, objectsAt, poseAt,
-  safeEpisodeUrl, type Episode,
+  readCapped, safeEpisodeUrl, type Episode,
 } from "./episode";
 import { Player } from "./player";
 import { World } from "./world";
@@ -82,6 +82,15 @@ requestAnimationFrame(loop);
 
 player.onTick((t) => {
   if (!episode) return;
+  try {
+    render(episode, t);
+  } catch (err) {  // a bad episode must stop the replay with a message, not freeze the animation loop
+    player.playing = false;
+    ui.title.textContent = `error while replaying: ${(err as Error).message}`;
+  }
+});
+
+function render(episode: Episode, t: number): void {
   const pose = poseAt(episode.trajectory, t);
   world.setRobotPose(pose);
   world.setObjectPositions(objectsAt(episode.trajectory, t));
@@ -114,7 +123,7 @@ player.onTick((t) => {
     ui.frameLarge.hidden = true;
     ui.frameCaption.textContent = "no frame yet";
   }
-});
+}
 
 async function show(ep: Episode): Promise<void> {
   episode = ep;
@@ -225,7 +234,11 @@ canvas.parentElement!.addEventListener("drop", async (e) => {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const declared = Number(res.headers.get("content-length") ?? 0);
       if (declared > MAX_ZIP_BYTES) throw new Error("episode archive too large");
-      await loadZip(await res.arrayBuffer());
+      await loadZip(await readCapped(res, MAX_ZIP_BYTES));
+      const source = new URL(target);
+      if (source.origin !== location.origin && episode) {
+        ui.title.textContent += ` · loaded from ${source.host}`;  // never let a shared link pass as ours
+      }
     } catch (err) {
       ui.title.textContent = `error: cannot load ${target}: ${(err as Error).message}`;
     }

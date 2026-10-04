@@ -27,3 +27,33 @@ def test_apply_delta_clear_holding_wins_over_holding():
 def test_apply_none_delta_returns_same_state():
     state = world()
     assert apply_delta(state, None) is state
+
+
+def test_nan_and_infinity_are_rejected_in_geometry():
+    import math
+
+    import pytest
+    from pydantic import ValidationError
+
+    from spingi.core.types import Pose2D, Pose3D
+    from spingi.safety import Geofence
+
+    for bad in (math.nan, math.inf, -math.inf):
+        with pytest.raises(ValidationError):
+            Pose2D(x=bad, y=0)
+        with pytest.raises(ValidationError):
+            Pose3D(x=0, y=0, z=bad)
+        with pytest.raises(ValidationError):
+            Geofence(x_min=-1, x_max=bad, y_min=-1, y_max=1)
+
+
+def test_names_use_a_safe_alphabet():
+    import pytest
+    from pydantic import ValidationError
+
+    from spingi.core.types import Location, ObjectRef, Pose2D
+
+    with pytest.raises(ValidationError):
+        Location(name="dock<script>", pose=Pose2D(x=0, y=0))
+    with pytest.raises(ValidationError):
+        ObjectRef(id="box 1", cls="box")

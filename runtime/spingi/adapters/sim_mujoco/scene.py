@@ -16,7 +16,8 @@ from typing import Any
 
 import yaml
 
-DEFAULT_MODEL_DIR = Path("sim/models/unitree_g1")
+# Resolved from this file, never from the working directory: a folder you run `spingi` in must not supply the robot.
+DEFAULT_MODEL_DIR = Path(__file__).resolve().parents[3] / "sim" / "models" / "unitree_g1"
 
 
 def load_scene_yaml(path: Path | str) -> dict[str, Any]:

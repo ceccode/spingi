@@ -5,12 +5,22 @@ from __future__ import annotations
 import math
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 RobotMode = Literal["idle", "walking", "manipulating", "estop"]
 
+# Names of locations, objects and classes travel into XML (the simulator), prompts (the planner), file-like ids and
+# terminals: one conservative alphabet for all of them.
+NAME_PATTERN = r"^[A-Za-z0-9_-]{1,64}$"
 
-class Pose2D(BaseModel):
+
+class Strict(BaseModel):
+    """No NaN or infinity anywhere in robot geometry: a NaN setpoint must be rejected, not sent to a motor."""
+
+    model_config = ConfigDict(allow_inf_nan=False)
+
+
+class Pose2D(Strict):
     x: float
     y: float
     yaw: float = 0.0  # rad
@@ -19,7 +29,7 @@ class Pose2D(BaseModel):
         return math.hypot(self.x - other.x, self.y - other.y)
 
 
-class Pose3D(BaseModel):
+class Pose3D(Strict):
     x: float
     y: float
     z: float
@@ -29,21 +39,21 @@ class Pose3D(BaseModel):
     qw: float = 1.0
 
 
-class Location(BaseModel):
-    name: str
+class Location(Strict):
+    name: str = Field(pattern=NAME_PATTERN)
     pose: Pose2D
-    tolerance_m: float = 0.15
+    tolerance_m: float = Field(default=0.15, gt=0)
 
 
-class ObjectRef(BaseModel):
-    id: str
-    cls: str
+class ObjectRef(Strict):
+    id: str = Field(pattern=NAME_PATTERN)
+    cls: str = Field(pattern=NAME_PATTERN)
     pose: Pose3D | None = None
-    confidence: float = 0.0
+    confidence: float = Field(default=0.0, ge=0, le=1)
     marker_id: int | None = None
 
 
-class RobotState(BaseModel):
+class RobotState(Strict):
     pose: Pose2D
     battery_pct: float = 100.0
     holding: ObjectRef | None = None
@@ -62,7 +72,7 @@ class WorldState(BaseModel):
         return self.locations.get(name)
 
 
-class StateDelta(BaseModel):
+class StateDelta(Strict):
     """State change proposed by a skill. Skills do not touch WorldState directly."""
 
     robot_pose: Pose2D | None = None

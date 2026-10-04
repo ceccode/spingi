@@ -25,6 +25,7 @@ from spingi.episode import read_manifest, read_trajectory
 
 CODEBASE_VERSION = "v3.0"
 STATE_NAMES = ["base_x", "base_y", "base_yaw", "gripper_closed"]
+MAX_EPISODE_S = 24 * 3600  # an episode longer than a day is not a run but a malformed file
 
 
 def export_lerobot(episode_dirs: list[Path], out: Path, fps: int = 10) -> dict:
@@ -100,8 +101,13 @@ def export_lerobot(episode_dirs: list[Path], out: Path, fps: int = 10) -> dict:
 def _task_text(ep_dir: Path, fallback: str) -> str:
     import yaml
 
-    plan = yaml.safe_load((ep_dir / "plan.yaml").read_text(encoding="utf-8")) or {}
-    return plan.get("description") or plan.get("id") or fallback
+    try:
+        plan = yaml.safe_load((ep_dir / "plan.yaml").read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError) as exc:
+        raise ValueError(f"{ep_dir}: unreadable plan.yaml ({exc})") from exc
+    if not isinstance(plan, dict):
+        raise ValueError(f"{ep_dir}: plan.yaml is not a mapping")
+    return str(plan.get("description") or plan.get("id") or fallback)
 
 
 def _gripper_timeline(ep_dir: Path) -> list[tuple[float, float]]:
@@ -121,6 +127,8 @@ def _resample(ep_dir: Path, fps: int) -> list[tuple[float, list[float]]]:
         return []
     gripper = _gripper_timeline(ep_dir)
     end = samples[-1].t
+    if not math.isfinite(end) or end < 0 or end > MAX_EPISODE_S:
+        raise ValueError(f"{ep_dir}: trajectory ends at t={end}, outside 0..{MAX_EPISODE_S} s")
     n = math.floor(end * fps + 1e-9) + 1
     out: list[tuple[float, list[float]]] = []
     j = 0

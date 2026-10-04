@@ -6,7 +6,7 @@ from spingi.adapters.fake import FakeAdapter
 from spingi.core.human import ScriptedHuman
 from spingi.core.plan import Step, TaskPlan
 from spingi.core.skill import Skill, SkillResult
-from spingi.core.types import Location, Pose2D
+from spingi.core.types import Pose2D
 from spingi.skills import default_registry
 from tests.conftest import world
 
@@ -146,7 +146,7 @@ async def test_fatal_outcome_triggers_estop(make_executor):
         id="p", steps=[Step(skill="boom", params={"text": "x"}), Step(skill="say", params={"text": "never"})]
     )
     result = await executor.run(plan, world())
-    assert result.status == "aborted" and adapter.estopped
+    assert result.status == "estop" and adapter.estopped
     assert log.count("safety.estop") == 1 and log.count("say") == 0
 
 
@@ -167,10 +167,13 @@ async def test_exception_in_skill_becomes_needs_human_not_crash(make_executor):
 
 
 async def test_postcondition_failure_is_recoverable(make_executor):
-    # The robot "arrives" but the location has an impossible tolerance: the postcondition fails
+    # The adapter reports a pose short of the target (as if it had stopped early): the postcondition fails
+    class ShortOfTarget(FakeAdapter):
+        async def get_pose(self):
+            return Pose2D(x=self.pose.x, y=self.pose.y - 1.0, yaw=self.pose.yaw)
+
     state = world()
-    state.locations["shelf_A"] = Location(name="shelf_A", pose=Pose2D(x=0, y=2), tolerance_m=-1)
-    executor, adapter, log = make_executor()
+    executor, adapter, log = make_executor(adapter=ShortOfTarget())
     plan = TaskPlan(
         id="p", steps=[Step(skill="navigate", params={"to": "shelf_A"}, on_failure={"retry": 1, "then": "abort"})]
     )

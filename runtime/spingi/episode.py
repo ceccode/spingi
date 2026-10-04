@@ -40,7 +40,7 @@ class Manifest(BaseModel):
     created_at: str = Field(description="RFC 3339, UTC")
     robot: RobotInfo
     plan_id: str
-    status: str = Field(description="success | aborted | invalid_plan | deadline")
+    status: str = Field(description="success | aborted | invalid_plan | deadline | estop | error")
     steps_completed: int
     steps_total: int
     duration_s: float = Field(description="wall-clock time between run.start and run.end")

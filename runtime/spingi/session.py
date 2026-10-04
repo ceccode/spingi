@@ -6,6 +6,7 @@ Shared by `spingi run` and `spingi bench` so that a benchmark run is exactly a n
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import signal
 import time
 import uuid
@@ -26,7 +27,8 @@ from spingi.skills import default_registry
 
 AdapterKind = Literal["fake", "sim"]
 
-MONITOR_PERIOD_S = 0.1  # robot time between safety checks (in fast simulation the adapter yields every 0.2 s)
+MONITOR_PERIOD_S = 0.1  # robot time between safety checks (fast simulation yields every 0.2 s)
+ESTOP_TIMEOUT_S = 2.0  # wall-clock limit for a stop or e-stop command to return
 
 
 @dataclass
@@ -98,44 +100,68 @@ async def run_session(cfg: SessionConfig, human: HumanGateway, log: EventLog | N
         )
 
     executor = Executor(
-        registry=default_registry(), robot=robot, perceiver=perceiver, human=human, log=log, clock=robot.clock.now
+        registry=default_registry(),
+        robot=robot,
+        perceiver=perceiver,
+        human=human,
+        log=log,
+        clock=robot.clock.now,
+        deadline_clock=robot.clock,
     )
     monitor = SafetyMonitor(robot, log, load_safety_limits(cfg.scene), period_s=MONITOR_PERIOD_S)
 
     loop = asyncio.get_running_loop()
+    await monitor.start()  # armed (speed cap, heartbeat) before the first motion command can be issued
     run_task = asyncio.create_task(executor.run(plan, state))
     estop_task: asyncio.Task | None = None
+    handler_installed = False
 
     def operator_stop() -> None:
-        """Ctrl+C is the operator's stop button: e-stop the robot and end the run."""
-        nonlocal estop_task
+        """Ctrl+C is the operator's stop button: e-stop the robot and end the run. A second Ctrl+C kills the
+        process (the default handler is restored), so a hung e-stop can never trap the operator."""
+        nonlocal estop_task, handler_installed
         if estop_task is None:
-            log.emit("operator.stop", reason="interrupt from the console")
-            estop_task = loop.create_task(robot.estop())
+            estop_task = loop.create_task(asyncio.wait_for(robot.estop(), ESTOP_TIMEOUT_S))
             run_task.cancel()
+            with contextlib.suppress(Exception):
+                log.emit("operator.stop", reason="interrupt from the console")
+        loop.remove_signal_handler(signal.SIGINT)
+        handler_installed = False
+        signal.signal(signal.SIGINT, signal.default_int_handler)
 
-    handler_installed = False
     try:
         loop.add_signal_handler(signal.SIGINT, operator_stop)
         handler_installed = True
     except (NotImplementedError, RuntimeError):  # Windows, or not in the main thread
         pass
 
-    await monitor.start()
     status, steps_completed = "aborted", 0
+    video = None
     try:
         result = await run_task
         status, steps_completed = result.status, result.steps_completed
     except asyncio.CancelledError:
         steps_completed = log.count("step.end")
         log.emit("run.end", status="aborted", steps_completed=steps_completed, reason="operator stop")
+    except Exception as exc:  # noqa: BLE001 - whatever failed, the robot must be stopped and the run recorded
+        status, steps_completed = "error", log.count("step.end")
+        with contextlib.suppress(Exception):
+            log.emit("run.end", status="error", steps_completed=steps_completed, reason=repr(exc))
     finally:
+        # Each cleanup step is independent: one failing must not skip the others, and stopping comes first.
         if estop_task is not None:
-            await estop_task
+            with contextlib.suppress(Exception):
+                await estop_task
+        if status != "success" and not robot.estopped:
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(robot.stop(), ESTOP_TIMEOUT_S)
         if handler_installed:
             loop.remove_signal_handler(signal.SIGINT)
-        await monitor.stop()
-        video = robot.close() if hasattr(robot, "close") else None
+        with contextlib.suppress(Exception):
+            await monitor.stop()
+        if hasattr(robot, "close"):
+            with contextlib.suppress(Exception):
+                video = robot.close()
 
     archive = None
     if cfg.write_episode:

@@ -78,3 +78,13 @@ def test_export_rejects_paths_that_are_not_episode_folders(tmp_path):
     archive.write_bytes(b"PK")
     with pytest.raises(ValueError, match="not episode folders"):
         export_lerobot([archive], tmp_path / "ds")
+
+
+async def test_export_refuses_absurd_trajectories(tmp_path):
+    episodes = await two_episodes(tmp_path)
+    ep = episodes[0]
+    lines = (ep / "trajectory.jsonl").read_text().splitlines()
+    lines[-1] = lines[-1].replace('"t":', '"t":1e12,"x_":', 1)
+    (ep / "trajectory.jsonl").write_text("\n".join(lines) + "\n")
+    with pytest.raises(ValueError, match="outside"):
+        export_lerobot([ep], tmp_path / "ds")

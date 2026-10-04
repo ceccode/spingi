@@ -39,6 +39,7 @@ class EventLog:
         self.sim_clock = sim_clock  # callable -> simulated seconds; adds `sim_t` to every event
         self._path = path
         self._subscribers: list = []
+        self.subscriber_errors: list[str] = []  # observers removed after raising (e.g. a closed stdout pipe)
         if path is not None:
             path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -46,7 +47,12 @@ class EventLog:
         """Calls `fn(event)` for every event emitted from now on (live console, metrics). Must not raise."""
         self._subscribers.append(fn)
 
+    RESERVED = frozenset({"ts", "run_id", "kind"})
+
     def emit(self, kind: str, **data: Any) -> Event:
+        clash = self.RESERVED.intersection(data)
+        if clash:
+            raise ValueError(f"event data cannot use reserved keys: {sorted(clash)}")
         if self.sim_clock is not None and "sim_t" not in data:
             data = {"sim_t": round(float(self.sim_clock()), 3), **data}
         event = Event(ts=self._clock(), run_id=self.run_id, kind=kind, data=data)
@@ -54,8 +60,12 @@ class EventLog:
         if self._path is not None:
             with self._path.open("a", encoding="utf-8") as fh:
                 fh.write(event.to_jsonl() + "\n")
-        for fn in self._subscribers:
-            fn(event)
+        for fn in list(self._subscribers):
+            try:
+                fn(event)
+            except Exception as exc:  # noqa: BLE001 - an observer (console, UI) must never break the run
+                self._subscribers.remove(fn)
+                self.subscriber_errors.append(f"{fn!r}: {exc!r}")
         return event
 
     def count(self, kind: str, **match: Any) -> int:

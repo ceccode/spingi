@@ -20,12 +20,20 @@ async def test_estop_blocks_motion_until_manual_reset():
     assert adapter.pose.x == 1
 
 
-async def test_watchdog_stops_without_heartbeat():
+async def test_watchdog_refuses_any_motion_without_heartbeat():
+    from spingi.adapters.fake import WatchdogExpired
+    from spingi.core.types import Pose3D
+
     t = [0.0]
     adapter = FakeAdapter(watchdog_ms=200, clock=lambda: t[0])
     t[0] = 0.5  # 500 ms without heartbeat
-    await adapter.walk_to(Pose2D(x=5, y=0), max_speed=0.5)
-    assert adapter.stop_called == 1 and adapter.pose.x == 0  # stopped, it did not move
+    with pytest.raises(WatchdogExpired):
+        await adapter.walk_to(Pose2D(x=5, y=0), max_speed=0.5)
+    with pytest.raises(WatchdogExpired):
+        await adapter.move_arm("right", Pose3D(x=0, y=0, z=1), duration_s=1)
+    with pytest.raises(WatchdogExpired):
+        await adapter.gripper("right", "close")
+    assert adapter.pose.x == 0 and adapter.blocked_by == "watchdog"
 
 
 async def test_heartbeat_keeps_robot_alive():

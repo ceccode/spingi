@@ -40,6 +40,10 @@ class JointState(BaseModel):
     temperatures_c: list[float] = []
 
 
+class RobotEstopped(RuntimeError):
+    """Raised by an adapter for any motion command while its e-stop is engaged (until a manual reset)."""
+
+
 @runtime_checkable
 class Clock(Protocol):
     """The robot's time. Wall-clock time on a real robot, simulated time in a simulator run as fast as possible.
@@ -69,6 +73,7 @@ class RobotAdapter(Protocol):
     def set_speed_limit(self, max_speed: float) -> float: ...  # never raises the limit; returns the one in force
 
     clock: Clock  # the robot's time (see Clock)
+    estopped: bool  # True from estop() until a manual reset on the robot; the executor treats it as terminal
 
 
 @runtime_checkable

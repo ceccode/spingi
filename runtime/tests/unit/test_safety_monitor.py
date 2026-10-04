@@ -12,21 +12,27 @@ def make(limits: SafetyLimits, **kw):
     return SafetyMonitor(adapter, log, limits, period_s=0.001), adapter, log
 
 
-async def test_geofence_violation_stops_the_robot_and_logs():
+async def test_leaving_the_geofence_estops_by_default_and_is_recorded_once():
     monitor, adapter, log = make(SafetyLimits(geofence=Geofence(x_min=-1, x_max=1, y_min=-1, y_max=1)))
     adapter.pose = Pose2D(x=5.0, y=0.0)
-    await monitor.check_once()
-    assert monitor.tripped and adapter.stop_called == 1 and not adapter.estopped
-    assert log.count("safety.geofence") == 1
+    for _ in range(5):
+        await monitor.check_once()
+    assert monitor.tripped and adapter.estopped
+    assert log.count("safety.geofence") == 1 and len(monitor.violations) == 1  # latched, not flooding the log
 
 
-async def test_geofence_can_escalate_to_estop():
-    monitor, adapter, log = make(
-        SafetyLimits(geofence=Geofence(x_min=-1, x_max=1, y_min=-1, y_max=1), estop_on_geofence=True)
-    )
+async def test_plain_stop_mode_stops_on_every_check_while_outside():
+    fence = Geofence(x_min=-1, x_max=1, y_min=-1, y_max=1)
+    monitor, adapter, log = make(SafetyLimits(geofence=fence, estop_on_geofence=False))
     adapter.pose = Pose2D(x=5.0, y=0.0)
     await monitor.check_once()
-    assert adapter.estopped
+    await monitor.check_once()
+    assert adapter.stop_called == 2 and not adapter.estopped and log.count("safety.geofence") == 1
+    adapter.pose = Pose2D(x=0.0, y=0.0)
+    await monitor.check_once()
+    adapter.pose = Pose2D(x=5.0, y=0.0)
+    await monitor.check_once()
+    assert log.count("safety.geofence") == 2  # a new occurrence after coming back inside
 
 
 async def test_low_battery_trips():

@@ -14,6 +14,7 @@ Every significant architectural decision is a file in this folder: `NNNN-title.m
 | [0008](0008-terminal-operator-console.md) | Operator console v0 in the terminal | Accepted | M2 |
 | [0009](0009-lerobot-export-derived-format.md) | Episodes stay the source of truth; LeRobot v3.0 is an export | Accepted | M2 |
 | [0010](0010-llm-planner-structured-output.md) | LLM planner with structured output, validated like any plan | Accepted | M3 |
+| [0011](0011-robot-time-and-terminal-estop.md) | Robot time, terminal e-stop and latched safety stops | Accepted | M3+ |
 
 Still open (see the spec, section 13, Q10 and Q11): locomotion, vendor controller or a pre-trained policy in simulation (meanwhile the simulator moves the base kinematically, 0006); runtime on-board or on a laptop. Both are to be decided by M4.
 

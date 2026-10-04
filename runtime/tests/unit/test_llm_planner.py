@@ -82,6 +82,7 @@ def test_request_uses_structured_output_and_fallbacks_without_forced_tools():
     assert "tool_choice" not in req and "thinking" not in req and "tools" not in req
     user = req["messages"][0]["content"]
     assert "Request: Go to workstation B." in user and "dock->workstation_B: aisle_in, aisle_out" in user
+    assert user.index("<world>") < user.index("red_box_01") < user.index("</world>") < user.index("Request:")
     assert "red_box_01, class red_box" in user
 
 
@@ -178,3 +179,13 @@ def test_evaluate_with_a_perfect_fake_planner_passes_all_ten_cases():
 
     report = evaluate(cases, plan_fn, default_registry(), p.model)
     assert report.passed == 10 and report.pass_rate == 1.0
+
+
+def test_missing_credentials_are_reported_without_calling_the_api(monkeypatch):
+    from spingi import cli
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+    called = []
+    result, error = cli._api_call(lambda: called.append(1))
+    assert result is None and error == cli.NO_CREDENTIALS and called == []

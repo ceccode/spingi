@@ -56,6 +56,7 @@ export function parseEpisodeFiles(raw: Record<string, Uint8Array>): Episode {
     return strFromU8(data);
   };
   const manifest = JSON.parse(text("manifest.json")) as Manifest;
+  if (typeof manifest !== "object" || manifest === null) throw new Error("manifest.json is not an object");
   if (manifest.format_version !== SUPPORTED_FORMAT) {
     throw new Error(`episode format ${manifest.format_version} not supported (expected ${SUPPORTED_FORMAT})`);
   }
@@ -68,9 +69,19 @@ export function parseEpisodeFiles(raw: Record<string, Uint8Array>): Episode {
     scene: YAML.parse(text("scene.yaml")) as Scene,
     plan: YAML.parse(text("plan.yaml")) as Plan,
     events: parseJsonl<Event>(text("events.jsonl")),
-    trajectory: files["trajectory.jsonl"] ? parseJsonl<Sample>(text("trajectory.jsonl")) : [],
+    trajectory: files["trajectory.jsonl"] ? checkTrajectory(parseJsonl<Sample>(text("trajectory.jsonl"))) : [],
     frames,
   };
+}
+
+/** A malformed trajectory is refused at load time instead of breaking the replay loop later. */
+export function checkTrajectory(samples: Sample[]): Sample[] {
+  samples.forEach((s, i) => {
+    const r = s?.robot;
+    const ok = Number.isFinite(s?.t) && r && [r.x, r.y, r.yaw].every((v) => Number.isFinite(v));
+    if (!ok) throw new Error(`malformed trajectory line ${i + 1}`);
+  });
+  return samples;
 }
 
 export function loadEpisodeFromZip(
@@ -91,14 +102,41 @@ export function loadEpisodeFromZip(
   return parseEpisodeFiles(files);
 }
 
-/** Only http(s) URLs, absolute or relative to the viewer, may be fetched from `?url=`. */
+/** `?url=` may fetch https URLs anywhere, and http only from the viewer's own origin (local development). */
 export function safeEpisodeUrl(raw: string, base: string): string | null {
   try {
     const url = new URL(raw, base);
-    return url.protocol === "https:" || url.protocol === "http:" ? url.href : null;
+    if (url.protocol === "https:") return url.href;
+    if (url.protocol === "http:" && url.origin === new URL(base).origin) return url.href;
+    return null;
   } catch {
     return null;
   }
+}
+
+/** Reads a response body, giving up as soon as it exceeds `maxBytes` (servers may omit or lie in Content-Length). */
+export async function readCapped(res: Response, maxBytes: number): Promise<ArrayBuffer> {
+  if (!res.body) return res.arrayBuffer();
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel();
+      throw new Error(`episode archive larger than ${mb(maxBytes)} MB, refused`);
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    out.set(c, offset);
+    offset += c.byteLength;
+  }
+  return out.buffer;
 }
 
 function mb(bytes: number): number {

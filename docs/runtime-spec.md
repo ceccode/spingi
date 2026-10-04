@@ -121,32 +121,39 @@ All types are `pydantic.BaseModel` (validation and JSON serialization for free).
 ### 3.1 Base types
 
 ```python
-class Pose2D(BaseModel):
+NAME_PATTERN = r"^[A-Za-z0-9_-]{1,64}$"   # names of locations, objects and classes
+
+class Strict(BaseModel):                  # allow_inf_nan=False: NaN and infinity are rejected
+    ...
+
+class Pose2D(Strict):
     x: float
     y: float
     yaw: float = 0.0    # rad
 
-class Pose3D(BaseModel):
+class Pose3D(Strict):
     x: float; y: float; z: float
     qx: float = 0.0; qy: float = 0.0; qz: float = 0.0; qw: float = 1.0
 
-class Location(BaseModel):
-    name: str           # "shelf_A", "workstation_B"
+class Location(Strict):
+    name: str           # "shelf_A", "workstation_B"; matches NAME_PATTERN
     pose: Pose2D
-    tolerance_m: float = 0.15
+    tolerance_m: float = 0.15           # > 0
 
-class ObjectRef(BaseModel):
-    id: str             # "red_box_01"
-    cls: str            # "red_box"
+class ObjectRef(Strict):
+    id: str             # "red_box_01"; matches NAME_PATTERN
+    cls: str            # "red_box"; matches NAME_PATTERN
     pose: Pose3D | None = None
-    confidence: float = 0.0
+    confidence: float = 0.0             # 0..1
     marker_id: int | None = None   # fiducial marker; AprilTag detection is not implemented yet
 ```
+
+Names travel into the simulator's XML, the planner's prompt and the terminal, so they share one conservative alphabet. Geometry never accepts NaN or infinity: a NaN setpoint is rejected by validation instead of reaching a motor.
 
 ### 3.2 World State
 
 ```python
-class RobotState(BaseModel):
+class RobotState(Strict):
     pose: Pose2D
     battery_pct: float = 100.0
     holding: ObjectRef | None = None
@@ -158,7 +165,7 @@ class WorldState(BaseModel):
     robot: RobotState
     ts: float = 0.0
 
-class StateDelta(BaseModel):           # what a skill proposes; applied by the Executor
+class StateDelta(Strict):              # what a skill proposes; applied by the Executor
     robot_pose: Pose2D | None = None
     robot_mode: RobotMode | None = None
     battery_pct: float | None = None
@@ -217,7 +224,7 @@ The `SkillRegistry` is the whitelist: `default_registry()` registers the seven v
 Rules:
 - `preconditions` and `postconditions` are **pure**: they read the state and do not touch the robot. Testable with a hand-built `WorldState`.
 - `execute` is the only place where `RobotAdapter` and `Perceiver` are called.
-- Every skill has a `default_deadline_s`; a step can override it with `deadline_s`. When it expires the Executor calls `abort()`, stops the robot and the result is `RECOVERABLE`, never silence. An exception raised by a skill stops the robot and becomes `NEEDS_HUMAN`.
+- Every skill has a `default_deadline_s`, in robot time; a step can override it with `deadline_s`. When it expires the Executor calls `abort()`, stops the robot and the result is `RECOVERABLE`, never silence. An exception raised by a skill stops the robot and becomes `NEEDS_HUMAN`, except `RobotEstopped`, which is `FATAL`.
 - A skill does not call another skill. Composition lives in the plan.
 
 #### v0 skills
@@ -272,12 +279,12 @@ class TaskPlan(BaseModel):
     id: str                             # [A-Za-z0-9_-]{1,64}
     description: str = ""
     steps: list[Step]                   # at least one
-    deadline_s: float | None = None     # time budget of the whole run
+    deadline_s: float | None = None     # time budget of the whole run, in robot time
 ```
 
 Rules:
 - The plan is validated **before** it starts (`validate_plan`): every `skill` exists in the registry, every `params` passes the skill's schema, every reference points to a previous step. An invalid plan never moves the robot.
-- A reference has the form `$<step>.<path>`: `<step>` is either a skill name (the nearest previous step with that skill) or a step index; `<path>` walks the step's evidence with field names and `[i]` indexes, for example `$detect.objects[0].id` or `$2.objects[0].id`. A reference is always the **whole value** of a parameter, never a substring: `"text": "$navigate.reached"` is valid, `"text": "arrived at $navigate.reached"` is not (it is a plain string). References are resolved just before the step runs; a reference that cannot be resolved is a step failure handled by `on_failure.then`.
+- A reference has the form `$<step>.<path>`: `<step>` is either a skill name (the nearest previous step with that skill) or a step index; `<path>` walks the step's evidence with dict keys and `[i]` list indexes only (no attributes; a name starting with `_` is refused), for example `$detect.objects[0].id` or `$2.objects[0].id`. A reference is always the **whole value** of a parameter, never a substring: `"text": "$navigate.reached"` is valid, `"text": "arrived at $navigate.reached"` is not (it is a plain string). References are resolved just before the step runs; a reference that cannot be resolved is a step failure handled by `on_failure.then`.
 - The plan is data. It is versioned, diffed, tested.
 - No control flow beyond `on_failure`. No `if`, no loops (v0). If they are needed, the Planner generates a different plan.
 
@@ -292,7 +299,7 @@ class RobotAdapter(Protocol):
 
     # Manipulation (v0: target positions, no torque)
     async def move_arm(self, arm: Literal["left","right"], target: Pose3D, duration_s: float) -> None: ...
-    async def gripper(self, arm: Literal["left","right"], action: Literal["open","close"]) -> None: ...
+    async def gripper(self, arm: Literal["left","right"], action: Literal["open","close"]) -> GripResult: ...
 
     # Sensors
     async def get_camera(self, name: str = "head") -> Frame: ...
@@ -302,6 +309,21 @@ class RobotAdapter(Protocol):
     # Safety
     async def estop(self) -> None: ...        # irreversible until manual reset
     async def heartbeat(self) -> None: ...    # feeds the watchdog; if heartbeats stop, the robot stops
+    def set_speed_limit(self, max_speed: float) -> float: ...  # never raises the limit; returns the one in force
+
+    clock: Clock                              # the robot's time (below)
+    estopped: bool                            # True from estop() until a manual reset; terminal for the Executor
+
+class RobotEstopped(RuntimeError): ...        # raised by any motion command while the e-stop is engaged
+
+class GripResult(BaseModel):                  # what the gripper reports; skills check it instead of trusting the command
+    holding: bool
+    object_id: str | None = None              # which object is held, when the adapter can tell
+    released_at: Pose3D | None = None         # where a released object ended up, if known
+
+class Clock(Protocol):                        # robot time
+    def now(self) -> float: ...
+    async def sleep(self, seconds: float) -> None: ...
 
 class Frame(BaseModel):                       # an image reference, never the bytes
     id: str; ts: float; camera: str = "head"
@@ -309,10 +331,14 @@ class Frame(BaseModel):                       # an image reference, never the by
     data_ref: str | None = None               # path of the image the adapter wrote, if any
 ```
 
+**Robot time** (ADR-0011). Everything that paces itself on the robot uses the adapter's `clock`: the Safety Monitor's period, the watchdog, step deadlines and the plan budget. On a real robot and in `FakeAdapter` it is the wall clock (`WallClock` in `core/clock.py`, monotonic); in `SimAdapter` it is simulated time (`SimClock`), whose `sleep` returns once the simulation has advanced by that much and costs nothing while the robot is idle. A simulation run as fast as possible is therefore checked as often, in robot time, as the real robot would be.
+
 Rules:
-- Every call has a timeout. An adapter that blocks forever is a bug. *(Not enforced inside the adapters yet: the Executor's per-skill deadline bounds every call made from a skill.)*
-- `walk_to` accepts `max_speed` and **cannot** exceed the limit set by the Safety Monitor. The adapter clamps to its `speed_cap`, always, and records `last_applied_speed`.
-- After `estop`, every motion command raises until a manual reset (`reset_estop()`, not reachable from the runtime).
+- Every call has a timeout. An adapter that blocks forever is a bug. *(Not enforced inside the adapters yet: the Executor's per-skill deadline bounds every call made from a skill, in robot time and in wall-clock time; the session bounds `stop` and `estop` at 2 s.)*
+- `walk_to` accepts `max_speed` and **cannot** exceed the limit set by the Safety Monitor through `set_speed_limit`, which can only lower it. The adapter clamps to its `speed_cap`, always, and records `last_applied_speed`.
+- Every motion command (`walk_to`, `move_arm`, `gripper`) checks the e-stop and the watchdog before it acts: an engaged e-stop raises `RobotEstopped`, a stale heartbeat raises `WatchdogExpired`. During a walk and its final turn `SimAdapter` keeps checking the watchdog at every tick and stops the robot when it lapses; its `move_arm` checks both at every tick.
+- After `estop`, `estopped` is `True` and every motion command raises `RobotEstopped` until a manual reset (`reset_estop()`, not reachable from the runtime).
+- A collision stops the robot where it is, while walking and while turning in place (`SimAdapter` records `blocked_by`).
 - `estop` has no preconditions and cannot fail silently. If the SDK does not respond, the adapter logs it as `FATAL` *(applies to `UnitreeG1Adapter`, not implemented yet)*.
 - Three implementations: `FakeAdapter` (in-memory, instantaneous, for unit tests), `SimAdapter` (MuJoCo, kinematic base, ADR-0006), `UnitreeG1Adapter` *(not implemented yet, M4)*.
 
@@ -355,7 +381,7 @@ Rules:
 Every event is a JSONL line. `ts` is wall-clock time; when the adapter has a simulated clock, every event also carries `sim_t` (simulated seconds).
 
 ```json
-{"ts": 1791073605.255797, "run_id": "r-20261004-022645-bc34e6", "kind": "safety.speed_capped", "sim_t": 0.0, "requested": 1.0, "applied": 0.8}
+{"ts": 1791073605.255797, "run_id": "r-20261004-022645-bc34e6", "kind": "safety.speed_capped", "sim_t": 0.0, "limit": 0.8, "applied": 0.8}
 {"ts": 1791073605.256748, "run_id": "r-20261004-022645-bc34e6", "kind": "step.start", "sim_t": 0.0, "index": 1, "skill": "navigate", "params": {"to": "shelf_A"}}
 {"ts": 1791073605.256799, "run_id": "r-20261004-022645-bc34e6", "kind": "skill.start", "sim_t": 0.0, "skill": "navigate", "attempt": 0}
 {"ts": 1791073605.271581, "run_id": "r-20261004-022645-bc34e6", "kind": "skill.end", "sim_t": 4.02, "skill": "navigate", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 0.0147}
@@ -365,10 +391,12 @@ Event kinds (v0):
 - run and plan: `run.start`, `run.end`, `plan.validated`, `plan.invalid`;
 - steps: `step.start`, `step.end`, `step.retry`, `step.skip`, `step.abort`;
 - skills: `skill.start`, `skill.end`, `skill.precondition_failed`, `skill.postcondition_failed`, `skill.deadline`, `skill.exception`, `state.delta`, `perception.result`, `say`, `adapter.call`;
-- safety: `safety.armed`, `safety.disarmed`, `safety.speed_capped`, `safety.geofence`, `safety.battery_low`, `safety.estop` (a `FATAL` outcome);
+- safety: `safety.armed`, `safety.disarmed`, `safety.speed_capped` (`limit` from the scene, `applied` the cap now in force on the adapter), `safety.geofence`, `safety.battery_low`, `safety.estop` (a `FATAL` outcome), `safety.monitor_error` (a check raised; the robot was e-stopped);
 - operator: `human.request`, `human.response`, `human.timeout`, `operator.stop`.
 
 `adapter.error` *(not implemented yet)*.
+
+Rules of the `EventLog`: `ts`, `run_id` and `kind` are reserved and an event whose data uses them is rejected (`ValueError`). Subscribers (the console, a future UI) are observers: one that raises is removed, its error is recorded in `subscriber_errors`, and the run goes on.
 
 Besides the events, the episode holds the camera frames taken by skills and the robot and object trajectory (`docs/episode-format.md`). Periodic `WorldState` snapshots *(not implemented yet)*: the state can be rebuilt from the scene and the `state.delta` events. A recorded run is a reproducible **episode** and, in the longer term, a dataset sample for imitation learning.
 
@@ -381,42 +409,52 @@ errors = validate_plan(plan, registry)
 if errors → plan.invalid, run.end(status=invalid_plan); nothing moves
 
 for index, step in plan.steps:
-    if plan.deadline_s and elapsed > plan.deadline_s → finish(deadline)
+    if robot.estopped → finish(estop)
+    if plan.deadline_s and elapsed (robot time) > plan.deadline_s → finish(deadline)
     params = resolve_references(step.params, outputs) → validate against skill.Params
         (failure → escalate(step, reason) according to on_failure.then)
 
-    attempt = 0
+    attempt = 0; operator_retries = 0
     loop:
+        yield to the event loop                          # signal handlers and the safety monitor run here
         check = skill.preconditions(params, state)
         if not check.ok:
-            result = RECOVERABLE("precondition: " + check.reason)
+            result = NEEDS_HUMAN("precondition: " + check.reason)   # no retries: nothing changed since the check
         else:
-            result = await run_with_deadline(skill.execute, ctx, step.deadline_s or skill.default_deadline_s)
-                # deadline  → skill.abort(), robot.stop(), RECOVERABLE
-                # exception → robot.stop(), NEEDS_HUMAN
+            deadline = min(step.deadline_s or skill.default_deadline_s, plan budget left)
+            result = await run_with_deadline(skill.execute, ctx, deadline)
+                # deadline (robot time, or the same amount of wall-clock time) → skill.abort(), robot.stop(), RECOVERABLE
+                # RobotEstopped → FATAL
+                # other exception → robot.stop(), NEEDS_HUMAN
+            if robot.estopped → finish(estop)
+            if the plan budget cut this deadline and it expired → finish(deadline)
             if result.outcome == SUCCESS:
                 candidate = apply_delta(state, result.delta)
                 if skill.postconditions(params, candidate).ok:
                     state = candidate; outputs.append(result.evidence); next step
                 result = RECOVERABLE("postcondition: " + reason)
-        if result.outcome == FATAL: estop(); finish(aborted)
+        if result.outcome == FATAL: estop(); finish(estop)
         if result.outcome == RECOVERABLE and attempt < step.on_failure.retry:
             attempt += 1; continue
         decision = escalate(step, result.reason)        # needs_human / abort / skip according to on_failure.then
-        retry → attempt = 0; continue
+        retry → operator_retries += 1; if operator_retries > MAX_OPERATOR_RETRIES → finish(aborted)
+                attempt = 0; continue
         skip  → outputs.append({}); next step
         abort → finish(aborted)
 finish(success)
 ```
 
 Rules:
-- **One skill at a time.** No parallelism between skills in v0. The parallelism that is needed (safety monitor, console) runs in separate `asyncio` tasks that do not move the robot.
-- **Precondition idempotence**: a retry re-checks the preconditions. If the object has disappeared in the meantime, we do not retry blindly. A failed precondition counts as a `RECOVERABLE` attempt and consumes the step's retry budget.
+- **One skill at a time.** No parallelism between skills in v0. The parallelism that is needed (safety monitor, console) runs in separate `asyncio` tasks that do not move the robot. The Executor yields to the event loop before every attempt.
+- **Precondition idempotence**: every attempt re-checks the preconditions. If the object has disappeared in the meantime, we do not retry blindly. A failed precondition goes straight to the step's escalation policy (`on_failure.then`) without consuming retries, because nothing has changed since the check; an operator's `retry` checks it again.
 - **Retries** apply to `RECOVERABLE` only. `NEEDS_HUMAN` goes straight to escalation.
-- **Escalation** follows `on_failure.then`. `skip` and `abort` act without asking (`step.skip`, `step.abort` events). `needs_human` stops the robot, emits `human.request` and waits for the operator with a timeout (300 s by default); no answer means `abort` (`human.timeout`). The operator's answer is one of `retry`, `skip`, `abort`; no other free-form input. `retry` resets the step's retry budget.
-- **Time budget per run**: a plan may declare a total `deadline_s` in addition to the per-skill deadline. It is checked before each step on the Executor's clock (wall-clock, monotonic); a step in progress is not interrupted. When it is exhausted the run ends with status `deadline`.
-- **Run status**: `success`, `aborted`, `invalid_plan` or `deadline`, in the `run.end` event and in `RunResult`. Every run that does not succeed ends with `robot.stop()`.
-- **Operator stop**: Ctrl+C during `spingi run` emits `operator.stop`, e-stops the robot, cancels the run (`run.end` with status `aborted`, reason `operator stop`) and still writes the episode.
+- **Escalation** follows `on_failure.then`. `skip` and `abort` act without asking (`step.skip`, `step.abort` events). `needs_human` stops the robot, emits `human.request` and waits for the operator with a timeout (300 s by default); no answer means `abort` (`human.timeout`). The operator's answer is one of `retry`, `skip`, `abort`; no other free-form input. `retry` resets the step's retry budget, at most `MAX_OPERATOR_RETRIES` = 3 times per step; the fourth `retry` aborts the run.
+- **Deadlines run on robot time.** A step's deadline races the robot clock (simulated time in fast simulation) and the same amount of wall-clock time, a guard against a skill or adapter that hangs without the robot's clock moving; the first to expire ends the attempt.
+- **Time budget per run**: a plan may declare a total `deadline_s` in addition to the per-skill deadline. It is robot time (the session gives the Executor the adapter's clock). It is checked before each step and also enforced inside a step: the step's deadline is cut to what is left of the budget, and when that cut deadline expires the run ends with status `deadline`.
+- **E-stop is terminal** (ADR-0011). The Executor checks `robot.estopped` before each step and after each skill; an e-stopped robot (by the Safety Monitor, the operator or the adapter) ends the run with status `estop` and no retry or operator request is offered. A `RobotEstopped` raised inside a skill is `FATAL`, and a `FATAL` outcome e-stops the robot (act first, then `safety.estop`) and ends the run with status `estop`.
+- **Run status**: `success`, `aborted`, `invalid_plan`, `deadline`, `estop` or `error`, in the `run.end` event and in `RunResult`. `error` is set by the session when the run itself raised. Every run that does not succeed ends with `robot.stop()`, unless the robot is already e-stopped.
+- **Session** (`session.py`): the Safety Monitor is armed (heartbeat, speed cap) before the Executor starts. Any exception from the run ends it with status `error`; then the robot is stopped (2 s timeout), the SIGINT handler removed, the monitor stopped and the adapter closed, each cleanup step independent of the others, and the episode is still written.
+- **Operator stop**: Ctrl+C during `spingi run` emits `operator.stop`, e-stops the robot (2 s timeout), cancels the run (`run.end` with status `aborted`, reason `operator stop`) and still writes the episode. The first Ctrl+C restores the default handler, so a second Ctrl+C kills the process even if the e-stop hangs.
 
 ---
 
@@ -425,15 +463,17 @@ Rules:
 | Layer | Where it lives | What it does | Independent of |
 |-------|----------------|--------------|----------------|
 | S0 | Hardware | Physical e-stop button / vendor remote control | all software |
-| S1 | Adapter | Watchdog: if no `heartbeat` arrives within `watchdog_ms`, `stop()`. Implemented in `FakeAdapter` and `SimAdapter` (checked while walking); the heartbeat is sent by the Safety Monitor at every check. Off unless `watchdog_ms` is set: `spingi run` does not set it yet | Executor, Planner |
-| S2 | Safety Monitor (separate `asyncio` task) | Geofence (axis-aligned working rectangle) → `stop()`, or `estop()` with `estop_on_geofence`; battery below `min_battery_pct` → `stop()`; speed cap written to the adapter's `speed_cap` when the monitor starts. Checks every 50 ms, or at every cooperative yield in fast simulation. Limits come from the `safety:` section of the scene. Person too close (v1, with depth) *(not implemented yet)* | Executor, Skills |
+| S1 | Adapter | Watchdog on robot time: every motion command refuses to start (`WatchdogExpired`) when the last `heartbeat` is older than `watchdog_ms`, and `SimAdapter` stops a walk or a turn in progress when it lapses. The heartbeat is sent by the Safety Monitor at every check. Enabled in every session (`spingi run`, `bench`, `replay`) at 500 ms | Executor, Planner |
+| S2 | Safety Monitor (separate `asyncio` task) | Geofence (axis-aligned working rectangle) → `estop()` by default (latched, needs a manual reset), or a plain `stop()` at every check with `estop_on_geofence: false`; battery below `min_battery_pct` → `stop()`; speed cap applied with `set_speed_limit` when the monitor starts. Each violation is recorded once per occurrence, after the robot has been stopped (act first, then log). A check that raises e-stops the robot and emits `safety.monitor_error`. Checks every 0.1 s of robot time in a session (`period_s` must be > 0, a zero period would busy-loop); in fast simulation the adapter yields every 0.2 s of simulated time, so that is the effective period there. Limits come from the `safety:` section of the scene. Person too close (v1, with depth) *(not implemented yet)* | Executor, Skills |
 | S3 | Skill | Preconditions and postconditions; a `FATAL` outcome makes the Executor e-stop the robot | Planner |
 | S4 | Planner | Skill whitelist, parameter schema, no access to low-level primitives | – |
-| S5 | Operator | Terminal console, Ctrl+C e-stops the robot (`--operator console`). `spingi run` defaults to `--operator auto`, which answers every request with a fixed policy; `spingi plan --run` defaults to the console | – |
+| S5 | Operator | Terminal console, Ctrl+C e-stops the robot (`--operator console`). `spingi run` defaults to `--operator auto`, which answers every request with a fixed policy; `spingi plan --run` asks for confirmation, then defaults to the console | – |
 
 Two operating rules:
 1. **The LLM is not a safety layer.** It is never asked "is this safe?". The limits are in the runtime.
-2. **Every layer has a test that proves it works when the others are broken.** E.g.: a `FakeAdapter` with `watchdog_ms=200` that receives no heartbeat must `stop()` instead of walking (`tests/unit/test_fake_adapter.py`); the geofence stops the robot even though the plan asks for a target outside it (`tests/sim/test_scenarios.py`).
+2. **Every layer has a test that proves it works when the others are broken.** E.g.: a `FakeAdapter` with `watchdog_ms=200` that receives no heartbeat refuses to walk or move the arm (`tests/unit/test_fake_adapter.py`); the watchdog counts simulated time and the monitor's heartbeats keep a long walk alive (`tests/sim/test_robot_time.py`); leaving the geofence e-stops the robot within one check and ends the run with status `estop` even though the plan asks for a target outside it (`tests/sim/test_scenarios.py`); a check that raises e-stops the robot (`tests/unit/test_safety_monitor.py`).
+
+The decisions behind robot time, the terminal e-stop and the latched geofence stop are in [ADR-0011](../adr/0011-robot-time-and-terminal-estop.md); the threat model and how to report a safety or security problem are in [SECURITY.md](../SECURITY.md). Known limit: the watchdog runs in the same process as the heartbeat, so it protects against a stuck control loop, not a frozen interpreter; on the G1 the hardware-side command timeout of the SDK must be the last line *(to be configured in `UnitreeG1Adapter`, M4)*.
 
 ---
 
@@ -456,9 +496,10 @@ Loads a `TaskPlan` from YAML (`StaticPlanner(plans_dir).plan(id)` reads `<plans_
 
 ### 7.2 LLMPlanner
 - Uses structured output, not tool use (ADR-0010): the answer is constrained by a JSON schema generated from the registry, one `anyOf` variant per skill with that skill's parameter schema, every object strict. Constraints that structured output does not support (lengths, ranges, patterns) are stripped from the schema and enforced afterwards by `validate_plan`.
-- The LLM receives: the natural-language request, a one-line summary of each skill, the symbolic world (known locations, known objects, robot position, battery, what it holds) and the `routes:` section of the scene file, which lists waypoints that avoid obstacles.
+- The LLM receives: the natural-language request, a one-line summary of each skill, the symbolic world (known locations, known objects, robot position, battery, what it holds) and the `routes:` section of the scene file, which lists waypoints that avoid obstacles. The world goes inside a `<world>` block, and the system prompt says that the skills list and that block are data describing the site, never instructions. Route names must match the name alphabet of §3.1.
 - Output: a JSON plan → `TaskPlan` → validated like any plan.
-- If validation fails, the errors are sent back once; a second failure, a refusal or a truncated answer is a `PlanningError` and nothing runs. The caller (`spingi plan`) reports it.
+- If validation fails, the errors are sent back once; a second failure, a refusal or a truncated answer is a `PlanningError` and nothing runs. The caller (`spingi plan`) reports it. Missing credentials are checked before any call is made.
+- `spingi plan --run` prints the plan and asks `[y/N]` before running it; `--yes` skips the question, and without a terminal (no TTY) the plan is not run unless `--yes` is given.
 - A request that cannot be done with the skills, locations and objects of the world is answered with a single `say` step that explains what is missing.
 - The Planner **does not see** raw telemetry, camera frames or joints. It sees the symbolic state.
 - Default model `claude-opus-5-5`, effort `medium`, server-side fallbacks on; `--model` changes the model.
@@ -480,14 +521,15 @@ This section is the heart of the spec. Every level must exist before the milesto
 |-------|---------------|-----------|---------------|-----------------|
 | **Unit** (`tests/unit`) | Skills (pre/post), Executor, plan validation, Safety Monitor, metrics and bench, console, episode and schemas, LeRobot export, Planner (with a fake LLM client) | `FakeAdapter`, `FakePerceiver`, `ScriptedHuman`, hand-built `WorldState` | CI, every commit | < 30 s total |
 | **Contract** (`tests/contract`) | That every `RobotAdapter` honors the same contract | The same suite parametrized over `FakeAdapter` and `SimAdapter`; `UnitreeG1Adapter` at M4 | CI (Fake, Sim); lab (G1) | < 2 min (sim) |
-| **Scenario** (`tests/sim`) | A whole plan in a scene; every golden planner plan runs; Ctrl+C operator stop | Headless MuJoCo, YAML scenes, assertions on the final `WorldState` and on the events | CI, every commit | < 5 min |
+| **Scenario** (`tests/sim`) | A whole plan in a scene; every golden planner plan runs; Ctrl+C operator stop; robot time (watchdog, monitor, plan deadline) | Headless MuJoCo, YAML scenes, assertions on the final `WorldState` and on the events | CI, every commit | < 5 min |
 | **Golden episode** (`tests/golden`) | That a change does not alter behavior on recorded runs | Three recorded episodes run again with their plan, scene, noise, seed and operator answers; steps, outcomes, retries, operator requests, safety events, final status and final position are compared (`spingi replay`) | CI, every commit | < 1 min |
 | **Architecture** (`tests/test_architecture.py`) | Import rules of section 11 | AST scan of `spingi/core` | CI, every commit | < 1 s |
+| **Licensing** (`tests/test_licensing.py`) | That the package's `LICENSE` and `NOTICE` copies equal the repository's, and that the viewer serves the G1 license | file comparison | CI, every commit | < 1 s |
 | **Robustness** | Retry and escalation under noise | `spingi bench` with `SimPerceiver` at 20–40 % false negatives and position noise. Injected adapter latency *(not implemented yet in bench)* | on demand (`make bench`); CI nightly *(not set up yet)* | < 20 min |
 | **Sim2real gate** | That a skill may move to the robot | Numerical metrics (see 8.4), `spingi bench --gate` | manual, per skill | – |
 | **Lab** | Skills on the G1 in a fenced area | Checklist + mandatory recording | lab (M4) | – |
 
-As of 2026-10-04 the runtime suite has 138 tests and runs in about 11 seconds; rendering tests skip themselves without an OpenGL context. No test calls the network.
+As of 2026-10-04 the runtime suite has 176 tests and runs in about 12 seconds; rendering tests skip themselves without an OpenGL context. No test calls the network. CI is GitHub Actions (`.github/workflows/ci.yml`), on every push to `main` and every pull request: for the runtime `ruff check`, `ruff format --check` and the tests, with MuJoCo rendering through EGL; for the viewer `npm ci`, an audit of the production dependencies, the tests and the build. Actions are pinned by commit SHA and the workflow has read-only permissions.
 
 ### 8.2 Concrete examples
 
@@ -500,14 +542,14 @@ def test_pick_requires_known_pose_within_reach_and_free_hand():
     assert not skill.preconditions(PickParams(object_id="red_box_01"), no_pose).ok
 
 # Unit: executor escalation
-async def test_precondition_failure_retries_then_escalates(make_executor):
+async def test_precondition_failure_escalates_without_useless_retries(make_executor):
     human = ScriptedHuman(default="abort")
     executor, adapter, log = make_executor(human=human)
     plan = TaskPlan(id="p", steps=[Step(skill="navigate", params={"to": "nowhere"},
                                         on_failure={"retry": 2, "then": "needs_human"})])
     result = await executor.run(plan, world())
     assert result.status == "aborted"
-    assert log.count("skill.precondition_failed") == 3     # initial attempt + 2 retries
+    assert log.count("skill.precondition_failed") == 1 and log.count("step.retry") == 0
     assert log.count("human.request") == 1
 
 # Contract: every adapter clamps the speed (FakeAdapter and SimAdapter, built with speed_cap=0.6)
@@ -524,12 +566,22 @@ async def test_material_runner_delivers_the_box_in_the_warehouse(tmp_path):
     assert 8.1 < box.x < 8.6 and 6.7 < box.y < 7.3     # on the workstation table
 
 # Safety: watchdog
-async def test_watchdog_stops_without_heartbeat():
+async def test_watchdog_refuses_any_motion_without_heartbeat():
     t = [0.0]
     adapter = FakeAdapter(watchdog_ms=200, clock=lambda: t[0])
     t[0] = 0.5                                          # 500 ms without heartbeat
-    await adapter.walk_to(Pose2D(x=5, y=0), max_speed=0.5)
-    assert adapter.stop_called == 1 and adapter.pose.x == 0
+    with pytest.raises(WatchdogExpired):
+        await adapter.walk_to(Pose2D(x=5, y=0), max_speed=0.5)
+    with pytest.raises(WatchdogExpired):
+        await adapter.move_arm("right", Pose3D(x=0, y=0, z=1), duration_s=1)
+
+# Safety: geofence on robot time, terminal e-stop
+async def test_leaving_the_geofence_estops_and_ends_the_run():
+    ...                                                 # monitor armed, plan asks for a target outside the fence
+    assert result.status == "estop" and adapter.estopped
+    assert monitor.tripped and log.count("safety.geofence") == 1
+    assert adapter.pose.x < 4.3                         # stopped within one check (0.2 s of robot time) past x = 4
+    assert human.requests == [] and log.count("step.retry") == 0
 ```
 
 ### 8.3 Simulation scenes
@@ -561,6 +613,8 @@ routes:
 Perception noise is not part of the scene: it is a run setting (`--noise`, `--sigma`, `--seed`) recorded in the episode manifest so that `spingi replay` can repeat the run.
 
 Rules: one scene per use case (`lab_small`, `lab_blocked`, `lab_geofence`, `warehouse_small` today), several noise settings per scene. Scenes are test data, versioned with the tests.
+
+Validation: names of locations, objects, classes and routes (both ends and every waypoint) match `^[A-Za-z0-9_-]{1,64}$`, and every number is finite (no NaN or infinity in poses, the geofence or the limits). Names and numbers are checked when the world is loaded and again when `SimAdapter` generates the MJCF (location and object names, positions, obstacle and object sizes, which must also be positive), so nothing unchecked reaches the simulator's XML. The G1 model directory is resolved from the location of the `spingi` package, never from the working directory; the generated MJCF goes next to it under a unique name (concurrent runs do not collide) and is deleted once MuJoCo has loaded it.
 
 ### 8.4 Sim2real gate (per skill)
 
@@ -597,7 +651,7 @@ They are computed from the event log (`spingi.metrics`). No metric requires extr
 - **Recording**: the run folder is the episode (`docs/episode-format.md`): manifest, copies of plan and scene, events, the trajectory sampled at 10 Hz of simulated time, the camera frames taken by `detect` and `inspect` in `frames/`, and with `--record` a third-person video `run.mp4`. `--zip` packs it.
 - **Replay**: `spingi replay <episode_dir>...` runs the episode again with the plan, scene, adapter, noise, seed and operator answers it recorded, and compares the behaviour (section 8.1). The Viewer replays an episode visually in the browser.
 - **Dashboard v0**: a page that reads the logs and shows the metrics of §8.5 *(not implemented yet)*. Today `spingi bench` writes the metrics to `runs/bench-<id>/report.json` and `runs.jsonl`.
-- **Operator console v0** (ADR-0008): in the terminal, with `--operator console`. One line per meaningful event, a prompt with the offered answers when there is a `human.request` (`retry / skip / abort`, or `continue / abort` for `wait_for_human`), Ctrl+C as the STOP button.
+- **Operator console v0** (ADR-0008): in the terminal, with `--operator console`. One line per meaningful event, a prompt with the offered answers when there is a `human.request` (`retry / skip / abort`, or `continue / abort` for `wait_for_human`), Ctrl+C as the STOP button. The answer is read in a daemon thread, so an unanswered prompt never keeps the process alive; a closed stdin answers `abort`. Control characters are stripped from everything the console prints (plan text, reasons, model output), so nothing can forge or erase lines on the screen that supervises the robot.
 
 ---
 
@@ -607,7 +661,7 @@ They are computed from the event log (`spingi.metrics`). No metric requires extr
 |--------|-----------|-----------------------|
 | Python 3.11+ | Unitree SDK, MuJoCo, ML ecosystem. | C++ in the core: premature. |
 | `pydantic` v2 | Validation and JSON for free on every contract. | plain dataclasses: no validation. |
-| `asyncio` | Concurrent safety monitor and console without threads. | threads: harder to test. |
+| `asyncio` | Concurrent safety monitor and console without threads (the one exception is the console's blocking `input()`, read in a daemon thread). | threads: harder to test. |
 | MuJoCo ≥ 3.2 (`sim` extra; 3.14 in `uv.lock`), G1 model from mujoco_menagerie | Fast, headless, runs in CI without a GPU, G1 model available. | Isaac Sim as the only sim: heavy, needs a GPU, not in CI. |
 | Isaac Lab (optional) | Only for RL training of policies (locomotion, grasp), outside the runtime. | – |
 | `unitree_sdk2_python` | Official SDK for the G1 *(not used yet, M4)*. | ROS2 driver: heavy dependency. |
@@ -616,7 +670,7 @@ They are computed from the event log (`spingi.metrics`). No metric requires extr
 | `pandas` + `pyarrow` (`export` extra) | Parquet files of the LeRobot v3.0 export (ADR-0009). | – |
 | `imageio` + `imageio-ffmpeg` (`sim` extra) | Head-camera PNG frames and the run video. | – |
 | `trimesh` + `scipy` (`sim` extra) | Only for `scripts/export_g1_glb.py`, which exports the G1 for the Viewer. | – |
-| `pytest` + `pytest-asyncio`, `ruff` (`dev` extra) | Standard. | – |
+| `pytest` + `pytest-asyncio`, `ruff` (`dev` extra) | Standard. Ruff rules `E`, `F`, `I`, `B`, `UP` plus `S` (bandit), `ASYNC`, `SIM`, `RUF`, `PIE`, `BLE`: every blind `except` says why. | – |
 | YAML for plans and scenes | Readable, diffable, not Turing-complete. | Custom DSL: over-engineering. |
 
 Core dependencies: `pydantic`, `pyyaml`. Everything else is in the adapters and in optional extras (`dev`, `sim`, `export`, `llm`).
@@ -627,11 +681,13 @@ Core dependencies: `pydantic`, `pyyaml`. Everything else is in the adapters and 
 
 ```
 .
+├── .github/workflows/ci.yml   # CI: runtime and viewer
+├── SECURITY.md                # threat model, how to report
 ├── docs/                      # this spec, episode format, JSON schemas (docs/schemas/)
 ├── adr/                       # architecture decisions
 ├── runtime/                   # project 1: Physical Agent Runtime
 │   ├── spingi/
-│   │   ├── core/              # types, ports, skill + registry, plan, executor, events, ScriptedHuman
+│   │   ├── core/              # types, ports, clock (WallClock), skill + registry, plan, executor, events, ScriptedHuman
 │   │   ├── skills/            # one skill per file
 │   │   ├── planner/           # StaticPlanner, LLMPlanner, plan schema, golden-case evaluation
 │   │   ├── safety/            # SafetyMonitor, SafetyLimits, Geofence
@@ -645,7 +701,8 @@ Core dependencies: `pydantic`, `pyyaml`. Everything else is in the adapters and 
 │   ├── sim/models/            # G1 model (mujoco_menagerie)
 │   ├── scripts/               # gen_schemas, record_golden, export_g1_glb
 │   ├── runs/                  # output (gitignored)
-│   ├── tests/                 # unit · contract · sim · golden · test_architecture.py
+│   ├── tests/                 # unit · contract · sim · golden · test_architecture.py · test_licensing.py
+│   ├── LICENSE, NOTICE        # copies of the root files shipped in the wheel, kept equal by a test
 │   └── pyproject.toml
 └── viewer/                    # project 2: web replayer for episodes (see episode-format.md)
 ```
@@ -667,7 +724,7 @@ Rule: `spingi/core` imports nothing from `adapters`, `skills`, `planner`, `perce
 
 M0–M3 do not require the robot. The M3 planner evaluation calls the Claude API and is run on demand, not in CI.
 
-**Status as of 2026-10-04: M0 to M3 complete.** 138 runtime tests green in about 11 seconds. Two clarifications that emerged during implementation are normative and now part of the contracts: a `$step.field` reference is always the whole value of a parameter (§3.4); `on_failure.then: needs_human` stops the robot before asking, and the operator's `retry` answer resets the step's retry budget (§4).
+**Status as of 2026-10-04: M0 to M3 complete.** 176 runtime tests green in about 12 seconds. Clarifications that emerged during implementation are normative and now part of the contracts: a `$step.field` reference is always the whole value of a parameter (§3.4); `on_failure.then: needs_human` stops the robot before asking, and the operator's `retry` answer resets the step's retry budget, at most three times per step (§4). A review before M4 added robot time, the terminal e-stop and latched safety stops (ADR-0011, §3.5, §4, §5).
 
 ---
 
@@ -686,6 +743,7 @@ M0–M3 do not require the robot. The M3 planner evaluation calls the Claude API
 | Q9 | Planner output: tool use or structured output? | Decided: structured output, validated like any plan | [0010](../adr/0010-llm-planner-structured-output.md) | M3 |
 | Q10 | Locomotion: vendor controller or our own policy? In simulation, a pre-trained policy or the kinematic base? ("ADR-002" in the first draft of this spec, cited by ADR-0006) | Open. Preferred: vendor controller on the robot; RL policy only if the vendor's is not enough. The simulator moves the base kinematically meanwhile (0006) | – | M4 |
 | Q11 | Where the runtime runs ("ADR-006" in the first draft): on-board (Orin) or laptop + network? | Open. Preferred: laptop in the lab; on-board for the pilot | – | M4 |
+| Q12 | Which clock do the safety layers use in a simulation faster than real time? What does an e-stop do to a run? | Decided: the robot's clock (simulated time in MuJoCo) for monitor, watchdog and deadlines; an e-stop ends the run with status `estop`, no retries | [0011](../adr/0011-robot-time-and-terminal-estop.md) | M3+ |
 
 ADR format: title, context (5 lines), decision (3 lines), consequences (5 lines). One file per ADR in `adr/`, starting from `adr/template.md`.
 

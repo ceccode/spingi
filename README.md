@@ -76,7 +76,7 @@ uv run spingi export lerobot runs/r-*/ --out runs/dataset
 
 ### 4. Ask in plain language
 
-With an Anthropic API key in `runtime/.env` (copy `runtime/.env.example`; the file is ignored by git), Claude turns a request into a plan that is validated against the skills before anything moves, and can run it straight away under your supervision:
+With an Anthropic API key in `runtime/.env` (copy `runtime/.env.example`; the file is ignored by git), Claude turns a request into a plan that is validated against the skills before anything moves, and can run it straight away under your supervision once you confirm it (`--yes` skips the question):
 
 ```bash
 uv run spingi plan "Bring the red box from shelf A to workstation B" --scene sim/scenes/warehouse_small.yaml --run --adapter sim
@@ -113,11 +113,13 @@ Skills available today: `navigate`, `detect`, `pick`, `place`, `inspect`, `wait_
 request ──► LLMPlanner ──► plan.yaml ──► Executor ──► skills ──► RobotAdapter ──► FakeAdapter | SimAdapter (MuJoCo) | real robot (M4)
                                              │             │
                                              │             └── Perceiver (ground truth in simulation; markers and detector later)
-                                             ├── SafetyMonitor: independent task, geofence, speed cap, battery, watchdog
+                                             ├── SafetyMonitor: independent task on robot time, geofence (e-stop), speed cap, battery, watchdog
                                              └── EventLog ──► console · metrics · episode (events, trajectory, frames) ──► Viewer, LeRobot
 ```
 
 Eight principles drive the design, written down in [docs/runtime-spec.md](docs/runtime-spec.md) and in the [ADRs](adr/README.md). The two that matter most: a language model may propose a plan but never controls the robot directly, and every component is testable without hardware.
+
+Safety layers run on the robot's own clock (simulated time in MuJoCo), so a simulation faster than real time is checked as often as the real robot would be. An e-stop ends the run (status `estop`), leaving the geofence e-stops the robot, and any failure inside the runtime stops the robot and still records the episode ([ADR-0011](adr/0011-robot-time-and-terminal-estop.md)).
 
 ## Documentation
 
@@ -125,9 +127,10 @@ Eight principles drive the design, written down in [docs/runtime-spec.md](docs/r
 |----------|---------|
 | [docs/runtime-spec.md](docs/runtime-spec.md) | Principles, architecture, contracts, execution model, safety layers, testing strategy, milestones |
 | [docs/episode-format.md](docs/episode-format.md) | The episode folder, manifest, trajectory, frames, compatibility rules |
-| [adr/](adr/README.md) | Architecture decisions 0001–0010 and the ones still open |
+| [adr/](adr/README.md) | Architecture decisions 0001–0011 and the ones still open |
 | [runtime/README.md](runtime/README.md) | CLI reference, scenes, plans, skills, episodes, tests, how to add a skill or an adapter |
 | [viewer/README.md](viewer/README.md) | Running, loading episodes, deploying |
+| [SECURITY.md](SECURITY.md) | Threat model and how to report a security or safety problem |
 
 ## Development
 
@@ -135,7 +138,7 @@ Eight principles drive the design, written down in [docs/runtime-spec.md](docs/r
 make test
 ```
 
-runs the runtime suite (unit, adapter contract, MuJoCo scenarios, golden episodes, architecture rules): 138 tests in about 11 seconds. The viewer has `npm test` (14 tests) and `npm run build`. CI (`.gitlab-ci.yml`) runs the runtime lint and tests on every commit without a GPU; the viewer is not in CI yet.
+runs the runtime suite (unit, adapter contract, MuJoCo scenarios, golden episodes, architecture and licensing rules): 176 tests in about 12 seconds. The viewer has `npm test` (21 tests) and `npm run build`. CI is GitHub Actions ([.github/workflows/ci.yml](.github/workflows/ci.yml)), on every push to `main` and every pull request, without a GPU: runtime lint, format check and tests (with offscreen MuJoCo rendering through EGL), viewer install, audit of the production dependencies, tests and build.
 
 Conventions: every architectural decision is an ADR, changed by writing a new one; the runtime never imports the viewer and the viewer never imports the runtime, they only share the episode format; `spingi.core` imports nothing from adapters, skills, planner or perception, and a test enforces it.
 
@@ -147,4 +150,4 @@ Conventions: every architectural decision is an ADR, changed by writing a new on
 
 ## License
 
-Apache License 2.0, see [LICENSE](LICENSE). The Unitree G1 model in `runtime/sim/models/unitree_g1` is redistributed under its own BSD 3-Clause license, see [NOTICE](NOTICE).
+Apache License 2.0, see [LICENSE](LICENSE). The Unitree G1 model in `runtime/sim/models/unitree_g1`, and the viewer's `g1.glb` derived from it, are redistributed under their own BSD 3-Clause license, see [NOTICE](NOTICE); the viewer serves the license text at `/NOTICE.txt`, and the Python package ships copies of `LICENSE` and `NOTICE`.

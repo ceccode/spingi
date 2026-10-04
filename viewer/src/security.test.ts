@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { strToU8, zipSync } from "fflate";
 import { describeEvent, loadEpisodeFromZip, manifestRows, MAX_UNZIPPED_BYTES, safeEpisodeUrl, type Episode } from "./episode";
@@ -7,7 +7,9 @@ const EVIL = '<img src=x onerror="alert(1)">';
 
 describe("untrusted episode content", () => {
   it("never reaches the page through innerHTML", () => {
-    for (const file of ["src/main.ts", "src/world.ts"]) {
+    const sources = readdirSync("src").filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts"));
+    expect(sources.length).toBeGreaterThanOrEqual(4);
+    for (const file of sources.map((f) => `src/${f}`)) {
       const source = readFileSync(file, "utf8");
       expect(source, file).not.toMatch(/innerHTML|outerHTML|insertAdjacentHTML|document\.write/);
     }
@@ -45,5 +47,23 @@ describe("episode loading limits", () => {
     expect(safeEpisodeUrl("javascript:alert(1)", base)).toBeNull();
     expect(safeEpisodeUrl("data:application/zip;base64,AAAA", base)).toBeNull();
     expect(safeEpisodeUrl("file:///etc/passwd", base)).toBeNull();
+    expect(safeEpisodeUrl("http://example.org/e.zip", base)).toBeNull();  // http only from our own origin
+    expect(safeEpisodeUrl("http://localhost:5173/s.zip", "http://localhost:5173/")).toBe("http://localhost:5173/s.zip");
+  });
+});
+
+describe("malformed episodes", () => {
+  it("refuses trajectories with missing or non-finite values", async () => {
+    const { checkTrajectory } = await import("./episode");
+    expect(() => checkTrajectory([{ t: 0, robot: { x: 0, y: 0, yaw: 0, mode: "idle" } }])).not.toThrow();
+    expect(() => checkTrajectory([{ t: 0 } as never])).toThrow(/line 1/);
+    expect(() => checkTrajectory([{ t: Number.NaN, robot: { x: 0, y: 0, yaw: 0, mode: "idle" } }])).toThrow();
+  });
+  it("stops reading a response that grows beyond the cap", async () => {
+    const { readCapped } = await import("./episode");
+    const body = new ReadableStream({ start(c) { c.enqueue(new Uint8Array(600)); c.enqueue(new Uint8Array(600)); c.close(); } });
+    await expect(readCapped(new Response(body), 1000)).rejects.toThrow(/refused/);
+    const small = new ReadableStream({ start(c) { c.enqueue(new Uint8Array(10)); c.close(); } });
+    expect((await readCapped(new Response(small), 1000)).byteLength).toBe(10);
   });
 });

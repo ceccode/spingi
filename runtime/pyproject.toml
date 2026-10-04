@@ -5,7 +5,7 @@ description = "Physical Agent Runtime: a reliable executor of simple physical ta
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
-license-files = ["../LICENSE"]
+license-files = ["LICENSE", "NOTICE"]  # copies of the repository root files, kept equal by a test
 dependencies = [
   "pydantic>=2.7",
   "pyyaml>=6.0",

@@ -69,7 +69,7 @@
       "type": "string"
     },
     "status": {
-      "description": "success | aborted | invalid_plan | deadline",
+      "description": "success | aborted | invalid_plan | deadline | estop | error",
       "title": "Status",
       "type": "string"
     },

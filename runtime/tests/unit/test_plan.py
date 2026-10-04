@@ -61,3 +61,12 @@ def test_demo_plan_file_loads_and_validates(registry):
     p = load_plan("plans/demo_inspection_round.yaml")
     assert len(p.steps) == 9
     assert validate_plan(p, registry) == []
+
+
+def test_references_only_walk_dict_keys_and_list_indexes():
+    p = plan({"skill": "detect", "params": {}}, {"skill": "say", "params": {"text": "$detect.__class__"}})
+    with pytest.raises(PlanError, match="not allowed"):
+        resolve_params(1, p, [{"objects": []}])
+    p = plan({"skill": "detect", "params": {}}, {"skill": "say", "params": {"text": "$detect.objects.upper"}})
+    with pytest.raises(PlanError, match="missing"):
+        resolve_params(1, p, [{"objects": "abc"}])  # no attribute access on a string

@@ -114,15 +114,22 @@ def _ref_points_backwards(target: str, current: int, plan: TaskPlan) -> bool:
 
 
 def _dig(data: Any, path: str, original: str) -> Any:
+    """Walks evidence with dict keys and list indexes only: no attributes, no private names."""
     tokens = re.findall(r"[A-Za-z_][A-Za-z0-9_]*|\[\d+\]", path)
     cur = data
     for tok in tokens:
+        if tok.startswith("_"):
+            raise PlanError(f"reference '{original}': field '{tok}' is not allowed")
         try:
             if tok.startswith("["):
+                if not isinstance(cur, list):
+                    raise TypeError("not a list")
                 cur = cur[int(tok[1:-1])]
             else:
-                cur = cur[tok] if isinstance(cur, dict) else getattr(cur, tok)
-        except (KeyError, IndexError, AttributeError, TypeError) as exc:
+                if not isinstance(cur, dict):
+                    raise TypeError("not a mapping")
+                cur = cur[tok]
+        except (KeyError, IndexError, TypeError) as exc:
             raise PlanError(f"reference '{original}': field '{tok}' missing") from exc
     return cur
 

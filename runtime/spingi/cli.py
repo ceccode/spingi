@@ -79,6 +79,7 @@ def main(argv: list[str] | None = None) -> int:
     plan.add_argument("--run", action="store_true", help="run the plan right away (with --adapter, --operator)")
     plan.add_argument("--adapter", choices=["fake", "sim"], default="fake")
     plan.add_argument("--operator", choices=["auto", "console"], default="console")
+    plan.add_argument("--yes", action="store_true", help="with --run: do not ask for confirmation before running")
 
     evalp = sub.add_parser("eval-planner", help="run the LLM planner on the golden cases and report the pass rate")
     evalp.add_argument("--cases", type=Path, default=Path("plans/golden/planner_cases.yaml"))
@@ -214,16 +215,19 @@ def _llm_planner(model: str | None):
     return LLMPlanner(default_registry(), model=model or DEFAULT_MODEL)
 
 
+NO_CREDENTIALS = "no Anthropic credentials: put ANTHROPIC_API_KEY in runtime/.env (see .env.example) or export it"
+
+
 def _api_call(fn):
     """Runs an LLM call and turns credential and API failures into one readable line."""
+    import os
+
     import anthropic
 
+    if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+        return None, NO_CREDENTIALS  # checked up front, not inferred from an exception message
     try:
         return fn(), None
-    except TypeError as exc:
-        if "authentication" not in str(exc):
-            raise
-        return None, "no Anthropic credentials: put ANTHROPIC_API_KEY in runtime/.env (see .env.example) or export it"
     except anthropic.AuthenticationError:
         return None, "the Anthropic API rejected the credentials (401)"
     except anthropic.RateLimitError as exc:
@@ -258,9 +262,23 @@ def _plan(args) -> int:
         out.write_text(text, encoding="utf-8")
         print(f"plan written to {out}")
     if args.run:
+        if not args.yes and not _confirm(f"Run this plan on the {args.adapter} adapter? [y/N] "):
+            print("not run")
+            return 0
         run_args = ["run", str(out), "--scene", str(args.scene), "--adapter", args.adapter, "--operator", args.operator]
         return main(run_args)
     return 0
+
+
+def _confirm(question: str) -> bool:
+    """A plan written by a model is shown and confirmed by a person before it moves anything."""
+    if not sys.stdin.isatty():
+        print("refusing to run a generated plan without confirmation: pass --yes", file=sys.stderr)
+        return False
+    try:
+        return input(question).strip().lower() in ("y", "yes")
+    except EOFError:
+        return False
 
 
 def _eval_planner(args) -> int:

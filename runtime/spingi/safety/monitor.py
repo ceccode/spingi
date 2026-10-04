@@ -34,6 +34,7 @@ class SafetyMonitor:
         self._task: asyncio.Task[None] | None = None
         self.violations: list[dict[str, Any]] = []
         self.failed: str | None = None  # set when a check raised; the robot was e-stopped
+        self._active: set[str] = set()  # violations in progress (recorded once each)
         self.checks = 0
 
     @property
@@ -62,19 +63,26 @@ class SafetyMonitor:
         await self.robot.heartbeat()
         pose = await self.robot.get_pose()
         fence = self.limits.geofence
-        if fence is not None and not fence.contains(pose):
-            await self._trip("safety.geofence", pose=pose.model_dump(), estop=self.limits.estop_on_geofence)
+        outside = fence is not None and not fence.contains(pose)
+        await self._condition("safety.geofence", outside, self.limits.estop_on_geofence, pose=pose.model_dump())
         battery = await self.robot.get_battery()
-        if battery < self.limits.min_battery_pct:
-            await self._trip("safety.battery_low", battery_pct=battery, min_pct=self.limits.min_battery_pct)
+        low = battery < self.limits.min_battery_pct
+        minimum = self.limits.min_battery_pct
+        await self._condition("safety.battery_low", low, False, battery_pct=battery, min_pct=minimum)
 
-    async def _trip(self, kind: str, estop: bool = False, **data: Any) -> None:
-        self.violations.append({"kind": kind, **data})
-        self.log.emit(kind, **data)
-        if estop:
+    async def _condition(self, kind: str, violated: bool, estop: bool, **data: Any) -> None:
+        """Stops the robot on every check while violated, but records the violation once per occurrence."""
+        if not violated:
+            self._active.discard(kind)
+            return
+        if estop:  # act first, then record: a failing log must never delay the stop
             await self.robot.estop()
         else:
             await self.robot.stop()
+        if kind not in self._active:
+            self._active.add(kind)
+            self.violations.append({"kind": kind, **data})
+            self.log.emit(kind, **data)
 
     async def _loop(self) -> None:
         while True:
@@ -82,8 +90,9 @@ class SafetyMonitor:
                 await self.check_once()
             except Exception as exc:  # noqa: BLE001 - fail safe: a monitor that cannot check must stop the robot
                 self.failed = repr(exc)
-                self.log.emit("safety.monitor_error", error=self.failed)
                 with contextlib.suppress(Exception):
                     await self.robot.estop()
+                with contextlib.suppress(Exception):
+                    self.log.emit("safety.monitor_error", error=self.failed)
                 return
             await self.clock.sleep(self.period_s)

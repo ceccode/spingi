@@ -1,56 +1,56 @@
-{"ts": 1791102703.300009, "run_id": "r-20261004-103143-fe7f0b", "kind": "safety.speed_capped", "sim_t": 0.0, "limit": 0.8, "applied": 0.8}
-{"ts": 1791102703.300311, "run_id": "r-20261004-103143-fe7f0b", "kind": "safety.armed", "sim_t": 0.0, "limits": {"geofence": {"x_min": -1.0, "x_max": 8.0, "y_min": -3.0, "y_max": 5.0}, "max_speed": 0.8, "min_battery_pct": 5.0, "estop_on_geofence": false}, "period_s": 0.1}
-{"ts": 1791102703.300503, "run_id": "r-20261004-103143-fe7f0b", "kind": "run.start", "sim_t": 0.0, "plan_id": "demo_inspection_round", "steps": 9}
-{"ts": 1791102703.3006551, "run_id": "r-20261004-103143-fe7f0b", "kind": "plan.validated", "sim_t": 0.0, "plan_id": "demo_inspection_round"}
-{"ts": 1791102703.300728, "run_id": "r-20261004-103143-fe7f0b", "kind": "step.start", "sim_t": 0.0, "index": 0, "skill": "say", "params": {"text": "Starting the inspection round"}}
-{"ts": 1791102703.3008199, "run_id": "r-20261004-103143-fe7f0b", "kind": "skill.start", "sim_t": 0.0, "skill": "say", "attempt": 0}
-{"ts": 1791102703.300884, "run_id": "r-20261004-103143-fe7f0b", "kind": "say", "sim_t": 0.0, "text": "Starting the inspection round"}
-{"ts": 1791102703.300937, "run_id": "r-20261004-103143-fe7f0b", "kind": "skill.end", "sim_t": 0.0, "skill": "say", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 0.0}
-{"ts": 1791102703.300993, "run_id": "r-20261004-103143-fe7f0b", "kind": "step.end", "sim_t": 0.0, "index": 0, "skill": "say", "outcome": "success"}
-{"ts": 1791102703.3010828, "run_id": "r-20261004-103143-fe7f0b", "kind": "step.start", "sim_t": 0.0, "index": 1, "skill": "navigate", "params": {"to": "shelf_A"}}
-{"ts": 1791102703.301165, "run_id": "r-20261004-103143-fe7f0b", "kind": "skill.start", "sim_t": 0.0, "skill": "navigate", "attempt": 0}
-{"ts": 1791102703.301253, "run_id": "r-20261004-103143-fe7f0b", "kind": "adapter.call", "sim_t": 0.0, "op": "walk_to", "to": "shelf_A", "max_speed": 0.5}
-{"ts": 1791102703.3171258, "run_id": "r-20261004-103143-fe7f0b", "kind": "skill.end", "sim_t": 4.02, "skill": "navigate", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 4.02}
-{"ts": 1791102703.317478, "run_id": "r-20261004-103143-fe7f0b", "kind": "state.delta", "sim_t": 4.02, "skill": "navigate", "delta": {"robot_pose": {"x": 0.0, "y": 2.0, "yaw": 1.57}, "robot_mode": "idle", "battery_pct": 99.00000000000091, "clear_holding": false, "objects_upsert": {}, "objects_remove": []}}
-{"ts": 1791102703.317554, "run_id": "r-20261004-103143-fe7f0b", "kind": "step.end", "sim_t": 4.02, "index": 1, "skill": "navigate", "outcome": "success"}
-{"ts": 1791102703.317649, "run_id": "r-20261004-103143-fe7f0b", "kind": "step.start", "sim_t": 4.02, "index": 2, "skill": "inspect", "params": {"target": "shelf_A", "checks": ["present:red_box"]}}
-{"ts": 1791102703.3177652, "run_id": "r-20261004-103143-fe7f0b", "kind": "skill.start", "sim_t": 4.02, "skill": "inspect", "attempt": 0}
-{"ts": 1791102703.519212, "run_id": "r-20261004-103143-fe7f0b", "kind": "perception.result", "sim_t": 4.02, "frame_id": "sim-1", "frame_ref": "/var/folders/94/c9w07ypn0s31_b9lsdglwwnw0000gn/T/tmpvqv0nh9y/r-20261004-103143-fe7f0b/frames/sim-1.png", "target": "shelf_A", "checks": {"present:red_box": {"passed": true, "detections": 1}}, "anomalies": []}
-{"ts": 1791102703.519399, "run_id": "r-20261004-103143-fe7f0b", "kind": "skill.end", "sim_t": 4.02, "skill": "inspect", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 0.0}
-{"ts": 1791102703.519535, "run_id": "r-20261004-103143-fe7f0b", "kind": "state.delta", "sim_t": 4.02, "skill": "inspect", "delta": {"clear_holding": false, "objects_upsert": {"red_box_01": {"id": "red_box_01", "cls": "red_box", "pose": {"x": 0.0, "y": 2.9, "z": 0.9, "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0}, "confidence": 0.95, "marker_id": 7}}, "objects_remove": []}}
-{"ts": 1791102703.519588, "run_id": "r-20261004-103143-fe7f0b", "kind": "step.end", "sim_t": 4.02, "index": 2, "skill": "inspect", "outcome": "success"}
-{"ts": 1791102703.51969, "run_id": "r-20261004-103143-fe7f0b", "kind": "step.start", "sim_t": 4.02, "index": 3, "skill": "say", "params": {"text": "Shelf A checked"}}
-{"ts": 1791102703.519804, "run_id": "r-20261004-103143-fe7f0b", "kind": "skill.start", "sim_t": 4.02, "skill": "say", "attempt": 0}
-{"ts": 1791102703.51987, "run_id": "r-20261004-103143-fe7f0b", "kind": "say", "sim_t": 4.02, "text": "Shelf A checked"}
-{"ts": 1791102703.5199208, "run_id": "r-20261004-103143-fe7f0b", "kind": "skill.end", "sim_t": 4.02, "skill": "say", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 0.0}
-{"ts": 1791102703.5200021, "run_id": "r-20261004-103143-fe7f0b", "kind": "step.end", "sim_t": 4.02, "index": 3, "skill": "say", "outcome": "success"}
-{"ts": 1791102703.520088, "run_id": "r-20261004-103143-fe7f0b", "kind": "step.start", "sim_t": 4.02, "index": 4, "skill": "navigate", "params": {"to": "workstation_B"}}
-{"ts": 1791102703.5201678, "run_id": "r-20261004-103143-fe7f0b", "kind": "skill.start", "sim_t": 4.02, "skill": "navigate", "attempt": 0}
-{"ts": 1791102703.520227, "run_id": "r-20261004-103143-fe7f0b", "kind": "adapter.call", "sim_t": 4.02, "op": "walk_to", "to": "workstation_B", "max_speed": 0.5}
-{"ts": 1791102703.5675578, "run_id": "r-20261004-103143-fe7f0b", "kind": "skill.end", "sim_t": 16.66, "skill": "navigate", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 12.64}
-{"ts": 1791102703.567907, "run_id": "r-20261004-103143-fe7f0b", "kind": "state.delta", "sim_t": 16.66, "skill": "navigate", "delta": {"robot_pose": {"x": 6.0, "y": 0.5, "yaw": 0.0}, "robot_mode": "idle", "battery_pct": 95.90767078079047, "clear_holding": false, "objects_upsert": {}, "objects_remove": []}}
-{"ts": 1791102703.568062, "run_id": "r-20261004-103143-fe7f0b", "kind": "step.end", "sim_t": 16.66, "index": 4, "skill": "navigate", "outcome": "success"}
-{"ts": 1791102703.568226, "run_id": "r-20261004-103143-fe7f0b", "kind": "step.start", "sim_t": 16.66, "index": 5, "skill": "navigate", "params": {"to": "panel_C"}}
-{"ts": 1791102703.568345, "run_id": "r-20261004-103143-fe7f0b", "kind": "skill.start", "sim_t": 16.66, "skill": "navigate", "attempt": 0}
-{"ts": 1791102703.568414, "run_id": "r-20261004-103143-fe7f0b", "kind": "adapter.call", "sim_t": 16.66, "op": "walk_to", "to": "panel_C", "max_speed": 0.5}
-{"ts": 1791102703.593777, "run_id": "r-20261004-103143-fe7f0b", "kind": "skill.end", "sim_t": 23.26, "skill": "navigate", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 6.6}
-{"ts": 1791102703.594344, "run_id": "r-20261004-103143-fe7f0b", "kind": "state.delta", "sim_t": 23.26, "skill": "navigate", "delta": {"robot_pose": {"x": 6.0, "y": 3.0, "yaw": 3.14}, "robot_mode": "idle", "battery_pct": 94.65767078079159, "clear_holding": false, "objects_upsert": {}, "objects_remove": []}}
-{"ts": 1791102703.5944152, "run_id": "r-20261004-103143-fe7f0b", "kind": "step.end", "sim_t": 23.26, "index": 5, "skill": "navigate", "outcome": "success"}
-{"ts": 1791102703.5944939, "run_id": "r-20261004-103143-fe7f0b", "kind": "step.start", "sim_t": 23.26, "index": 6, "skill": "inspect", "params": {"target": "panel_C", "checks": ["present:red_box", "display shows no error"]}}
-{"ts": 1791102703.594583, "run_id": "r-20261004-103143-fe7f0b", "kind": "skill.start", "sim_t": 23.26, "skill": "inspect", "attempt": 0}
-{"ts": 1791102703.643103, "run_id": "r-20261004-103143-fe7f0b", "kind": "perception.result", "sim_t": 23.26, "frame_id": "sim-2", "frame_ref": "/var/folders/94/c9w07ypn0s31_b9lsdglwwnw0000gn/T/tmpvqv0nh9y/r-20261004-103143-fe7f0b/frames/sim-2.png", "target": "panel_C", "checks": {"present:red_box": {"passed": false, "detections": 0}, "display shows no error": {"passed": null, "note": "not evaluated in v0"}}, "anomalies": ["present:red_box"]}
-{"ts": 1791102703.643291, "run_id": "r-20261004-103143-fe7f0b", "kind": "skill.end", "sim_t": 23.26, "skill": "inspect", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 0.0}
-{"ts": 1791102703.643352, "run_id": "r-20261004-103143-fe7f0b", "kind": "step.end", "sim_t": 23.26, "index": 6, "skill": "inspect", "outcome": "success"}
-{"ts": 1791102703.643415, "run_id": "r-20261004-103143-fe7f0b", "kind": "step.start", "sim_t": 23.26, "index": 7, "skill": "navigate", "params": {"to": "dock"}}
-{"ts": 1791102703.6435242, "run_id": "r-20261004-103143-fe7f0b", "kind": "skill.start", "sim_t": 23.26, "skill": "navigate", "attempt": 0}
-{"ts": 1791102703.643588, "run_id": "r-20261004-103143-fe7f0b", "kind": "adapter.call", "sim_t": 23.26, "op": "walk_to", "to": "dock", "max_speed": 0.5}
-{"ts": 1791102703.710548, "run_id": "r-20261004-103143-fe7f0b", "kind": "skill.end", "sim_t": 39.36, "skill": "navigate", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 16.1}
-{"ts": 1791102703.7109709, "run_id": "r-20261004-103143-fe7f0b", "kind": "state.delta", "sim_t": 39.36, "skill": "navigate", "delta": {"robot_pose": {"x": 0.0, "y": 0.0, "yaw": 0.0}, "robot_mode": "idle", "battery_pct": 91.30356881454492, "clear_holding": false, "objects_upsert": {}, "objects_remove": []}}
-{"ts": 1791102703.711262, "run_id": "r-20261004-103143-fe7f0b", "kind": "step.end", "sim_t": 39.36, "index": 7, "skill": "navigate", "outcome": "success"}
-{"ts": 1791102703.711356, "run_id": "r-20261004-103143-fe7f0b", "kind": "step.start", "sim_t": 39.36, "index": 8, "skill": "say", "params": {"text": "Round completed"}}
-{"ts": 1791102703.711472, "run_id": "r-20261004-103143-fe7f0b", "kind": "skill.start", "sim_t": 39.36, "skill": "say", "attempt": 0}
-{"ts": 1791102703.711573, "run_id": "r-20261004-103143-fe7f0b", "kind": "say", "sim_t": 39.36, "text": "Round completed"}
-{"ts": 1791102703.711636, "run_id": "r-20261004-103143-fe7f0b", "kind": "skill.end", "sim_t": 39.36, "skill": "say", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 0.0}
-{"ts": 1791102703.7116868, "run_id": "r-20261004-103143-fe7f0b", "kind": "step.end", "sim_t": 39.36, "index": 8, "skill": "say", "outcome": "success"}
-{"ts": 1791102703.711734, "run_id": "r-20261004-103143-fe7f0b", "kind": "run.end", "sim_t": 39.36, "status": "success", "steps_completed": 9, "reason": ""}
-{"ts": 1791102703.711895, "run_id": "r-20261004-103143-fe7f0b", "kind": "safety.disarmed", "sim_t": 39.36, "checks": 197, "violations": 0}
+{"ts": 1791104456.761018, "run_id": "r-20261004-110056-977ba8", "kind": "safety.speed_capped", "sim_t": 0.0, "limit": 0.8, "applied": 0.8}
+{"ts": 1791104456.761219, "run_id": "r-20261004-110056-977ba8", "kind": "safety.armed", "sim_t": 0.0, "limits": {"geofence": {"x_min": -1.0, "x_max": 8.0, "y_min": -3.0, "y_max": 5.0}, "max_speed": 0.8, "min_battery_pct": 5.0, "estop_on_geofence": true}, "period_s": 0.1}
+{"ts": 1791104456.761458, "run_id": "r-20261004-110056-977ba8", "kind": "run.start", "sim_t": 0.0, "plan_id": "demo_inspection_round", "steps": 9}
+{"ts": 1791104456.7616398, "run_id": "r-20261004-110056-977ba8", "kind": "plan.validated", "sim_t": 0.0, "plan_id": "demo_inspection_round"}
+{"ts": 1791104456.761701, "run_id": "r-20261004-110056-977ba8", "kind": "step.start", "sim_t": 0.0, "index": 0, "skill": "say", "params": {"text": "Starting the inspection round"}}
+{"ts": 1791104456.761825, "run_id": "r-20261004-110056-977ba8", "kind": "skill.start", "sim_t": 0.0, "skill": "say", "attempt": 0}
+{"ts": 1791104456.7619462, "run_id": "r-20261004-110056-977ba8", "kind": "say", "sim_t": 0.0, "text": "Starting the inspection round"}
+{"ts": 1791104456.76206, "run_id": "r-20261004-110056-977ba8", "kind": "skill.end", "sim_t": 0.0, "skill": "say", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 0.0}
+{"ts": 1791104456.762113, "run_id": "r-20261004-110056-977ba8", "kind": "step.end", "sim_t": 0.0, "index": 0, "skill": "say", "outcome": "success"}
+{"ts": 1791104456.76216, "run_id": "r-20261004-110056-977ba8", "kind": "step.start", "sim_t": 0.0, "index": 1, "skill": "navigate", "params": {"to": "shelf_A"}}
+{"ts": 1791104456.762262, "run_id": "r-20261004-110056-977ba8", "kind": "skill.start", "sim_t": 0.0, "skill": "navigate", "attempt": 0}
+{"ts": 1791104456.762325, "run_id": "r-20261004-110056-977ba8", "kind": "adapter.call", "sim_t": 0.0, "op": "walk_to", "to": "shelf_A", "max_speed": 0.5}
+{"ts": 1791104456.777018, "run_id": "r-20261004-110056-977ba8", "kind": "skill.end", "sim_t": 4.02, "skill": "navigate", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 4.02}
+{"ts": 1791104456.7772129, "run_id": "r-20261004-110056-977ba8", "kind": "state.delta", "sim_t": 4.02, "skill": "navigate", "delta": {"robot_pose": {"x": 0.0, "y": 2.0, "yaw": 1.57}, "robot_mode": "idle", "battery_pct": 99.00000000000091, "clear_holding": false, "objects_upsert": {}, "objects_remove": []}}
+{"ts": 1791104456.777269, "run_id": "r-20261004-110056-977ba8", "kind": "step.end", "sim_t": 4.02, "index": 1, "skill": "navigate", "outcome": "success"}
+{"ts": 1791104456.777324, "run_id": "r-20261004-110056-977ba8", "kind": "step.start", "sim_t": 4.02, "index": 2, "skill": "inspect", "params": {"target": "shelf_A", "checks": ["present:red_box"]}}
+{"ts": 1791104456.77742, "run_id": "r-20261004-110056-977ba8", "kind": "skill.start", "sim_t": 4.02, "skill": "inspect", "attempt": 0}
+{"ts": 1791104456.999346, "run_id": "r-20261004-110056-977ba8", "kind": "perception.result", "sim_t": 4.02, "frame_id": "sim-1", "frame_ref": "frames/sim-1.png", "target": "shelf_A", "checks": {"present:red_box": {"passed": true, "detections": 1}}, "anomalies": []}
+{"ts": 1791104456.999573, "run_id": "r-20261004-110056-977ba8", "kind": "skill.end", "sim_t": 4.02, "skill": "inspect", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 0.0}
+{"ts": 1791104456.999726, "run_id": "r-20261004-110056-977ba8", "kind": "state.delta", "sim_t": 4.02, "skill": "inspect", "delta": {"clear_holding": false, "objects_upsert": {"red_box_01": {"id": "red_box_01", "cls": "red_box", "pose": {"x": 0.0, "y": 2.9, "z": 0.9, "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0}, "confidence": 0.95, "marker_id": 7}}, "objects_remove": []}}
+{"ts": 1791104456.999797, "run_id": "r-20261004-110056-977ba8", "kind": "step.end", "sim_t": 4.02, "index": 2, "skill": "inspect", "outcome": "success"}
+{"ts": 1791104456.999868, "run_id": "r-20261004-110056-977ba8", "kind": "step.start", "sim_t": 4.02, "index": 3, "skill": "say", "params": {"text": "Shelf A checked"}}
+{"ts": 1791104456.999983, "run_id": "r-20261004-110056-977ba8", "kind": "skill.start", "sim_t": 4.02, "skill": "say", "attempt": 0}
+{"ts": 1791104457.0001001, "run_id": "r-20261004-110056-977ba8", "kind": "say", "sim_t": 4.02, "text": "Shelf A checked"}
+{"ts": 1791104457.0002, "run_id": "r-20261004-110056-977ba8", "kind": "skill.end", "sim_t": 4.02, "skill": "say", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 0.0}
+{"ts": 1791104457.000266, "run_id": "r-20261004-110056-977ba8", "kind": "step.end", "sim_t": 4.02, "index": 3, "skill": "say", "outcome": "success"}
+{"ts": 1791104457.000389, "run_id": "r-20261004-110056-977ba8", "kind": "step.start", "sim_t": 4.02, "index": 4, "skill": "navigate", "params": {"to": "workstation_B"}}
+{"ts": 1791104457.000532, "run_id": "r-20261004-110056-977ba8", "kind": "skill.start", "sim_t": 4.02, "skill": "navigate", "attempt": 0}
+{"ts": 1791104457.00064, "run_id": "r-20261004-110056-977ba8", "kind": "adapter.call", "sim_t": 4.02, "op": "walk_to", "to": "workstation_B", "max_speed": 0.5}
+{"ts": 1791104457.049559, "run_id": "r-20261004-110056-977ba8", "kind": "skill.end", "sim_t": 16.66, "skill": "navigate", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 12.64}
+{"ts": 1791104457.049896, "run_id": "r-20261004-110056-977ba8", "kind": "state.delta", "sim_t": 16.66, "skill": "navigate", "delta": {"robot_pose": {"x": 6.0, "y": 0.5, "yaw": 0.0}, "robot_mode": "idle", "battery_pct": 95.90767078079047, "clear_holding": false, "objects_upsert": {}, "objects_remove": []}}
+{"ts": 1791104457.0499682, "run_id": "r-20261004-110056-977ba8", "kind": "step.end", "sim_t": 16.66, "index": 4, "skill": "navigate", "outcome": "success"}
+{"ts": 1791104457.050035, "run_id": "r-20261004-110056-977ba8", "kind": "step.start", "sim_t": 16.66, "index": 5, "skill": "navigate", "params": {"to": "panel_C"}}
+{"ts": 1791104457.0501602, "run_id": "r-20261004-110056-977ba8", "kind": "skill.start", "sim_t": 16.66, "skill": "navigate", "attempt": 0}
+{"ts": 1791104457.050263, "run_id": "r-20261004-110056-977ba8", "kind": "adapter.call", "sim_t": 16.66, "op": "walk_to", "to": "panel_C", "max_speed": 0.5}
+{"ts": 1791104457.07518, "run_id": "r-20261004-110056-977ba8", "kind": "skill.end", "sim_t": 23.26, "skill": "navigate", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 6.6}
+{"ts": 1791104457.075524, "run_id": "r-20261004-110056-977ba8", "kind": "state.delta", "sim_t": 23.26, "skill": "navigate", "delta": {"robot_pose": {"x": 6.0, "y": 3.0, "yaw": 3.14}, "robot_mode": "idle", "battery_pct": 94.65767078079159, "clear_holding": false, "objects_upsert": {}, "objects_remove": []}}
+{"ts": 1791104457.075728, "run_id": "r-20261004-110056-977ba8", "kind": "step.end", "sim_t": 23.26, "index": 5, "skill": "navigate", "outcome": "success"}
+{"ts": 1791104457.075813, "run_id": "r-20261004-110056-977ba8", "kind": "step.start", "sim_t": 23.26, "index": 6, "skill": "inspect", "params": {"target": "panel_C", "checks": ["present:red_box", "display shows no error"]}}
+{"ts": 1791104457.076014, "run_id": "r-20261004-110056-977ba8", "kind": "skill.start", "sim_t": 23.26, "skill": "inspect", "attempt": 0}
+{"ts": 1791104457.1180742, "run_id": "r-20261004-110056-977ba8", "kind": "perception.result", "sim_t": 23.26, "frame_id": "sim-2", "frame_ref": "frames/sim-2.png", "target": "panel_C", "checks": {"present:red_box": {"passed": false, "detections": 0}, "display shows no error": {"passed": null, "note": "not evaluated in v0"}}, "anomalies": ["present:red_box"]}
+{"ts": 1791104457.118241, "run_id": "r-20261004-110056-977ba8", "kind": "skill.end", "sim_t": 23.26, "skill": "inspect", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 0.0}
+{"ts": 1791104457.118305, "run_id": "r-20261004-110056-977ba8", "kind": "step.end", "sim_t": 23.26, "index": 6, "skill": "inspect", "outcome": "success"}
+{"ts": 1791104457.118369, "run_id": "r-20261004-110056-977ba8", "kind": "step.start", "sim_t": 23.26, "index": 7, "skill": "navigate", "params": {"to": "dock"}}
+{"ts": 1791104457.118507, "run_id": "r-20261004-110056-977ba8", "kind": "skill.start", "sim_t": 23.26, "skill": "navigate", "attempt": 0}
+{"ts": 1791104457.118665, "run_id": "r-20261004-110056-977ba8", "kind": "adapter.call", "sim_t": 23.26, "op": "walk_to", "to": "dock", "max_speed": 0.5}
+{"ts": 1791104457.172865, "run_id": "r-20261004-110056-977ba8", "kind": "skill.end", "sim_t": 39.36, "skill": "navigate", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 16.1}
+{"ts": 1791104457.173079, "run_id": "r-20261004-110056-977ba8", "kind": "state.delta", "sim_t": 39.36, "skill": "navigate", "delta": {"robot_pose": {"x": 0.0, "y": 0.0, "yaw": 0.0}, "robot_mode": "idle", "battery_pct": 91.30356881454492, "clear_holding": false, "objects_upsert": {}, "objects_remove": []}}
+{"ts": 1791104457.17344, "run_id": "r-20261004-110056-977ba8", "kind": "step.end", "sim_t": 39.36, "index": 7, "skill": "navigate", "outcome": "success"}
+{"ts": 1791104457.173504, "run_id": "r-20261004-110056-977ba8", "kind": "step.start", "sim_t": 39.36, "index": 8, "skill": "say", "params": {"text": "Round completed"}}
+{"ts": 1791104457.173624, "run_id": "r-20261004-110056-977ba8", "kind": "skill.start", "sim_t": 39.36, "skill": "say", "attempt": 0}
+{"ts": 1791104457.173716, "run_id": "r-20261004-110056-977ba8", "kind": "say", "sim_t": 39.36, "text": "Round completed"}
+{"ts": 1791104457.173814, "run_id": "r-20261004-110056-977ba8", "kind": "skill.end", "sim_t": 39.36, "skill": "say", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 0.0}
+{"ts": 1791104457.173866, "run_id": "r-20261004-110056-977ba8", "kind": "step.end", "sim_t": 39.36, "index": 8, "skill": "say", "outcome": "success"}
+{"ts": 1791104457.1739168, "run_id": "r-20261004-110056-977ba8", "kind": "run.end", "sim_t": 39.36, "status": "success", "steps_completed": 9, "reason": ""}
+{"ts": 1791104457.174058, "run_id": "r-20261004-110056-977ba8", "kind": "safety.disarmed", "sim_t": 39.36, "checks": 198, "violations": 0}

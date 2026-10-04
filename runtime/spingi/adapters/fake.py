@@ -10,12 +10,14 @@ import asyncio
 import time
 from typing import Literal
 
-from spingi.core.ports import Arm, Frame, GripResult, JointState
+from spingi.core.ports import Arm, Frame, GripResult, JointState, RobotEstopped
 from spingi.core.types import Pose2D, Pose3D
 
+EstopEngaged = RobotEstopped  # kept as an alias for existing imports
 
-class EstopEngaged(RuntimeError):
-    pass
+
+class WatchdogExpired(RuntimeError):
+    """The safety monitor's heartbeat is older than the watchdog allows."""
 
 
 class FakeAdapter:
@@ -144,8 +146,12 @@ class FakeAdapter:
         )
 
     def _guard(self) -> None:
+        """Every motion command checks the e-stop and the watchdog (safety layers S0/S1) before it acts."""
         if self.estopped:
             raise EstopEngaged("e-stop engaged: no motion command accepted")
+        if self._watchdog_expired():
+            self.blocked_by = "watchdog"
+            raise WatchdogExpired("no heartbeat from the safety monitor: motion refused")
 
     def _watchdog_expired(self) -> bool:
         if self.watchdog_ms is None:

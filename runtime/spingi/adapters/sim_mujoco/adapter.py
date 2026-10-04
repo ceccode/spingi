@@ -17,12 +17,14 @@ import mujoco
 import numpy as np
 
 from spingi.adapters.sim_mujoco.scene import DEFAULT_MODEL_DIR, write_scene
-from spingi.core.ports import Arm, Frame, GripResult, JointState
+from spingi.core.ports import Arm, Frame, GripResult, JointState, RobotEstopped
 from spingi.core.types import Pose2D, Pose3D
 
+EstopEngaged = RobotEstopped  # kept as an alias for existing imports
 
-class EstopEngaged(RuntimeError):
-    pass
+
+class WatchdogExpired(RuntimeError):
+    """The safety monitor's heartbeat is older than the watchdog allows."""
 
 
 class SimAdapter:
@@ -72,7 +74,6 @@ class SimAdapter:
         self.grasp_range_m = grasp_range_m  # an object within this distance of the base can be grasped
         self.sim_time_s = 0.0
         self.clock = SimClock(self)  # robot time = simulated time; the watchdog counts it too
-        self._advanced = asyncio.Event()
         self._last_heartbeat = 0.0
         self.held_object: str | None = None  # kinematic grasp (ADR-0007): the object follows the hand
         self._objects_dirty = False
@@ -90,7 +91,7 @@ class SimAdapter:
         self._floor = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, "floor")
         self._renderer: mujoco.Renderer | None = None
         self.render_error: str | None = None
-        self._frames: list[np.ndarray] = []
+        self._video_writer = None  # frames are streamed to disk, never accumulated in memory
         self._frame_counter = 0
         self._viewer = None
         if viewer:
@@ -135,14 +136,20 @@ class SimAdapter:
 
     async def _turn_to(self, yaw: float) -> None:
         while self.mode == "walking":
+            if self._watchdog_expired():
+                self.blocked_by = "watchdog"
+                await self.stop()
+                return
             diff = _wrap(yaw - self.pose.yaw)
             max_step = self.yaw_rate * self.dt
-            if abs(diff) <= max_step:
-                self._try_move(Pose2D(x=self.pose.x, y=self.pose.y, yaw=yaw))
-                await self._tick()
+            final = abs(diff) <= max_step
+            target_yaw = yaw if final else self.pose.yaw + math.copysign(max_step, diff)
+            if not self._try_move(Pose2D(x=self.pose.x, y=self.pose.y, yaw=target_yaw)):
+                await self.stop()  # turning in place would hit something: stop instead of spinning forever
                 return
-            self._try_move(Pose2D(x=self.pose.x, y=self.pose.y, yaw=self.pose.yaw + math.copysign(max_step, diff)))
             await self._tick()
+            if final:
+                return
 
     async def stop(self) -> None:
         self._record("stop")
@@ -159,6 +166,7 @@ class SimAdapter:
         self._record("move_arm", arm=arm, target=target.model_dump(), duration_s=duration_s)
         self._guard()
         for _ in range(max(1, int(duration_s / self.dt))):
+            self._guard()  # e-stop or a lapsed watchdog interrupts the motion
             await self._tick()
 
     async def gripper(self, arm: Arm, action: Literal["open", "close"]) -> GripResult:
@@ -192,7 +200,7 @@ class SimAdapter:
             out = self.record_dir / "frames" / f"{frame.id}.png"
             out.parent.mkdir(parents=True, exist_ok=True)
             iio.imwrite(out, img)
-            frame.data_ref = str(out)
+            frame.data_ref = f"frames/{frame.id}.png"  # relative to the episode folder: no local paths in episodes
         return frame
 
     async def get_joint_state(self) -> JointState:
@@ -226,14 +234,10 @@ class SimAdapter:
             self._viewer.close()
             self._viewer = None
         video = None
-        if self._frames and self.record_dir is not None and self.record_video:
-            import imageio.v2 as iio
-
-            self.record_dir.mkdir(parents=True, exist_ok=True)
-            video = self.record_dir / "run.mp4"
-            fps = max(1, round(1.0 / (self.dt * self.record_every)))
-            iio.mimwrite(video, self._frames, fps=fps, codec="libx264", quality=7, macro_block_size=1)
-            self._frames = []
+        if self._video_writer is not None:
+            self._video_writer.close()
+            self._video_writer = None
+            video = self.record_dir / "run.mp4" if self.record_dir is not None else None
         if self._renderer is not None:
             self._renderer.close()
             self._renderer = None
@@ -320,8 +324,7 @@ class SimAdapter:
     async def _tick(self) -> None:
         self.ticks += 1
         self.sim_time_s += self.dt
-        self._advanced.set()  # wake whoever sleeps on the simulated clock
-        self._advanced = asyncio.Event()
+        self.clock.advance()  # wake whoever sleeps on the simulated clock
         if self.ticks % self.sample_every == 0:
             self._sample(include_objects=self.held_object is not None)
         if self._viewer is not None:
@@ -329,11 +332,22 @@ class SimAdapter:
         if self.record_video and self.record_dir is not None and self.ticks % self.record_every == 0:
             img = self._render("track", 480, 640)
             if img is not None:
-                self._frames.append(img)
+                self._write_video_frame(img)
         if self.realtime:
             await asyncio.sleep(self.dt)
         elif self.ticks % self.YIELD_EVERY == 0:
             await asyncio.sleep(0)  # lets independent tasks (safety monitor, console) run in fast mode
+
+    def _write_video_frame(self, img: np.ndarray) -> None:
+        if self._video_writer is None:
+            import imageio.v2 as iio
+
+            self.record_dir.mkdir(parents=True, exist_ok=True)
+            fps = max(1, round(1.0 / (self.dt * self.record_every)))
+            self._video_writer = iio.get_writer(
+                self.record_dir / "run.mp4", fps=fps, codec="libx264", quality=7, macro_block_size=1
+            )
+        self._video_writer.append_data(img)
 
     def _sample(self, include_objects: bool = False) -> None:
         row = {
@@ -396,8 +410,12 @@ class SimAdapter:
         self.calls.append((name, kw))
 
     def _guard(self) -> None:
+        """Every motion command checks the e-stop and the watchdog (safety layers S0/S1) before it acts."""
         if self.estopped:
             raise EstopEngaged("e-stop engaged: no motion command accepted")
+        if self._watchdog_expired():
+            self.blocked_by = "watchdog"
+            raise WatchdogExpired("no heartbeat from the safety monitor: motion refused")
 
     def _watchdog_expired(self) -> bool:
         if self.watchdog_ms is None:
@@ -410,14 +428,20 @@ class SimClock:
 
     def __init__(self, adapter: SimAdapter) -> None:
         self._adapter = adapter
+        self._advanced = asyncio.Event()
 
     def now(self) -> float:
         return self._adapter.sim_time_s
 
+    def advance(self) -> None:
+        """Called by the adapter at every tick."""
+        self._advanced.set()
+        self._advanced = asyncio.Event()
+
     async def sleep(self, seconds: float) -> None:
         target = self._adapter.sim_time_s + seconds
         while self._adapter.sim_time_s < target - 1e-9:
-            await self._adapter._advanced.wait()
+            await self._advanced.wait()
 
 
 def _wrap(a: float) -> float:

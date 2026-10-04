@@ -37,6 +37,7 @@ def test_core_third_party_dependencies_are_only_pydantic_and_yaml():
         "typing",
         "uuid",
         "collections",
+        "contextlib",
         "__future__",
     }
     for f in CORE.glob("*.py"):

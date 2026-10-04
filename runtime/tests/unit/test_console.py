@@ -74,3 +74,27 @@ async def test_subscriber_sees_events_in_order():
     log.emit("b")
     await asyncio.sleep(0)
     assert seen == ["a", "b"]
+
+
+async def test_closed_stdin_answers_abort():
+    def eof(prompt):
+        raise EOFError
+
+    response = await ConsoleHuman(input_fn=eof, out=io.StringIO()).ask(request(), timeout_s=5)
+    assert response.action == "abort"
+
+
+def test_control_characters_never_reach_the_terminal():
+    out = io.StringIO()
+    log = EventLog(run_id="r")
+    log.subscribe(ConsoleReporter(out=out))
+    log.emit("say", text="hello \x1b[2J\x1b[H fake line\nOPERATOR STOP")
+    printed = out.getvalue()
+    assert "\x1b" not in printed and printed.count("\n") == 1  # one line, escapes neutralised
+
+
+async def test_operator_request_text_is_sanitised():
+    out = io.StringIO()
+    req = HumanRequest(run_id="r", step_index=1, skill="pick", reason="bad\x1b]0;title\x07 reason")
+    await ConsoleHuman(input_fn=lambda p: "a", out=out).ask(req, timeout_s=5)
+    assert "\x1b" not in out.getvalue() and "\x07" not in out.getvalue()

@@ -59,4 +59,23 @@ async def test_plan_deadline_is_in_robot_time(tmp_path):
     plan_file.write_text(yaml.safe_dump(plan.model_dump()))
     cfg = SessionConfig(plan=plan_file, scene=LAB, adapter="sim", runs_dir=tmp_path)
     result = await run_session(cfg, ScriptedHuman())
-    assert result.status == "deadline" and result.steps_completed == 1  # ~12 s of walking > 5 s budget
+    # The walk needs ~12 s of robot time; the 5 s budget stops the robot during the step, not after it.
+    assert result.status == "deadline" and result.steps_completed == 0
+    assert result.sim_time_s is not None and result.sim_time_s < 5.8
+
+
+async def test_turning_into_an_obstacle_stops_instead_of_spinning(monkeypatch):
+    adapter = SimAdapter(LAB)
+    original = adapter._try_move
+
+    def blocked_when_turning(new):
+        if new.x == adapter.pose.x and new.y == adapter.pose.y and new.yaw != adapter.pose.yaw:
+            adapter.blocked_by = "obs_test"
+            return False
+        return original(new)
+
+    monkeypatch.setattr(adapter, "_try_move", blocked_when_turning)
+    await adapter.walk_to(Pose2D(x=0.5, y=0, yaw=1.57), max_speed=0.5)
+    assert adapter.blocked_by == "obs_test" and adapter.mode == "idle"
+    assert adapter.ticks < 100  # walked 0.5 m (50 ticks), then stopped at the first blocked turn step
+    adapter.close()

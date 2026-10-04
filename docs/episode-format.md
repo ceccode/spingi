@@ -22,7 +22,7 @@ An **episode** is the result of a runtime run, packaged so that anyone can repla
 ├── trajectory.jsonl     # robot and object poses sampled over time
 ├── frames/              # camera images, named after the frame_id field of the events (optional)
 │   └── sim-1.png
-└── run.mp4              # third-person video, only with `spingi run --record` (optional)
+└── run.mp4              # third-person video, only with `spingi run --record` (optional; the viewer ignores it)
 ```
 
 The zip produced by `--zip` (`runs/<run_id>.zip`) contains the `<run_id>/` folder itself, not only its content.
@@ -53,7 +53,7 @@ The zip produced by `--zip` (`runs/<run_id>.zip`) contains the `<run_id>/` folde
 | `run_id`, `created_at` | Run identifier; creation time, RFC 3339 in UTC. |
 | `robot` | `model` (`unitree_g1`, or `fake`) and `adapter` (`fake`, `sim_mujoco`; `unitree_g1` later). |
 | `plan_id`, `steps_total`, `steps_completed` | The executed plan and how far it got. |
-| `status` | `success`, `aborted`, `invalid_plan` or `deadline`, as in the `run.end` event. |
+| `status` | `success`, `aborted`, `invalid_plan`, `deadline`, `estop` (the robot was e-stopped: geofence, a `FATAL` skill outcome, a safety monitor failure) or `error` (the run raised; the robot was stopped), as in the `run.end` event. |
 | `duration_s` | Wall-clock seconds between the first and the last event. In fast simulation it is much shorter than `sim_time_s`. |
 | `sim_time_s` | Total simulated time, when the adapter has a simulated clock (optional). |
 | `sample_rate_hz` | Nominal rate of `trajectory.jsonl`, when the adapter samples at a fixed rate (optional). |
@@ -84,13 +84,15 @@ Runtime events carry `ts` in wall-clock time. To align them with the trajectory,
 |------|--------|
 | `step.start` | `index`, `skill`, `params` (references already resolved) |
 | `skill.end` | `skill`, `attempt`, `outcome` (`success`, `recoverable`, `needs_human`, `fatal`), `reason`, `duration_s` |
-| `perception.result` from `detect` | `frame_id`, `frame_ref`, `cls`, `found` (list of object ids) |
+| `perception.result` from `detect` | `frame_id`, `frame_ref` (`frames/<frame_id>.png`, relative to the episode folder, or `null` when no image was written), `cls`, `found` (list of object ids) |
 | `perception.result` from `inspect` | `frame_id`, `frame_ref`, `target`, `checks` (check → `{passed, ...}`, `passed` is `null` for a check that was not evaluated), `anomalies` (checks that failed) |
 | `human.request` | `skill`, `reason`; `index` for a failed step, whose implicit options are `retry`, `skip`, `abort`; `options` (`["continue", "abort"]`) for `wait_for_human` |
 | `human.response` | `action` (`retry`, `skip`, `abort` or `continue`), `note`; `index` or `skill` as in the request |
 | `human.timeout` | the operator did not answer in time |
 | `operator.stop` | `reason`: the operator pressed Ctrl+C, the robot was e-stopped and the run ends as `aborted` |
-| `safety.geofence`, `safety.battery_low` | the Safety Monitor stopped the robot; `pose` or `battery_pct`, `min_pct` |
+| `safety.geofence`, `safety.battery_low` | the Safety Monitor stopped the robot (leaving the geofence e-stops it unless the scene sets `estop_on_geofence: false`); `pose` or `battery_pct`, `min_pct`. Recorded once per occurrence |
+| `safety.speed_capped` | `limit` (the scene's `max_speed`), `applied` (the cap now in force on the adapter) |
+| `safety.estop`, `safety.monitor_error` | the robot was e-stopped after a `FATAL` outcome (`skill`, `reason`) or after a safety check raised (`error`) |
 | `run.end` | `status`, `steps_completed`, `reason` |
 
 ## Implementation status
@@ -98,12 +100,14 @@ Runtime events carry `ts` in wall-clock time. To align them with the trajectory,
 - The runtime writes the episode on every `spingi run`: the `runs/<run_id>/` folder is the episode; `--zip` also produces `runs/<run_id>.zip`. `spingi bench` does not write episodes. `spingi replay` reads `plan.yaml`, `scene.yaml`, `events.jsonl`, `trajectory.jsonl` and the manifest's `robot.adapter` and `config` to run an episode again.
 - `SimAdapter` samples the trajectory at 10 Hz of simulated time; `FakeAdapter` samples the start and end of every move with an "as if" time computed from the applied walking speed. Both expose `sim_time_s`, and the event log adds `sim_t` to every event.
 - The JSON schemas in [schemas/](schemas/) are generated from the pydantic models in `runtime/spingi/episode.py` (`make schemas` in `runtime/`); a test fails if they diverge.
-- The first reader is the viewer in `viewer/` (`src/episode.ts` reads zip, YAML and JSONL and interpolates the trajectory).
+- The first reader is the viewer in `viewer/` (`src/episode.ts` reads zip, YAML and JSONL and interpolates the trajectory). It refuses archives over 200 MB or expanding beyond 500 MB, and trajectories with a missing or non-finite `t`, `x`, `y` or `yaw`.
+- `SimAdapter` streams `run.mp4` to disk while recording instead of keeping the frames in memory.
+- `spingi export lerobot` refuses folders without a `manifest.json` and trajectories that end outside 0 to 24 hours.
 
 ## Frames
 
-A frame is written by the adapter as `frames/<frame_id>.png` and referenced by the event that produced it: `perception.result` carries `frame_id` (and `frame_ref`, the path the adapter wrote). A reader places frames on the timeline through those events. The viewer ignores frames that no event references, except when no event references any frame: then it shows all of them at t = 0. Only `detect` and `inspect` take frames, so most episodes have few of them, and none when the adapter cannot render (headless machines without OpenGL, `FakeAdapter`).
+A frame is written by the adapter as `frames/<frame_id>.png` and referenced by the event that produced it: `perception.result` carries `frame_id` and `frame_ref`, the path relative to the episode folder (`frames/<frame_id>.png`; never an absolute path of the machine that ran it). A reader places frames on the timeline through those events. The viewer ignores frames that no event references, except when no event references any frame: then it shows all of them at t = 0. Only `detect` and `inspect` take frames, so most episodes have few of them, and none when the adapter cannot render (headless machines without OpenGL, `FakeAdapter`).
 
 ## Compatibility
 
-A viewer that reads `0.1` must tolerate: extra fields in the manifest and in trajectory lines; `objects` missing in lines after the first; `frames/` missing; `sim_t` missing in events (use `ts`). A change that breaks any of these points increments `format_version`.
+A viewer that reads `0.1` must tolerate: extra fields in the manifest and in trajectory lines; `objects` missing in lines after the first; `frames/` missing; `sim_t` missing in events (use `ts`); a `status` it does not know (`estop` and `error` were added on 2026-10-04 without a version change). Episodes written before that date may carry an absolute `frame_ref`; readers should locate frames by `frame_id`. A change that breaks any of these points increments `format_version`.

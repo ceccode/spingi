@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import yaml
 
-from spingi.core.types import Location, ObjectRef, Pose2D, Pose3D, RobotState, WorldState
+from spingi.core.types import NAME_PATTERN, Location, ObjectRef, Pose2D, Pose3D, RobotState, WorldState
 from spingi.safety.limits import SafetyLimits
 
 
@@ -48,4 +49,11 @@ def load_routes(path: Path | str) -> dict[str, list[str]]:
     """The optional `routes:` section: "from->to" -> waypoints, given to the planner as a hint."""
     with Path(path).open(encoding="utf-8") as fh:
         raw = yaml.safe_load(fh) or {}
-    return {str(k): [str(w) for w in v] for k, v in (raw.get("routes") or {}).items()}
+    routes: dict[str, list[str]] = {}
+    for key, waypoints in (raw.get("routes") or {}).items():
+        src, sep, dst = str(key).partition("->")
+        names = [src, dst, *(str(w) for w in waypoints or [])]
+        if not sep or not all(re.match(NAME_PATTERN, n) for n in names):
+            raise ValueError(f"invalid route {key!r}: expected 'from->to' with location names as waypoints")
+        routes[f"{src}->{dst}"] = names[2:]
+    return routes

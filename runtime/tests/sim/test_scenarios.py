@@ -50,8 +50,8 @@ async def test_inspection_round_completes_in_sim(tmp_path):
     assert "red_box_01" in result.final_state.objects
 
 
-async def test_geofence_stops_the_robot_and_runtime_escalates():
-    human = ScriptedHuman(default="abort")
+async def test_leaving_the_geofence_estops_and_ends_the_run():
+    human = ScriptedHuman(default="retry")
     executor, adapter, log, state = make(FENCED, human=human)
     monitor = SafetyMonitor(adapter, log, load_safety_limits(FENCED), period_s=0.001)
     await monitor.start()
@@ -62,11 +62,11 @@ async def test_geofence_stops_the_robot_and_runtime_escalates():
     result = await executor.run(plan, state)
     await monitor.stop()
     adapter.close()
-    assert result.status == "aborted"
-    assert monitor.tripped and log.count("safety.geofence") >= 1
-    assert adapter.pose.x < 4.6  # stopped within one check period past the fence
+    assert result.status == "estop" and adapter.estopped  # terminal: no retry is offered on an e-stopped robot
+    assert monitor.tripped and log.count("safety.geofence") == 1
+    assert adapter.pose.x < 4.3  # stopped within one check (0.2 s of robot time) past the fence at x = 4
     assert adapter.speed_cap == 0.8 and log.count("safety.speed_capped") == 1
-    assert len(human.requests) == 1
+    assert human.requests == [] and log.count("step.retry") == 0
 
 
 async def test_wall_blocks_the_robot_and_runtime_escalates():
@@ -100,7 +100,8 @@ async def test_head_camera_renders_when_gl_available(tmp_path):
     adapter.close()
     if frame.data_ref is None:
         pytest.skip("rendering unavailable (no GL context)")
-    assert Path(frame.data_ref).exists() and Path(frame.data_ref).stat().st_size > 1000
+    assert frame.data_ref == f"frames/{frame.id}.png"  # relative: no local paths in shareable episodes
+    assert (tmp_path / frame.data_ref).stat().st_size > 1000
 
 
 async def test_recording_writes_a_video(tmp_path):
