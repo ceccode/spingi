@@ -8,6 +8,9 @@ because `<include>` and `meshdir` resolve relative to the main file.
 from __future__ import annotations
 
 import math
+import os
+import re
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +24,30 @@ def load_scene_yaml(path: Path | str) -> dict[str, Any]:
         return yaml.safe_load(fh) or {}
 
 
+class SceneError(ValueError):
+    """The scene file contains a value that cannot go into the simulator model."""
+
+
+_NAME = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def _name(value: Any, what: str) -> str:
+    """Names end up in XML attributes: only letters, digits, `_` and `-` (no quotes, angle brackets, spaces)."""
+    if not isinstance(value, str) or not _NAME.match(value):
+        raise SceneError(f"invalid {what} name {value!r}: use letters, digits, '_' or '-', at most 64 characters")
+    return value
+
+
+def _num(value: Any, what: str, positive: bool = False) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise SceneError(f"{what} must be a finite number, got {value!r}")
+    if positive and value <= 0:
+        raise SceneError(f"{what} must be > 0, got {value!r}")
+    return float(value)
+
+
 def build_scene_xml(scene: dict[str, Any], robot_file: str = "g1.xml") -> str:
+    """MJCF for a scene. Every value from the file is validated before it is written into the XML."""
     parts: list[str] = [
         '<mujoco model="spingi scene">',
         f'  <include file="{robot_file}"/>',
@@ -42,33 +68,45 @@ def build_scene_xml(scene: dict[str, Any], robot_file: str = "g1.xml") -> str:
         f"    {_tracking_camera()}",
     ]
     for name, loc in (scene.get("locations") or {}).items():
-        p = loc["pose"]
+        n = _name(name, "location")
+        x, y = _num(loc["pose"]["x"], f"{n}.x"), _num(loc["pose"]["y"], f"{n}.y")
         parts.append(
-            f'    <site name="loc_{name}" type="cylinder" pos="{p["x"]} {p["y"]} 0.004" size="0.25 0.004" '
+            f'    <site name="loc_{n}" type="cylinder" pos="{x} {y} 0.004" size="0.25 0.004" '
             f'rgba="0.42 0.30 0.95 0.55"/>'
         )
     for i, obs in enumerate(scene.get("obstacles") or []):
-        w, d, h = obs.get("w", 0.5), obs.get("d", 0.5), obs.get("h", 1.0)
+        x, y = _num(obs["x"], f"obstacle {i} x"), _num(obs["y"], f"obstacle {i} y")
+        w = _num(obs.get("w", 0.5), f"obstacle {i} w", positive=True)
+        d = _num(obs.get("d", 0.5), f"obstacle {i} d", positive=True)
+        h = _num(obs.get("h", 1.0), f"obstacle {i} h", positive=True)
         parts.append(
-            f'    <geom name="obs_{i}" type="box" pos="{obs["x"]} {obs["y"]} {h / 2}" '
+            f'    <geom name="obs_{i}" type="box" pos="{x} {y} {h / 2}" '
             f'size="{w / 2} {d / 2} {h / 2}" rgba="0.55 0.55 0.6 1"/>'
         )
     for oid, obj in (scene.get("objects") or {}).items():
+        n = _name(oid, "object")
         p = obj.get("pose") or {}
+        x, y, z = (_num(p.get(k, default), f"{n}.{k}") for k, default in (("x", 0), ("y", 0), ("z", 0.05)))
         size = obj.get("size", [0.15, 0.1, 0.1])
+        if not isinstance(size, list) or len(size) != 3:
+            raise SceneError(f"{n}.size must be a list of three numbers")
+        sx, sy, sz = (_num(v, f"{n}.size", positive=True) for v in size)
         parts.append(
-            f'    <geom name="obj_{oid}" type="box" pos="{p.get("x", 0)} {p.get("y", 0)} {p.get("z", 0.05)}" '
-            f'size="{size[0] / 2} {size[1] / 2} {size[2] / 2}" rgba="0.8 0.25 0.25 1" contype="0" conaffinity="0"/>'
+            f'    <geom name="obj_{n}" type="box" pos="{x} {y} {z}" '
+            f'size="{sx / 2} {sy / 2} {sz / 2}" rgba="0.8 0.25 0.25 1" contype="0" conaffinity="0"/>'
         )
     parts += ["  </worldbody>", "</mujoco>"]
     return "\n".join(parts) + "\n"
 
 
 def write_scene(scene_path: Path | str, model_dir: Path | str = DEFAULT_MODEL_DIR) -> Path:
-    scene = load_scene_yaml(scene_path)
-    out = Path(model_dir) / f"_gen_{Path(scene_path).stem}.xml"
-    out.write_text(build_scene_xml(scene), encoding="utf-8")
-    return out
+    """Writes the MJCF next to the robot model (includes and meshes resolve from there) under a unique name, so
+    concurrent runs never overwrite each other. The caller deletes it once MuJoCo has loaded it."""
+    xml = build_scene_xml(load_scene_yaml(scene_path))
+    fd, name = tempfile.mkstemp(prefix="_gen_", suffix=".xml", dir=model_dir)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(xml)
+    return Path(name)
 
 
 def _tracking_camera() -> str:

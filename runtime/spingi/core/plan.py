@@ -23,14 +23,14 @@ class Step(BaseModel):
     skill: str
     params: dict[str, Any] = Field(default_factory=dict)
     on_failure: OnFailure = Field(default_factory=OnFailure)
-    deadline_s: float | None = None
+    deadline_s: float | None = Field(default=None, gt=0, description="wall-clock seconds; default: the skill's")
 
 
 class TaskPlan(BaseModel):
     id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
     description: str = ""
     steps: list[Step] = Field(min_length=1)
-    deadline_s: float | None = None
+    deadline_s: float | None = Field(default=None, gt=0, description="robot-time budget for the whole run")
 
 
 class PlanError(ValueError):

@@ -27,7 +27,11 @@ DEFAULT_SCENE = Path("sim/scenes/lab_small.yaml")
 
 
 def main(argv: list[str] | None = None) -> int:
-    load_dotenv()  # ./.env or runtime/.env, never overriding exported variables
+    _, ignored = load_dotenv()  # runtime/.env only, allow-listed keys only, never overriding exported variables
+    if ignored:
+        print(
+            f"runtime/.env: ignored variables not allowed in this file: {', '.join(sorted(ignored))}", file=sys.stderr
+        )
     parser = argparse.ArgumentParser(prog="spingi", description="Physical Agent Runtime for humanoid robots")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -190,7 +194,11 @@ def _export(args) -> int:
     except ImportError as exc:  # pragma: no cover - depends on the environment
         print(f"missing dependency ({exc}); install the export extra: uv sync --extra export", file=sys.stderr)
         return 2
-    info = export_lerobot(args.episodes, args.out, fps=args.fps)
+    try:
+        info = export_lerobot(args.episodes, args.out, fps=args.fps)
+    except ValueError as exc:
+        print(f"export failed: {exc}", file=sys.stderr)
+        return 2
     print(
         f"LeRobot dataset {info['codebase_version']}: {info['total_episodes']} episodes, "
         f"{info['total_frames']} frames at {info['fps']} Hz → {args.out}"

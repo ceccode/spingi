@@ -64,7 +64,7 @@ ON_FAILURE = {
     "type": "object",
     "description": "How many times to retry this step, then what to do",
     "properties": {
-        "retry": {"type": "integer", "description": "0 to 3"},
+        "retry": {"type": "integer", "description": "0 to 10; usually 0 to 2"},
         "then": {"type": "string", "enum": ["needs_human", "abort", "skip"]},
     },
     "required": ["retry", "then"],

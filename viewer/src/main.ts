@@ -1,10 +1,21 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { describeEvent, episodeDuration, eventTime, loadEpisodeFromZip, objectsAt, poseAt, type Episode } from "./episode";
+import {
+  describeEvent, episodeDuration, eventTime, loadEpisodeFromZip, manifestRows, MAX_ZIP_BYTES, objectsAt, poseAt,
+  safeEpisodeUrl, type Episode,
+} from "./episode";
 import { Player } from "./player";
 import { World } from "./world";
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
+
+/** Creates an element whose text is set with textContent: never parsed as HTML. */
+function el(tag: string, text?: string, className?: string): HTMLElement {
+  const node = document.createElement(tag);
+  if (text !== undefined) node.textContent = text;
+  if (className) node.className = className;
+  return node;
+}
 const canvas = $<HTMLCanvasElement>("canvas");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -29,6 +40,7 @@ const player = new Player();
 let episode: Episode | null = null;
 let eventTimes: number[] = [];
 let frameTimes: { id: string; t: number }[] = [];
+let frameUrls: string[] = [];
 
 const ui = {
   title: $("title"), drop: $("drop"), hud: $("hud"), manifest: $("manifest"), events: $<HTMLOListElement>("events"),
@@ -110,25 +122,28 @@ async function show(ep: Episode): Promise<void> {
   const m = ep.manifest;
   ui.title.textContent = `${m.plan_id} · ${m.run_id}`;
   ui.drop.classList.add("hidden");
-  ui.manifest.innerHTML = `<h3>Episode</h3><dl>
-    <dt>Outcome</dt><dd>${m.status} · ${m.steps_completed}/${m.steps_total} step</dd>
-    <dt>Robot</dt><dd>${m.robot.model} · ${m.robot.adapter}</dd>
-    <dt>Duration</dt><dd>${(m.sim_time_s ?? m.duration_s).toFixed(1)} s simulated</dd>
-    <dt>Created</dt><dd>${m.created_at.replace("T", " ").replace("Z", " UTC")}</dd>
-    <dt>Plan</dt><dd>${ep.plan.description ?? ep.plan.id}</dd></dl>`;
+  // Episode content is untrusted (a shared zip, a ?url= link): it only ever reaches the page as text.
+  const dl = el("dl");
+  for (const [label, value] of manifestRows(ep)) dl.append(el("dt", label), el("dd", value));
+  ui.manifest.replaceChildren(el("h3", "Episode"), dl);
 
   eventTimes = ep.events.map((e) => eventTime(e, ep.events));
-  ui.events.innerHTML = "";
+  ui.events.replaceChildren();
   ep.events.forEach((e, i) => {
     const li = document.createElement("li");
     if (e.kind.startsWith("safety")) li.classList.add("safety");
     if (e.kind.startsWith("human") || e.kind === "operator.stop") li.classList.add("human");
-    li.innerHTML = `<span class="t">${eventTimes[i]!.toFixed(1)}s</span><span><b>${e.kind}</b> ${describeEvent(e)}</span>`;
+    const body = el("span");
+    body.append(el("b", e.kind), ` ${describeEvent(e)}`);
+    li.append(el("span", `${eventTimes[i]!.toFixed(1)}s`, "t"), body);
     li.addEventListener("click", () => player.seek(eventTimes[i]!));
     ui.events.appendChild(li);
   });
 
-  ui.frames.innerHTML = "";
+  for (const u of frameUrls) URL.revokeObjectURL(u);  // release the previous episode's images
+  frameUrls = [];
+  ui.frameLarge.removeAttribute("src");
+  ui.frames.replaceChildren();
   frameTimes = [];
   for (const e of ep.events) {
     const id = (e as Record<string, unknown>).frame_id as string | undefined;
@@ -138,6 +153,7 @@ async function show(ep: Episode): Promise<void> {
   for (const f of frameTimes) {
     const img = document.createElement("img");
     img.src = URL.createObjectURL(ep.frames.get(f.id)!);
+    frameUrls.push(img.src);
     img.title = `${f.id} · ${f.t.toFixed(1)} s`;
     img.addEventListener("click", () => player.seek(f.t));
     ui.frames.appendChild(img);
@@ -199,7 +215,19 @@ canvas.parentElement!.addEventListener("drop", async (e) => {
   // `?url=` in production; `#url=` also works in development (Vite rejects queries that look like paths).
   const url = new URLSearchParams(location.search).get("url") ?? new URLSearchParams(location.hash.slice(1)).get("url");
   if (url) {
-    const res = await fetch(url);
-    await loadZip(await res.arrayBuffer());
+    const target = safeEpisodeUrl(url, location.href);
+    if (!target) {
+      ui.title.textContent = "error: the episode URL must be http or https";
+      return;
+    }
+    try {
+      const res = await fetch(target);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const declared = Number(res.headers.get("content-length") ?? 0);
+      if (declared > MAX_ZIP_BYTES) throw new Error("episode archive too large");
+      await loadZip(await res.arrayBuffer());
+    } catch (err) {
+      ui.title.textContent = `error: cannot load ${target}: ${(err as Error).message}`;
+    }
   }
 })();

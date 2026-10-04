@@ -83,3 +83,19 @@ def test_navigate_via_requires_known_waypoints(registry):
 
 def test_place_pose_helper_types():
     assert Pose3D(x=1, y=2, z=0.9).z == 0.9
+
+
+async def test_an_empty_grasp_is_recoverable_and_opens_the_hand(make_executor):
+    from spingi.adapters.fake import FakeAdapter
+
+    adapter = FakeAdapter(start=Pose2D(x=0, y=2.0, yaw=1.57))
+    adapter.grasp_fails = True
+    executor, adapter, log = make_executor(adapter=adapter)
+    state = world(objects={"red_box_01": red_box()}, robot=RobotState(pose=Pose2D(x=0, y=2.0, yaw=1.57)))
+    plan = TaskPlan(
+        id="p", steps=[Step(skill="pick", params={"object_id": "red_box_01"}, on_failure={"then": "abort"})]
+    )
+    result = await executor.run(plan, state)
+    assert result.status == "aborted" and result.final_state.robot.holding is None
+    assert "nothing in the right hand" in log.find("skill.end", skill="pick")[0].data["reason"]
+    assert [c[1]["action"] for c in adapter.calls if c[0] == "gripper"] == ["close", "open"]

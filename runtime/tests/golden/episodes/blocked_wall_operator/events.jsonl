@@ -1,29 +1,29 @@
-{"ts": 1791073605.8425012, "run_id": "r-20261004-022645-8a28ea", "kind": "safety.speed_capped", "sim_t": 0.0, "requested": 1.0, "applied": 0.8}
-{"ts": 1791073605.8428469, "run_id": "r-20261004-022645-8a28ea", "kind": "safety.armed", "sim_t": 0.0, "limits": {"geofence": {"x_min": -1.0, "x_max": 8.0, "y_min": -3.0, "y_max": 5.0}, "max_speed": 0.8, "min_battery_pct": 5.0, "estop_on_geofence": false}, "period_s": 0.0}
-{"ts": 1791073605.84302, "run_id": "r-20261004-022645-8a28ea", "kind": "run.start", "sim_t": 0.0, "plan_id": "to_workstation", "steps": 1}
-{"ts": 1791073605.843151, "run_id": "r-20261004-022645-8a28ea", "kind": "plan.validated", "sim_t": 0.0, "plan_id": "to_workstation"}
-{"ts": 1791073605.8432288, "run_id": "r-20261004-022645-8a28ea", "kind": "step.start", "sim_t": 0.0, "index": 0, "skill": "navigate", "params": {"to": "workstation_B"}}
-{"ts": 1791073605.843324, "run_id": "r-20261004-022645-8a28ea", "kind": "skill.start", "sim_t": 0.0, "skill": "navigate", "attempt": 0}
-{"ts": 1791073605.8433971, "run_id": "r-20261004-022645-8a28ea", "kind": "adapter.call", "sim_t": 0.0, "op": "walk_to", "to": "workstation_B", "max_speed": 0.5}
-{"ts": 1791073605.866484, "run_id": "r-20261004-022645-8a28ea", "kind": "skill.end", "sim_t": 5.44, "skill": "navigate", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 0.0231}
-{"ts": 1791073605.866848, "run_id": "r-20261004-022645-8a28ea", "kind": "skill.postcondition_failed", "sim_t": 5.44, "skill": "navigate", "reason": "3.30 m from workstation_B, tolerance 0.15 m"}
-{"ts": 1791073605.867001, "run_id": "r-20261004-022645-8a28ea", "kind": "step.retry", "sim_t": 5.44, "index": 0, "skill": "navigate", "attempt": 1}
-{"ts": 1791073605.867093, "run_id": "r-20261004-022645-8a28ea", "kind": "skill.start", "sim_t": 5.44, "skill": "navigate", "attempt": 1}
-{"ts": 1791073605.867189, "run_id": "r-20261004-022645-8a28ea", "kind": "adapter.call", "sim_t": 5.44, "op": "walk_to", "to": "workstation_B", "max_speed": 0.5}
-{"ts": 1791073605.867593, "run_id": "r-20261004-022645-8a28ea", "kind": "skill.end", "sim_t": 5.44, "skill": "navigate", "attempt": 1, "outcome": "success", "reason": "", "duration_s": 0.0004}
-{"ts": 1791073605.867739, "run_id": "r-20261004-022645-8a28ea", "kind": "skill.postcondition_failed", "sim_t": 5.44, "skill": "navigate", "reason": "3.30 m from workstation_B, tolerance 0.15 m"}
-{"ts": 1791073605.867827, "run_id": "r-20261004-022645-8a28ea", "kind": "human.request", "sim_t": 5.44, "index": 0, "skill": "navigate", "reason": "postcondition: 3.30 m from workstation_B, tolerance 0.15 m"}
-{"ts": 1791073605.867896, "run_id": "r-20261004-022645-8a28ea", "kind": "human.response", "sim_t": 5.44, "index": 0, "action": "retry", "note": "scripted"}
-{"ts": 1791073605.8679512, "run_id": "r-20261004-022645-8a28ea", "kind": "skill.start", "sim_t": 5.44, "skill": "navigate", "attempt": 0}
-{"ts": 1791073605.867999, "run_id": "r-20261004-022645-8a28ea", "kind": "adapter.call", "sim_t": 5.44, "op": "walk_to", "to": "workstation_B", "max_speed": 0.5}
-{"ts": 1791073605.868272, "run_id": "r-20261004-022645-8a28ea", "kind": "skill.end", "sim_t": 5.44, "skill": "navigate", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 0.0003}
-{"ts": 1791073605.8683589, "run_id": "r-20261004-022645-8a28ea", "kind": "skill.postcondition_failed", "sim_t": 5.44, "skill": "navigate", "reason": "3.30 m from workstation_B, tolerance 0.15 m"}
-{"ts": 1791073605.868407, "run_id": "r-20261004-022645-8a28ea", "kind": "step.retry", "sim_t": 5.44, "index": 0, "skill": "navigate", "attempt": 1}
-{"ts": 1791073605.868451, "run_id": "r-20261004-022645-8a28ea", "kind": "skill.start", "sim_t": 5.44, "skill": "navigate", "attempt": 1}
-{"ts": 1791073605.868493, "run_id": "r-20261004-022645-8a28ea", "kind": "adapter.call", "sim_t": 5.44, "op": "walk_to", "to": "workstation_B", "max_speed": 0.5}
-{"ts": 1791073605.8687592, "run_id": "r-20261004-022645-8a28ea", "kind": "skill.end", "sim_t": 5.44, "skill": "navigate", "attempt": 1, "outcome": "success", "reason": "", "duration_s": 0.0003}
-{"ts": 1791073605.868845, "run_id": "r-20261004-022645-8a28ea", "kind": "skill.postcondition_failed", "sim_t": 5.44, "skill": "navigate", "reason": "3.30 m from workstation_B, tolerance 0.15 m"}
-{"ts": 1791073605.868953, "run_id": "r-20261004-022645-8a28ea", "kind": "human.request", "sim_t": 5.44, "index": 0, "skill": "navigate", "reason": "postcondition: 3.30 m from workstation_B, tolerance 0.15 m"}
-{"ts": 1791073605.868992, "run_id": "r-20261004-022645-8a28ea", "kind": "human.response", "sim_t": 5.44, "index": 0, "action": "abort", "note": "scripted"}
-{"ts": 1791073605.869034, "run_id": "r-20261004-022645-8a28ea", "kind": "run.end", "sim_t": 5.44, "status": "aborted", "steps_completed": 0, "reason": "postcondition: 3.30 m from workstation_B, tolerance 0.15 m"}
-{"ts": 1791073605.869169, "run_id": "r-20261004-022645-8a28ea", "kind": "safety.disarmed", "sim_t": 5.44, "checks": 28, "violations": 0}
+{"ts": 1791102703.783853, "run_id": "r-20261004-103143-696c16", "kind": "safety.speed_capped", "sim_t": 0.0, "limit": 0.8, "applied": 0.8}
+{"ts": 1791102703.7841852, "run_id": "r-20261004-103143-696c16", "kind": "safety.armed", "sim_t": 0.0, "limits": {"geofence": {"x_min": -1.0, "x_max": 8.0, "y_min": -3.0, "y_max": 5.0}, "max_speed": 0.8, "min_battery_pct": 5.0, "estop_on_geofence": false}, "period_s": 0.1}
+{"ts": 1791102703.784328, "run_id": "r-20261004-103143-696c16", "kind": "run.start", "sim_t": 0.0, "plan_id": "to_workstation", "steps": 1}
+{"ts": 1791102703.7844028, "run_id": "r-20261004-103143-696c16", "kind": "plan.validated", "sim_t": 0.0, "plan_id": "to_workstation"}
+{"ts": 1791102703.7844522, "run_id": "r-20261004-103143-696c16", "kind": "step.start", "sim_t": 0.0, "index": 0, "skill": "navigate", "params": {"to": "workstation_B"}}
+{"ts": 1791102703.784595, "run_id": "r-20261004-103143-696c16", "kind": "skill.start", "sim_t": 0.0, "skill": "navigate", "attempt": 0}
+{"ts": 1791102703.7847722, "run_id": "r-20261004-103143-696c16", "kind": "adapter.call", "sim_t": 0.0, "op": "walk_to", "to": "workstation_B", "max_speed": 0.5}
+{"ts": 1791102703.806512, "run_id": "r-20261004-103143-696c16", "kind": "skill.end", "sim_t": 5.44, "skill": "navigate", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 5.44}
+{"ts": 1791102703.806804, "run_id": "r-20261004-103143-696c16", "kind": "skill.postcondition_failed", "sim_t": 5.44, "skill": "navigate", "reason": "3.30 m from workstation_B, tolerance 0.15 m"}
+{"ts": 1791102703.8068721, "run_id": "r-20261004-103143-696c16", "kind": "step.retry", "sim_t": 5.44, "index": 0, "skill": "navigate", "attempt": 1}
+{"ts": 1791102703.806957, "run_id": "r-20261004-103143-696c16", "kind": "skill.start", "sim_t": 5.44, "skill": "navigate", "attempt": 1}
+{"ts": 1791102703.807015, "run_id": "r-20261004-103143-696c16", "kind": "adapter.call", "sim_t": 5.44, "op": "walk_to", "to": "workstation_B", "max_speed": 0.5}
+{"ts": 1791102703.807308, "run_id": "r-20261004-103143-696c16", "kind": "skill.end", "sim_t": 5.44, "skill": "navigate", "attempt": 1, "outcome": "success", "reason": "", "duration_s": 0.0}
+{"ts": 1791102703.807394, "run_id": "r-20261004-103143-696c16", "kind": "skill.postcondition_failed", "sim_t": 5.44, "skill": "navigate", "reason": "3.30 m from workstation_B, tolerance 0.15 m"}
+{"ts": 1791102703.8074539, "run_id": "r-20261004-103143-696c16", "kind": "human.request", "sim_t": 5.44, "index": 0, "skill": "navigate", "reason": "postcondition: 3.30 m from workstation_B, tolerance 0.15 m"}
+{"ts": 1791102703.807497, "run_id": "r-20261004-103143-696c16", "kind": "human.response", "sim_t": 5.44, "index": 0, "action": "retry", "note": "scripted"}
+{"ts": 1791102703.8075578, "run_id": "r-20261004-103143-696c16", "kind": "skill.start", "sim_t": 5.44, "skill": "navigate", "attempt": 0}
+{"ts": 1791102703.8076, "run_id": "r-20261004-103143-696c16", "kind": "adapter.call", "sim_t": 5.44, "op": "walk_to", "to": "workstation_B", "max_speed": 0.5}
+{"ts": 1791102703.807858, "run_id": "r-20261004-103143-696c16", "kind": "skill.end", "sim_t": 5.44, "skill": "navigate", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 0.0}
+{"ts": 1791102703.807935, "run_id": "r-20261004-103143-696c16", "kind": "skill.postcondition_failed", "sim_t": 5.44, "skill": "navigate", "reason": "3.30 m from workstation_B, tolerance 0.15 m"}
+{"ts": 1791102703.8079739, "run_id": "r-20261004-103143-696c16", "kind": "step.retry", "sim_t": 5.44, "index": 0, "skill": "navigate", "attempt": 1}
+{"ts": 1791102703.808028, "run_id": "r-20261004-103143-696c16", "kind": "skill.start", "sim_t": 5.44, "skill": "navigate", "attempt": 1}
+{"ts": 1791102703.808068, "run_id": "r-20261004-103143-696c16", "kind": "adapter.call", "sim_t": 5.44, "op": "walk_to", "to": "workstation_B", "max_speed": 0.5}
+{"ts": 1791102703.808319, "run_id": "r-20261004-103143-696c16", "kind": "skill.end", "sim_t": 5.44, "skill": "navigate", "attempt": 1, "outcome": "success", "reason": "", "duration_s": 0.0}
+{"ts": 1791102703.80839, "run_id": "r-20261004-103143-696c16", "kind": "skill.postcondition_failed", "sim_t": 5.44, "skill": "navigate", "reason": "3.30 m from workstation_B, tolerance 0.15 m"}
+{"ts": 1791102703.808473, "run_id": "r-20261004-103143-696c16", "kind": "human.request", "sim_t": 5.44, "index": 0, "skill": "navigate", "reason": "postcondition: 3.30 m from workstation_B, tolerance 0.15 m"}
+{"ts": 1791102703.8085551, "run_id": "r-20261004-103143-696c16", "kind": "human.response", "sim_t": 5.44, "index": 0, "action": "abort", "note": "scripted"}
+{"ts": 1791102703.8086011, "run_id": "r-20261004-103143-696c16", "kind": "run.end", "sim_t": 5.44, "status": "aborted", "steps_completed": 0, "reason": "postcondition: 3.30 m from workstation_B, tolerance 0.15 m"}
+{"ts": 1791102703.808741, "run_id": "r-20261004-103143-696c16", "kind": "safety.disarmed", "sim_t": 5.44, "checks": 27, "violations": 0}

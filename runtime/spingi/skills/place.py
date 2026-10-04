@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 from pydantic import BaseModel, Field
 
 from spingi.core.skill import Check, Skill, SkillContext, SkillResult
@@ -32,18 +34,17 @@ class PlaceSkill(Skill):
 
     async def execute(self, params: PlaceParams, ctx: SkillContext) -> SkillResult:
         held = ctx.state.robot.holding
-        assert held is not None  # guaranteed by the precondition
+        if held is None:  # the precondition guarantees it; never rely on assert, which `python -O` removes
+            return SkillResult.needs_human("place called with an empty hand")
         pose = ctx.state.robot.pose
-        import math
-
         drop = Pose3D(x=pose.x + 0.35 * math.cos(pose.yaw), y=pose.y + 0.35 * math.sin(pose.yaw), z=params.height_m)
         ctx.log.emit("adapter.call", op="move_arm", arm=params.arm, target=drop.model_dump())
         await ctx.robot.move_arm(params.arm, drop, duration_s=2.0)
-        await ctx.robot.gripper(params.arm, "open")
-        positions = getattr(ctx.robot, "object_positions", None)
-        if callable(positions) and held.id in positions():
-            p = positions()[held.id]
-            drop = Pose3D(x=p["x"], y=p["y"], z=p["z"])
+        grip = await ctx.robot.gripper(params.arm, "open")
+        if grip.holding:
+            return SkillResult.recoverable(f"{held.id} did not leave the {params.arm} hand")
+        if grip.released_at is not None:  # the adapter knows where it landed (simulation); else assume the drop pose
+            drop = grip.released_at
         placed = ObjectRef(id=held.id, cls=held.cls, pose=drop, confidence=1.0, marker_id=held.marker_id)
         delta = StateDelta(clear_holding=True, objects_upsert={held.id: placed})
         return SkillResult.success(delta, object_id=held.id, at=params.at, pose=drop.model_dump())

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import math
-import time
 from pathlib import Path
 from typing import Literal
 
@@ -18,7 +17,7 @@ import mujoco
 import numpy as np
 
 from spingi.adapters.sim_mujoco.scene import DEFAULT_MODEL_DIR, write_scene
-from spingi.core.ports import Arm, Frame, JointState
+from spingi.core.ports import Arm, Frame, GripResult, JointState
 from spingi.core.types import Pose2D, Pose3D
 
 
@@ -47,12 +46,14 @@ class SimAdapter:
         battery_drain_per_m: float = 0.5,
         watchdog_ms: int | None = None,
         grasp_range_m: float = 0.9,
-        clock=time.monotonic,
     ) -> None:
         self.scene_path = Path(scene_path)
         self.model_dir = Path(model_dir)
         xml_path = write_scene(self.scene_path, self.model_dir)
-        self.model = mujoco.MjModel.from_xml_path(str(xml_path))
+        try:
+            self.model = mujoco.MjModel.from_xml_path(str(xml_path))
+        finally:
+            xml_path.unlink(missing_ok=True)  # compiled into the model; the file is no longer needed
         self.data = mujoco.MjData(self.model)
         if self.model.nkey > 0:
             mujoco.mj_resetDataKeyframe(self.model, self.data, 0)
@@ -69,8 +70,10 @@ class SimAdapter:
         self.battery_drain_per_m = battery_drain_per_m
         self.watchdog_ms = watchdog_ms
         self.grasp_range_m = grasp_range_m  # an object within this distance of the base can be grasped
-        self._clock = clock
-        self._last_heartbeat = clock()
+        self.sim_time_s = 0.0
+        self.clock = SimClock(self)  # robot time = simulated time; the watchdog counts it too
+        self._advanced = asyncio.Event()
+        self._last_heartbeat = 0.0
         self.held_object: str | None = None  # kinematic grasp (ADR-0007): the object follows the hand
         self._objects_dirty = False
 
@@ -81,12 +84,12 @@ class SimAdapter:
         self.stop_called = 0
         self.last_applied_speed: float | None = None
         self.ticks = 0
-        self.sim_time_s = 0.0
         self.calls: list[tuple[str, dict]] = []
 
         self._robot_geoms = self._subtree_geoms("pelvis")
         self._floor = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, "floor")
         self._renderer: mujoco.Renderer | None = None
+        self.render_error: str | None = None
         self._frames: list[np.ndarray] = []
         self._frame_counter = 0
         self._viewer = None
@@ -107,6 +110,7 @@ class SimAdapter:
         step = speed * self.dt
         while self.mode == "walking":
             if self._watchdog_expired():
+                self.blocked_by = "watchdog"
                 await self.stop()
                 return
             dx, dy = pose.x - self.pose.x, pose.y - self.pose.y
@@ -157,20 +161,25 @@ class SimAdapter:
         for _ in range(max(1, int(duration_s / self.dt))):
             await self._tick()
 
-    async def gripper(self, arm: Arm, action: Literal["open", "close"]) -> None:
+    async def gripper(self, arm: Arm, action: Literal["open", "close"]) -> GripResult:
         self._record("gripper", arm=arm, action=action)
         self._guard()
+        released_at = None
         if action == "close" and self.held_object is None:
             self.held_object = self._nearest_object(self.grasp_range_m)
             if self.held_object is not None:
                 self._objects_dirty = True
                 self._apply_pose()
         elif action == "open" and self.held_object is not None:
-            self._release(self.held_object)
+            released = self.held_object
+            self._release(released)
             self.held_object = None
             self._objects_dirty = True
+            p = self.object_positions()[released]
+            released_at = Pose3D(x=p["x"], y=p["y"], z=p["z"])
         self._sample(include_objects=self._objects_dirty)
         self._objects_dirty = False
+        return GripResult(holding=self.held_object is not None, object_id=self.held_object, released_at=released_at)
 
     # --- sensors -----------------------------------------------------------
     async def get_camera(self, name: str = "head") -> Frame:
@@ -200,11 +209,15 @@ class SimAdapter:
         self.mode = "estop"
 
     async def heartbeat(self) -> None:
-        self._last_heartbeat = self._clock()
+        self._last_heartbeat = self.sim_time_s
 
     def reset_estop(self) -> None:
         self.estopped = False
         self.mode = "idle"
+
+    def set_speed_limit(self, max_speed: float) -> float:
+        self.speed_cap = min(self.speed_cap, max_speed)
+        return self.speed_cap
 
     # --- lifecycle ---------------------------------------------------------
     def close(self) -> Path | None:
@@ -218,7 +231,7 @@ class SimAdapter:
 
             self.record_dir.mkdir(parents=True, exist_ok=True)
             video = self.record_dir / "run.mp4"
-            fps = max(1, int(round(1.0 / (self.dt * self.record_every))))
+            fps = max(1, round(1.0 / (self.dt * self.record_every)))
             iio.mimwrite(video, self._frames, fps=fps, codec="libx264", quality=7, macro_block_size=1)
             self._frames = []
         if self._renderer is not None:
@@ -307,6 +320,8 @@ class SimAdapter:
     async def _tick(self) -> None:
         self.ticks += 1
         self.sim_time_s += self.dt
+        self._advanced.set()  # wake whoever sleeps on the simulated clock
+        self._advanced = asyncio.Event()
         if self.ticks % self.sample_every == 0:
             self._sample(include_objects=self.held_object is not None)
         if self._viewer is not None:
@@ -353,7 +368,8 @@ class SimAdapter:
                 self._renderer = mujoco.Renderer(self.model, height, width)
             self._renderer.update_scene(self.data, camera=camera)
             return self._renderer.render().copy()
-        except Exception:  # noqa: BLE001 - without GL (headless CI) perception simply gets no image
+        except Exception as exc:  # noqa: BLE001 - no OpenGL context (headless CI): perception gets no image
+            self.render_error = repr(exc)  # kept for diagnosis instead of being swallowed
             return None
 
     def _open_viewer(self) -> None:
@@ -386,7 +402,22 @@ class SimAdapter:
     def _watchdog_expired(self) -> bool:
         if self.watchdog_ms is None:
             return False
-        return (self._clock() - self._last_heartbeat) * 1000 > self.watchdog_ms
+        return (self.sim_time_s - self._last_heartbeat) * 1000 > self.watchdog_ms
+
+
+class SimClock:
+    """Simulated time: `sleep` returns once the simulation has advanced by `seconds`, costing nothing while idle."""
+
+    def __init__(self, adapter: SimAdapter) -> None:
+        self._adapter = adapter
+
+    def now(self) -> float:
+        return self._adapter.sim_time_s
+
+    async def sleep(self, seconds: float) -> None:
+        target = self._adapter.sim_time_s + seconds
+        while self._adapter.sim_time_s < target - 1e-9:
+            await self._adapter._advanced.wait()
 
 
 def _wrap(a: float) -> float:

@@ -46,11 +46,19 @@ packages = ["spingi"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "-q"
 
 [tool.ruff]
 line-length = 120
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP"]
+# E/F pycodestyle+pyflakes, I imports, B bugbear, UP pyupgrade, S bandit (security), ASYNC asyncio pitfalls,
+# SIM simplifications, RUF ruff-specific, PIE misc., BLE blind except (each one must say why).
+select = ["E", "F", "I", "B", "UP", "S", "ASYNC", "SIM", "RUF", "PIE", "BLE"]
+ignore = [
+  "S311",    # pseudo-random numbers are simulated sensor noise, not cryptography
+  "RUF001", "RUF002", "RUF003",  # typographic characters in strings and comments are intended
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S108", "RUF059", "ASYNC240"]   # pytest asserts, temp paths, unused fixtures, test I/O

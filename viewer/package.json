@@ -9,7 +9,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "model:compress": "gltf-transform optimize public/models/g1.glb public/models/g1.glb --compress meshopt --simplify false"
+    "model:compress": "npx --yes @gltf-transform/cli@4 optimize public/models/g1.glb public/models/g1.glb --compress meshopt --simplify false"
   },
   "dependencies": {
     "fflate": "^0.8.2",
@@ -17,11 +17,10 @@
     "yaml": "^2.6.0"
   },
   "devDependencies": {
-    "@gltf-transform/cli": "^4.1.0",
     "@types/three": "^0.170.0",
     "typescript": "^5.6.0",
     "vite": "^6.0.0",
-    "vitest": "^2.1.0"
+    "vitest": "^5.0.3"
   },
   "license": "Apache-2.0"
 }

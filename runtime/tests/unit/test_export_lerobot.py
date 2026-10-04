@@ -71,3 +71,10 @@ async def test_action_is_the_next_state(tmp_path):
     data = pq.read_table(tmp_path / "ds/data/chunk-000/file-000.parquet").to_pandas()
     for i in range(len(data) - 1):
         assert list(data["action"].iloc[i]) == pytest.approx(list(data["observation.state"].iloc[i + 1]), abs=1e-5)
+
+
+def test_export_rejects_paths_that_are_not_episode_folders(tmp_path):
+    archive = tmp_path / "r-1.zip"
+    archive.write_bytes(b"PK")
+    with pytest.raises(ValueError, match="not episode folders"):
+        export_lerobot([archive], tmp_path / "ds")

@@ -1,3 +1,4 @@
+import itertools
 import json
 from pathlib import Path
 
@@ -51,7 +52,7 @@ async def test_trajectory_is_monotonic_and_ends_at_dock(tmp_path):
     await run_demo(tmp_path)
     samples = read_trajectory(tmp_path)
     assert len(samples) >= 2
-    assert all(b.t >= a.t for a, b in zip(samples, samples[1:], strict=False))
+    assert all(b.t >= a.t for a, b in itertools.pairwise(samples))
     assert abs(samples[-1].robot.x) < 1e-6 and abs(samples[-1].robot.y) < 1e-6
 
 
@@ -60,7 +61,7 @@ async def test_events_carry_sim_time_aligned_with_trajectory(tmp_path):
     ends = log.find("skill.end", skill="navigate")
     assert ends and all("sim_t" in e.data for e in ends)
     assert abs(ends[-1].data["sim_t"] - adapter.sim_time_s) < 1e-3  # sim_t is rounded to 3 decimals
-    assert all(b.data["sim_t"] >= a.data["sim_t"] for a, b in zip(log.events, log.events[1:], strict=False))
+    assert all(b.data["sim_t"] >= a.data["sim_t"] for a, b in itertools.pairwise(log.events))
 
 
 async def test_zip_contains_the_folder(tmp_path):

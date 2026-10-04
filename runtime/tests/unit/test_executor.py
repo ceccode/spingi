@@ -41,18 +41,36 @@ async def test_invalid_plan_never_moves_the_robot(make_executor):
     assert log.count("plan.invalid") == 1
 
 
-async def test_precondition_failure_retries_then_escalates(make_executor):
+async def test_precondition_failure_escalates_without_useless_retries(make_executor):
     human = ScriptedHuman(default="abort")
     executor, adapter, log = make_executor(human=human)
     plan = TaskPlan(
         id="p", steps=[Step(skill="navigate", params={"to": "nowhere"}, on_failure={"retry": 2, "then": "needs_human"})]
     )
-    # 'nowhere' passes static validation (it is a string) but fails the precondition at runtime
+    # 'nowhere' passes static validation (it is a string) but fails the precondition at run time; nothing would
+    # change between retries, so the step goes straight to its escalation policy.
     result = await executor.run(plan, world())
     assert result.status == "aborted"
-    assert log.count("skill.precondition_failed") == 3  # initial attempt + 2 retries
+    assert log.count("skill.precondition_failed") == 1 and log.count("step.retry") == 0
     assert log.count("human.request") == 1 and len(human.requests) == 1
     assert adapter.stop_called >= 1
+
+
+async def test_human_retry_rechecks_the_precondition(make_executor):
+    human = ScriptedHuman(responses=["retry", "abort"])
+    executor, adapter, log = make_executor(human=human)
+    result = await executor.run(TaskPlan(id="p", steps=[Step(skill="navigate", params={"to": "nowhere"})]), world())
+    assert result.status == "aborted" and log.count("skill.precondition_failed") == 2
+
+
+def test_zero_or_negative_deadlines_are_rejected():
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        Step(skill="say", params={"text": "x"}, deadline_s=0)
+    with pytest.raises(ValidationError):
+        TaskPlan(id="p", steps=[Step(skill="say", params={"text": "x"})], deadline_s=-1)
 
 
 async def test_human_can_skip_a_failing_step(make_executor):

@@ -26,6 +26,8 @@ from spingi.skills import default_registry
 
 AdapterKind = Literal["fake", "sim"]
 
+MONITOR_PERIOD_S = 0.1  # robot time between safety checks (in fast simulation the adapter yields every 0.2 s)
+
 
 @dataclass
 class SessionConfig:
@@ -41,6 +43,8 @@ class SessionConfig:
     record_video: bool = False
     write_episode: bool = True
     zip_episode: bool = False
+    # Safety layer S1: the adapter stops the robot if the SafetyMonitor's heartbeat is older than this, in robot time.
+    watchdog_ms: int = 500
 
 
 @dataclass
@@ -82,20 +86,21 @@ async def run_session(cfg: SessionConfig, human: HumanGateway, log: EventLog | N
             viewer=cfg.view,
             record_dir=run_dir if cfg.write_episode else None,
             record_video=cfg.record_video,
+            watchdog_ms=cfg.watchdog_ms,
         )
         perceiver = SimPerceiver(
             robot, false_negative_rate=cfg.perception_noise, position_sigma_m=cfg.position_sigma_m, seed=cfg.seed
         )
-        monitor_period = 0.05 if realtime else 0.0
     else:
-        robot = FakeAdapter(start=state.robot.pose)
+        robot = FakeAdapter(start=state.robot.pose, watchdog_ms=cfg.watchdog_ms)
         perceiver = FakePerceiver(
             objects=list(state.objects.values()), false_negative_rate=cfg.perception_noise, seed=cfg.seed
         )
-        monitor_period = 0.05
 
-    executor = Executor(registry=default_registry(), robot=robot, perceiver=perceiver, human=human, log=log)
-    monitor = SafetyMonitor(robot, log, load_safety_limits(cfg.scene), period_s=monitor_period)
+    executor = Executor(
+        registry=default_registry(), robot=robot, perceiver=perceiver, human=human, log=log, clock=robot.clock.now
+    )
+    monitor = SafetyMonitor(robot, log, load_safety_limits(cfg.scene), period_s=MONITOR_PERIOD_S)
 
     loop = asyncio.get_running_loop()
     run_task = asyncio.create_task(executor.run(plan, state))

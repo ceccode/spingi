@@ -1,4 +1,4 @@
-"""Same suite for every RobotAdapter. Today only FakeAdapter; SimAdapter (M1) and G1 (M4) are added here."""
+"""The same suite for every RobotAdapter: FakeAdapter and SimAdapter today, the real G1 adapter from M4."""
 
 from pathlib import Path
 
@@ -59,3 +59,20 @@ async def test_battery_in_range(adapter):
 
 async def test_estop_never_raises(adapter):
     await adapter.estop()
+
+
+async def test_speed_limit_never_goes_up(adapter):
+    assert adapter.set_speed_limit(0.3) == 0.3
+    assert adapter.set_speed_limit(5.0) == 0.3
+    await adapter.walk_to(Pose2D(x=0.3, y=0), max_speed=2.0)
+    assert adapter.last_applied_speed <= 0.3
+
+
+async def test_gripper_reports_what_it_holds(adapter):
+    opened = await adapter.gripper("right", "open")
+    assert opened.holding is False
+
+
+def test_clock_is_monotonic(adapter):
+    a = adapter.clock.now()
+    assert adapter.clock.now() >= a

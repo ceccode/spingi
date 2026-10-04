@@ -55,8 +55,8 @@ async def bench(
         position_sigma_m=base.position_sigma_m,
         gate=gate,
     )
-    if out_dir is not None:
-        out_dir.mkdir(parents=True, exist_ok=True)
+    if out_dir is not None:  # a few KB written once at the end: blocking I/O is fine here
+        out_dir.mkdir(parents=True, exist_ok=True)  # noqa: ASYNC240
         (out_dir / "report.json").write_text(report.model_dump_json(indent=2) + "\n", encoding="utf-8")
         with (out_dir / "runs.jsonl").open("w", encoding="utf-8") as fh:
             for m in metrics:

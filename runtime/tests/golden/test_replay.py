@@ -10,8 +10,8 @@ import pytest
 
 pytest.importorskip("mujoco")
 
-from spingi.core.events import EventLog  # noqa: E402
-from spingi.replay import replay, signature  # noqa: E402
+from spingi.core.events import EventLog
+from spingi.replay import replay, signature
 
 EPISODES = Path(__file__).parent / "episodes"
 NAMES = sorted(p.name for p in EPISODES.iterdir() if p.is_dir())

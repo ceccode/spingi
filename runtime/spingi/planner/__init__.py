@@ -1,1 +1,1 @@
-"""Planner: turns a request into a TaskPlan. M0: only StaticPlanner from YAML."""
+"""Planners turn a request into a TaskPlan: StaticPlanner (YAML files) and LLMPlanner (natural language)."""

@@ -23,10 +23,13 @@ export interface Scene {
 export interface Plan { id: string; description?: string; steps: { skill: string; params: Record<string, unknown> }[] }
 export interface Episode {
   manifest: Manifest; scene: Scene; plan: Plan; events: Event[]; trajectory: Sample[];
-  frames: Map<string, Blob>; video?: Blob;
+  frames: Map<string, Blob>;
 }
 
 export const SUPPORTED_FORMAT = "0.1";
+/** Episodes come from strangers too: refuse archives that would exhaust the browser's memory (zip bombs). */
+export const MAX_ZIP_BYTES = 200 * 1024 * 1024;
+export const MAX_UNZIPPED_BYTES = 500 * 1024 * 1024;
 
 export function parseJsonl<T>(text: string): T[] {
   return text.split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l) as T);
@@ -57,10 +60,8 @@ export function parseEpisodeFiles(raw: Record<string, Uint8Array>): Episode {
     throw new Error(`episode format ${manifest.format_version} not supported (expected ${SUPPORTED_FORMAT})`);
   }
   const frames = new Map<string, Blob>();
-  let video: Blob | undefined;
   for (const [p, data] of Object.entries(files)) {
     if (p.startsWith("frames/")) frames.set(p.slice("frames/".length).replace(/\.png$/, ""), new Blob([data as BlobPart], { type: "image/png" }));
-    if (p === "run.mp4") video = new Blob([data as BlobPart], { type: "video/mp4" });
   }
   return {
     manifest,
@@ -69,12 +70,39 @@ export function parseEpisodeFiles(raw: Record<string, Uint8Array>): Episode {
     events: parseJsonl<Event>(text("events.jsonl")),
     trajectory: files["trajectory.jsonl"] ? parseJsonl<Sample>(text("trajectory.jsonl")) : [],
     frames,
-    video,
   };
 }
 
-export function loadEpisodeFromZip(buf: ArrayBuffer): Episode {
-  return parseEpisodeFiles(unzipSync(new Uint8Array(buf)));
+export function loadEpisodeFromZip(
+  buf: ArrayBuffer,
+  limits: { zipBytes: number; unzippedBytes: number } = { zipBytes: MAX_ZIP_BYTES, unzippedBytes: MAX_UNZIPPED_BYTES },
+): Episode {
+  if (buf.byteLength > limits.zipBytes) {
+    throw new Error(`episode archive too large (${mb(buf.byteLength)} MB, limit ${mb(limits.zipBytes)} MB)`);
+  }
+  let total = 0;
+  const files = unzipSync(new Uint8Array(buf), {
+    filter: (f) => {  // checked against the sizes declared in the archive, before anything is inflated
+      total += f.originalSize;
+      if (total > limits.unzippedBytes) throw new Error(`episode expands beyond ${mb(limits.unzippedBytes)} MB, refused`);
+      return true;
+    },
+  });
+  return parseEpisodeFiles(files);
+}
+
+/** Only http(s) URLs, absolute or relative to the viewer, may be fetched from `?url=`. */
+export function safeEpisodeUrl(raw: string, base: string): string | null {
+  try {
+    const url = new URL(raw, base);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function mb(bytes: number): number {
+  return Math.round(bytes / 1024 / 1024);
 }
 
 export function wrapAngle(a: number): number {
@@ -104,6 +132,19 @@ export function poseAt(trajectory: Sample[], t: number): Pose2D & { mode: string
     yaw: a.robot.yaw + wrapAngle(b.robot.yaw - a.robot.yaw) * u,
     mode: u < 1 ? a.robot.mode : b.robot.mode,
   };
+}
+
+/** The rows of the episode card, as plain strings. */
+export function manifestRows(ep: Episode): [string, string][] {
+  const m = ep.manifest;
+  const seconds = Number(m.sim_time_s ?? m.duration_s);
+  return [
+    ["Outcome", `${m.status} · ${m.steps_completed}/${m.steps_total} steps`],
+    ["Robot", `${m.robot?.model} · ${m.robot?.adapter}`],
+    ["Duration", Number.isFinite(seconds) ? `${seconds.toFixed(1)} s simulated` : "unknown"],
+    ["Created", String(m.created_at ?? "").replace("T", " ").replace("Z", " UTC")],
+    ["Plan", String(ep.plan.description ?? ep.plan.id)],
+  ];
 }
 
 /** Object positions at time t: the latest sample at or before t that carries `objects`, merged over earlier ones. */

@@ -96,10 +96,12 @@ class Executor:
             while not step_done:
                 check = skill.preconditions(params, state)
                 if not check.ok:
+                    # Nothing has happened since the last check, so a retry would fail the same way:
+                    # go straight to the step's escalation policy.
                     self.log.emit("skill.precondition_failed", skill=step.skill, reason=check.reason)
-                    result = SkillResult.recoverable(f"precondition: {check.reason}")
+                    result = SkillResult.needs_human(f"precondition: {check.reason}")
                 else:
-                    deadline = step.deadline_s or skill.default_deadline_s
+                    deadline = step.deadline_s if step.deadline_s is not None else skill.default_deadline_s
                     ctx = SkillContext(
                         state=state,
                         robot=self.robot,
@@ -166,7 +168,7 @@ class Executor:
             await self.robot.stop()
             self.log.emit("skill.deadline", skill=skill.name, deadline_s=deadline)
             return SkillResult.recoverable(f"deadline of {deadline}s exceeded")
-        except Exception as exc:  # noqa: BLE001 - a bug in the skill must not leave the robot in motion
+        except Exception as exc:  # noqa: BLE001 - a bug in a skill must not leave the robot moving
             await self.robot.stop()
             self.log.emit("skill.exception", skill=skill.name, error=repr(exc))
             return SkillResult.needs_human(f"exception in {skill.name}: {exc!r}")

@@ -53,7 +53,7 @@ async def test_inspection_round_completes_in_sim(tmp_path):
 async def test_geofence_stops_the_robot_and_runtime_escalates():
     human = ScriptedHuman(default="abort")
     executor, adapter, log, state = make(FENCED, human=human)
-    monitor = SafetyMonitor(adapter, log, load_safety_limits(FENCED), period_s=0.0)
+    monitor = SafetyMonitor(adapter, log, load_safety_limits(FENCED), period_s=0.001)
     await monitor.start()
     plan = TaskPlan(
         id="out",

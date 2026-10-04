@@ -5,6 +5,7 @@ compares behaviour (events and final position), not images.
 """
 
 import asyncio
+import json
 import shutil
 import tempfile
 from pathlib import Path
@@ -51,6 +52,9 @@ async def main() -> None:
             target = OUT / name
             shutil.rmtree(target, ignore_errors=True)
             shutil.copytree(result.run_dir, target, ignore=shutil.ignore_patterns("frames", "*.mp4"))
+            manifest = json.loads((target / "manifest.json").read_text())
+            manifest["files"] = sorted(p.name for p in target.iterdir() if p.name != "manifest.json")
+            (target / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
             retries = result.log.count("step.retry")
             print(f"{name}: {result.status}, {result.steps_completed}/{result.steps_total} steps, {retries} retries")
 

@@ -57,7 +57,7 @@ def test_reporter_prints_meaningful_events_only():
     log.emit("safety.geofence", pose={"x": 9.0, "y": 0.0})
     log.emit("run.end", status="success", steps_completed=2)
     lines = out.getvalue().splitlines()
-    assert len(lines) == 6 and all(line.startswith("[    3.2s]") or line.startswith("[    3.3s]") for line in lines)
+    assert len(lines) == 6 and all(line.startswith(("[    3.2s]", "[    3.3s]")) for line in lines)
     assert "step 0  navigate" in lines[1] and "recoverable" in lines[2] and "red_box_01" in lines[3]
     assert "SAFETY geofence" in lines[4] and "run end: success" in lines[5]
 

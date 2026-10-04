@@ -9,7 +9,7 @@ from spingi.safety import Geofence, SafetyLimits, SafetyMonitor
 def make(limits: SafetyLimits, **kw):
     adapter = FakeAdapter(**kw)
     log = EventLog(run_id="r-safety")
-    return SafetyMonitor(adapter, log, limits, period_s=0.0), adapter, log
+    return SafetyMonitor(adapter, log, limits, period_s=0.001), adapter, log
 
 
 async def test_geofence_violation_stops_the_robot_and_logs():
@@ -52,5 +52,29 @@ async def test_start_applies_speed_cap_and_loop_runs():
     await monitor.start()
     await asyncio.sleep(0.01)
     await monitor.stop()
-    assert adapter.speed_cap == 0.3 and log.count("safety.speed_capped") == 1
+    assert adapter.speed_cap == 0.3 and log.find("safety.speed_capped")[0].data == {"limit": 0.3, "applied": 0.3}
     assert monitor.checks >= 1 and log.count("safety.armed") == 1 and log.count("safety.disarmed") == 1
+
+
+def test_zero_period_is_refused():
+    import pytest
+
+    with pytest.raises(ValueError):
+        SafetyMonitor(FakeAdapter(), EventLog(run_id="r"), SafetyLimits(), period_s=0)
+
+
+async def test_a_crashing_check_estops_the_robot_instead_of_failing_silently():
+    import asyncio
+
+    class BrokenPose(FakeAdapter):
+        async def get_pose(self):
+            raise RuntimeError("pose sensor lost")
+
+    adapter = BrokenPose()
+    log = EventLog(run_id="r")
+    monitor = SafetyMonitor(adapter, log, SafetyLimits(), period_s=0.01)
+    await monitor.start()
+    await asyncio.sleep(0.05)
+    await monitor.stop()
+    assert adapter.estopped and monitor.tripped and "pose sensor lost" in monitor.failed
+    assert log.count("safety.monitor_error") == 1

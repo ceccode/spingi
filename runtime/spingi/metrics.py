@@ -45,7 +45,7 @@ def run_metrics(events: list[Event], steps_total: int) -> RunMetrics:
         human_requests=sum(1 for e in events if e.kind == "human.request"),
         retries=sum(1 for e in events if e.kind == "step.retry"),
         safety_violations=sum(1 for e in events if e.kind in SAFETY_VIOLATIONS),
-        fatal=any(e.kind == "safety.estop" for e in events),
+        fatal=any(e.kind in ("safety.estop", "safety.monitor_error") for e in events),
         operator_stop=any(e.kind == "operator.stop" for e in events),
     )
 

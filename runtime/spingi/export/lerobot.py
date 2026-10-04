@@ -33,6 +33,9 @@ def export_lerobot(episode_dirs: list[Path], out: Path, fps: int = 10) -> dict:
 
     if not episode_dirs:
         raise ValueError("no episodes to export")
+    not_episodes = [str(p) for p in episode_dirs if not (Path(p) / "manifest.json").is_file()]
+    if not_episodes:
+        raise ValueError(f"not episode folders (no manifest.json): {', '.join(not_episodes)}")
     out.mkdir(parents=True, exist_ok=True)
 
     tasks: dict[str, int] = {}
@@ -118,7 +121,7 @@ def _resample(ep_dir: Path, fps: int) -> list[tuple[float, list[float]]]:
         return []
     gripper = _gripper_timeline(ep_dir)
     end = samples[-1].t
-    n = int(math.floor(end * fps + 1e-9)) + 1
+    n = math.floor(end * fps + 1e-9) + 1
     out: list[tuple[float, list[float]]] = []
     j = 0
     for k in range(n):

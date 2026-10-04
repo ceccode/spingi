@@ -37,11 +37,13 @@ class PickSkill(Skill):
         obj = ctx.state.objects[params.object_id]
         ctx.log.emit("adapter.call", op="move_arm", arm=params.arm, target=obj.pose.model_dump())
         await ctx.robot.move_arm(params.arm, obj.pose, duration_s=2.0)
-        await ctx.robot.gripper(params.arm, "close")
-        held = getattr(ctx.robot, "held_object", params.object_id)  # adapters that simulate grasping tell us
-        if held != params.object_id:
+        grip = await ctx.robot.gripper(params.arm, "close")
+        if not grip.holding:
             await ctx.robot.gripper(params.arm, "open")
-            return SkillResult.recoverable(f"grasp failed: holding {held!r} instead of {params.object_id}")
+            return SkillResult.recoverable(f"grasp failed: nothing in the {params.arm} hand")
+        if grip.object_id is not None and grip.object_id != params.object_id:  # only adapters that can tell
+            await ctx.robot.gripper(params.arm, "open")
+            return SkillResult.recoverable(f"grasp failed: holding {grip.object_id} instead of {params.object_id}")
         delta = StateDelta(holding=obj, objects_remove=[params.object_id])
         return SkillResult.success(delta, object_id=params.object_id)
 

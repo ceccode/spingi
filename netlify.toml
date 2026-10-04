@@ -3,3 +3,14 @@
   base = "viewer"
   command = "npm run build"
   publish = "dist"
+
+# Security headers for the viewer. Episodes are read in the browser, never uploaded; `?url=` may fetch any HTTPS
+# URL, so connect-src allows https:. 'wasm-unsafe-eval' is needed by the meshopt decoder of the G1 model.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' blob: data:; connect-src 'self' https:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "no-referrer"
+    Cross-Origin-Opener-Policy = "same-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
