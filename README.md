@@ -6,7 +6,7 @@ Spingi is a **Physical Agent Runtime** for humanoid robots: it turns a robot int
 
 This repository is a neutral open-source toolkit. Applications built on top of it live elsewhere; this repo keeps sample plans and scenes that show how to use the system.
 
-Status: **runtime M2 complete · viewer v0.2** · 2026-10-04
+Status: **runtime M3 complete (planner evaluation against the model pending) · viewer v0.2** · 2026-10-04
 
 ## What is in the box
 
@@ -74,7 +74,17 @@ Turn episodes into a LeRobotDataset v3.0 for training tools:
 uv run spingi export lerobot runs/r-* --out runs/dataset
 ```
 
-### 4. Write your own plan
+### 4. Ask in plain language
+
+With an Anthropic API key (`ANTHROPIC_API_KEY`), Claude turns a request into a plan that is validated against the skills before anything moves, and can run it straight away under your supervision:
+
+```bash
+uv run spingi plan "Bring the red box from shelf A to workstation B" --scene sim/scenes/warehouse_small.yaml --run --adapter sim
+```
+
+`spingi eval-planner` measures the planner on ten golden requests. The model never controls the robot: it can only write steps made of whitelisted skills, and a plan that does not validate is never executed.
+
+### 5. Write your own plan
 
 A plan is a YAML list of skills with a failure policy per step. No branches, no loops: when a decision is needed, a new plan is generated.
 
@@ -100,11 +110,11 @@ Skills available today: `navigate`, `detect`, `pick`, `place`, `inspect`, `wait_
 ## How it works
 
 ```
-plan.yaml ──► Executor ──► skills ──► RobotAdapter ──► FakeAdapter | SimAdapter (MuJoCo) | real robot
-                 │             │
-                 │             └── Perceiver (markers, detector; ground truth in simulation)
-                 ├── SafetyMonitor: independent task, geofence, speed cap, battery, watchdog
-                 └── EventLog ──► console · metrics · episode (events, trajectory, frames) ──► Viewer, LeRobot
+request ──► LLMPlanner ──► plan.yaml ──► Executor ──► skills ──► RobotAdapter ──► FakeAdapter | SimAdapter (MuJoCo) | real robot
+                                             │             │
+                                             │             └── Perceiver (markers, detector; ground truth in simulation)
+                                             ├── SafetyMonitor: independent task, geofence, speed cap, battery, watchdog
+                                             └── EventLog ──► console · metrics · episode (events, trajectory, frames) ──► Viewer, LeRobot
 ```
 
 Eight principles drive the design, written down in [docs/runtime-spec.md](docs/runtime-spec.md) and in the [ADRs](adr/README.md). The two that matter most: a language model may propose a plan but never controls the robot directly, and every component is testable without hardware.
@@ -115,7 +125,7 @@ Eight principles drive the design, written down in [docs/runtime-spec.md](docs/r
 |----------|---------|
 | [docs/runtime-spec.md](docs/runtime-spec.md) | Principles, architecture, contracts, execution model, safety layers, testing strategy, milestones |
 | [docs/episode-format.md](docs/episode-format.md) | The episode folder, manifest, trajectory, frames, compatibility rules |
-| [adr/](adr/README.md) | Architecture decisions 0001–0009 and the ones still open |
+| [adr/](adr/README.md) | Architecture decisions 0001–0010 and the ones still open |
 | [runtime/README.md](runtime/README.md) | CLI reference, scenes, plans, skills, episodes, tests, how to add a skill or an adapter |
 | [viewer/README.md](viewer/README.md) | Running, loading episodes, deploying |
 
@@ -132,8 +142,8 @@ Conventions: every architectural decision is an ADR, changed by writing a new on
 ## Roadmap
 
 - **M2** (done): operator console, `spingi bench` with the sim-to-real gate, LeRobot v3.0 export, `wait_for_human`.
-- **M3** (next): LLM planner that turns a request into a validated plan, golden plans, replay of recorded episodes.
-- **M4**: adapter for the real Unitree G1, sim-to-real gates per skill.
+- **M3** (done, offline): LLM planner with structured output, ten golden requests and `spingi eval-planner`, golden episodes replayed on every commit.
+- **M4** (next, needs the robot): adapter for the real Unitree G1 on `unitree_sdk2_python`, the same contract tests on hardware, sim-to-real gates per skill.
 
 ## License
 

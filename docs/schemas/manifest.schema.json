@@ -19,6 +19,30 @@
       ],
       "title": "RobotInfo",
       "type": "object"
+    },
+    "RunConfig": {
+      "description": "What is needed to run the episode again (spingi replay). Optional: older episodes do not have it.",
+      "properties": {
+        "perception_noise": {
+          "default": 0.0,
+          "description": "perceiver false-negative rate",
+          "title": "Perception Noise",
+          "type": "number"
+        },
+        "position_sigma_m": {
+          "default": 0.0,
+          "description": "perceiver position noise, metres",
+          "title": "Position Sigma M",
+          "type": "number"
+        },
+        "seed": {
+          "default": 0,
+          "title": "Seed",
+          "type": "integer"
+        }
+      },
+      "title": "RunConfig",
+      "type": "object"
     }
   },
   "properties": {
@@ -87,6 +111,18 @@
       "default": null,
       "description": "nominal sample rate of trajectory.jsonl",
       "title": "Sample Rate Hz"
+    },
+    "config": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RunConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "run settings, for replay"
     },
     "files": {
       "items": {

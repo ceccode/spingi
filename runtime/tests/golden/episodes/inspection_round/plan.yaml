@@ -1,0 +1,27 @@
+# Inspection round (level L1): three waypoints, a camera check at two of them, back to the dock.
+id: demo_inspection_round
+description: "Three-point round with a camera check at the shelf and at the panel, then back to the dock"
+deadline_s: 300
+steps:
+  - skill: say
+    params: { text: "Starting the inspection round" }
+  - skill: navigate
+    params: { to: shelf_A }
+    on_failure: { retry: 2, then: needs_human }
+  - skill: inspect
+    params: { target: shelf_A, checks: ["present:red_box"] }
+  - skill: say
+    params: { text: "Shelf A checked" }
+  - skill: navigate
+    params: { to: workstation_B }
+    on_failure: { retry: 2, then: needs_human }
+  - skill: navigate
+    params: { to: panel_C }
+    on_failure: { retry: 1, then: skip }
+  - skill: inspect
+    params: { target: panel_C, checks: ["present:red_box", "display shows no error"] }
+    on_failure: { then: skip }
+  - skill: navigate
+    params: { to: dock }
+  - skill: say
+    params: { text: "Round completed" }

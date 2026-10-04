@@ -1,0 +1,27 @@
+# Material runner (level L2): fetch a standard container from a shelf and deliver it to a workstation,
+# routing through the aisle waypoints because the straight lines cross the racks.
+id: demo_material_runner
+description: "Fetch the red box from shelf A and deliver it to workstation B"
+deadline_s: 600
+steps:
+  - skill: say
+    params: { text: "Fetching the red box" }
+  - skill: navigate
+    params: { to: shelf_A, via: [aisle_in] }
+    on_failure: { retry: 2, then: needs_human }
+  - skill: detect
+    params: { cls: red_box, expect: 1 }
+    on_failure: { retry: 2, then: needs_human }
+  - skill: pick
+    params: { object_id: "$detect.objects[0].id" }
+    on_failure: { retry: 1, then: needs_human }
+  - skill: navigate
+    params: { to: workstation_B, via: [aisle_out] }
+    on_failure: { retry: 2, then: needs_human }
+  - skill: place
+    params: { at: workstation_B }
+    on_failure: { retry: 1, then: needs_human }
+  - skill: navigate
+    params: { to: dock, via: [aisle_out, aisle_in] }
+  - skill: say
+    params: { text: "Delivery completed" }

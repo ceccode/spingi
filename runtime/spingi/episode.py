@@ -26,6 +26,14 @@ class RobotInfo(BaseModel):
     adapter: str = Field(description="e.g. fake, sim_mujoco, unitree_g1")
 
 
+class RunConfig(BaseModel):
+    """What is needed to run the episode again (spingi replay). Optional: older episodes do not have it."""
+
+    perception_noise: float = Field(default=0.0, description="perceiver false-negative rate")
+    position_sigma_m: float = Field(default=0.0, description="perceiver position noise, metres")
+    seed: int = 0
+
+
 class Manifest(BaseModel):
     format_version: Literal["0.1"] = FORMAT_VERSION
     run_id: str
@@ -38,6 +46,7 @@ class Manifest(BaseModel):
     duration_s: float = Field(description="wall-clock time between run.start and run.end")
     sim_time_s: float | None = Field(default=None, description="total simulated time, if the adapter provides it")
     sample_rate_hz: float | None = Field(default=None, description="nominal sample rate of trajectory.jsonl")
+    config: RunConfig | None = Field(default=None, description="run settings, for replay")
     files: list[str]
 
 
@@ -75,6 +84,7 @@ def write_episode(
     adapter: Any,
     adapter_name: str,
     robot_model: str,
+    config: RunConfig | None = None,
 ) -> Manifest:
     run_dir.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(plan_path, run_dir / "plan.yaml")
@@ -108,6 +118,7 @@ def write_episode(
         duration_s=round(max(ts) - min(ts), 3) if ts else 0.0,
         sim_time_s=round(float(getattr(adapter, "sim_time_s", 0.0)), 3) if hasattr(adapter, "sim_time_s") else None,
         sample_rate_hz=sample_rate,
+        config=config,
         files=files,
     )
     (run_dir / "manifest.json").write_text(manifest.model_dump_json(indent=2) + "\n", encoding="utf-8")

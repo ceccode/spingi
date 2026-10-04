@@ -3,6 +3,9 @@
   spingi run <plan.yaml> [--scene S] [--adapter fake|sim] [--operator auto|console] [--view] [--record] [--zip] ...
   spingi bench <plan.yaml> [--scene S] [--adapter fake|sim] [--runs N] [--noise P] [--sigma M] [--gate]
   spingi export lerobot <episode_dir>... --out <dataset_dir>
+  spingi plan "<request>" [--scene S] [--out plan.yaml] [--run ...]      (needs the llm extra and an API key)
+  spingi eval-planner [--cases plans/golden/planner_cases.yaml]        (needs the llm extra and an API key)
+  spingi replay <episode_dir> [<episode_dir>...]
   spingi skills
 
 The MuJoCo viewer on macOS requires `uv run mjpython -m spingi.cli run ... --view`.
@@ -62,6 +65,24 @@ def main(argv: list[str] | None = None) -> int:
     lerobot.add_argument("--out", type=Path, required=True)
     lerobot.add_argument("--fps", type=int, default=10)
 
+    plan = sub.add_parser("plan", help="turn a request in natural language into a validated plan (LLM)")
+    plan.add_argument("request")
+    plan.add_argument("--scene", type=Path, default=DEFAULT_SCENE)
+    plan.add_argument("--out", type=Path, help="write the plan to this YAML file")
+    plan.add_argument("--model", default=None, help="Claude model id (default: claude-opus-5-5)")
+    plan.add_argument("--run", action="store_true", help="run the plan right away (with --adapter, --operator)")
+    plan.add_argument("--adapter", choices=["fake", "sim"], default="fake")
+    plan.add_argument("--operator", choices=["auto", "console"], default="console")
+
+    evalp = sub.add_parser("eval-planner", help="run the LLM planner on the golden cases and report the pass rate")
+    evalp.add_argument("--cases", type=Path, default=Path("plans/golden/planner_cases.yaml"))
+    evalp.add_argument("--model", default=None)
+    evalp.add_argument("--out", type=Path, default=None, help="write the JSON report here")
+    evalp.add_argument("--min-pass-rate", type=float, default=1.0, help="exit with status 1 below this rate")
+
+    replay = sub.add_parser("replay", help="run recorded episodes again and compare their behaviour")
+    replay.add_argument("episodes", type=Path, nargs="+")
+
     sub.add_parser("skills", help="list the whitelisted skills and their parameters")
     args = parser.parse_args(argv)
 
@@ -72,6 +93,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.cmd == "export":
         return _export(args)
+    if args.cmd == "plan":
+        return _plan(args)
+    if args.cmd == "eval-planner":
+        return _eval_planner(args)
+    if args.cmd == "replay":
+        return asyncio.run(_replay(args))
     if args.cmd == "bench":
         return asyncio.run(_bench(args))
     return asyncio.run(_run(args))
@@ -167,6 +194,106 @@ def _export(args) -> int:
         f"{info['total_frames']} frames at {info['fps']} Hz → {args.out}"
     )
     return 0
+
+
+def _llm_planner(model: str | None):
+    try:
+        from spingi.planner.llm import DEFAULT_MODEL, LLMPlanner
+    except ImportError as exc:  # pragma: no cover - depends on the environment
+        raise SystemExit(f"missing dependency ({exc}); install the llm extra: uv sync --extra llm") from exc
+    return LLMPlanner(default_registry(), model=model or DEFAULT_MODEL)
+
+
+def _api_call(fn):
+    """Runs an LLM call and turns credential and API failures into one readable line."""
+    import anthropic
+
+    try:
+        return fn(), None
+    except TypeError as exc:
+        if "authentication" not in str(exc):
+            raise
+        return None, "no Anthropic credentials: set ANTHROPIC_API_KEY (or log in with `ant auth login`)"
+    except anthropic.AuthenticationError:
+        return None, "the Anthropic API rejected the credentials (401)"
+    except anthropic.RateLimitError as exc:
+        return None, f"rate limited by the Anthropic API, retry after {exc.response.headers.get('retry-after', '?')} s"
+    except anthropic.APIStatusError as exc:
+        return None, f"Anthropic API error {exc.status_code}: {exc.message}"
+    except anthropic.APIConnectionError:
+        return None, "cannot reach the Anthropic API (network)"
+
+
+def _plan(args) -> int:
+    import yaml
+
+    from spingi.planner.llm import PlanningError
+    from spingi.scenes import load_routes, load_world
+
+    planner = _llm_planner(args.model)
+    try:
+        result, error = _api_call(lambda: planner.plan(args.request, load_world(args.scene), load_routes(args.scene)))
+    except PlanningError as exc:
+        result, error = None, str(exc)
+    if result is None:
+        print(f"no plan: {error}", file=sys.stderr)
+        return 1
+    text = yaml.safe_dump(result.plan.model_dump(exclude_defaults=True), sort_keys=False, allow_unicode=True)
+    print(f"# planned by {result.model} in {result.attempts} attempt(s)\n{text}")
+    out = args.out
+    if args.run and out is None:
+        out = Path("runs") / f"plan-{result.plan.id}.yaml"
+    if out is not None:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(text, encoding="utf-8")
+        print(f"plan written to {out}")
+    if args.run:
+        run_args = ["run", str(out), "--scene", str(args.scene), "--adapter", args.adapter, "--operator", args.operator]
+        return main(run_args)
+    return 0
+
+
+def _eval_planner(args) -> int:
+    from spingi.planner.evaluate import evaluate, load_cases
+    from spingi.scenes import load_routes, load_world
+
+    planner = _llm_planner(args.model)
+    cases = load_cases(args.cases)
+    _, error = _api_call(lambda: planner.client.models.retrieve(planner.model))  # fail fast before the cases
+    if error:
+        print(error, file=sys.stderr)
+        return 2
+
+    def plan_fn(case):
+        r = planner.plan(case.request, load_world(case.scene), load_routes(case.scene))
+        return r.plan, r.attempts
+
+    def progress(r) -> None:
+        mark = "ok  " if r.passed else "FAIL"
+        print(f"  {mark} {r.id:<22} {r.seconds:>5.1f}s  {r.error or '; '.join(r.differences)}", flush=True)
+
+    print(f"planner {planner.model} on {len(cases)} cases from {args.cases}")
+    report = evaluate(cases, plan_fn, default_registry(), planner.model, progress)
+    print(f"\n{report.passed}/{report.cases} plans equivalent to the golden ones ({report.pass_rate:.0%})")
+    if args.out:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(report.model_dump_json(indent=2) + "\n", encoding="utf-8")
+        print(f"report: {args.out}")
+    return 0 if report.pass_rate >= args.min_pass_rate else 1
+
+
+async def _replay(args) -> int:
+    from spingi.replay import replay
+
+    all_same = True
+    for episode in args.episodes:
+        report = await replay(episode)
+        all_same &= report.same
+        mark = "same" if report.same else "DIFFERENT"
+        print(f"{mark:<9} {episode}  (recorded {report.recorded_status}, replayed {report.replayed_status})")
+        for d in report.differences:
+            print(f"          {d}")
+    return 0 if all_same else 1
 
 
 if __name__ == "__main__":

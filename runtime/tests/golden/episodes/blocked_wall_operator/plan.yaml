@@ -1,0 +1,7 @@
+# Used by the blocked_wall_operator golden episode: the wall stops the robot, the operator answers retry, then abort.
+id: to_workstation
+description: "Walk to workstation B"
+steps:
+  - skill: navigate
+    params: { to: workstation_B }
+    on_failure: { retry: 1, then: needs_human }

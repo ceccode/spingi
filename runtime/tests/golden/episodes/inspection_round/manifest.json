@@ -1,0 +1,28 @@
+{
+  "format_version": "0.1",
+  "run_id": "r-20261004-022645-bc34e6",
+  "created_at": "2026-10-04T00:26:45Z",
+  "robot": {
+    "model": "unitree_g1",
+    "adapter": "sim_mujoco"
+  },
+  "plan_id": "demo_inspection_round",
+  "status": "success",
+  "steps_completed": 9,
+  "steps_total": 9,
+  "duration_s": 0.504,
+  "sim_time_s": 39.36,
+  "sample_rate_hz": 10.0,
+  "config": {
+    "perception_noise": 0.0,
+    "position_sigma_m": 0.0,
+    "seed": 0
+  },
+  "files": [
+    "events.jsonl",
+    "frames/",
+    "plan.yaml",
+    "scene.yaml",
+    "trajectory.jsonl"
+  ]
+}

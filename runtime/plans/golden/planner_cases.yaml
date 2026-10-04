@@ -1,0 +1,85 @@
+# Requests in natural language and the plan the planner should produce (runtime-spec, milestone M3).
+# Comparison rules (spingi/planner/evaluate.py): same skills in the same order; every parameter listed here must
+# match; parameters not listed must be left at their default; `say` text, `wait_for_human` prompt and on_failure
+# are not compared. `$detect.objects[0].id` and `$2.objects[0].id` count as the same reference.
+cases:
+  - id: fetch_and_deliver
+    scene: sim/scenes/warehouse_small.yaml
+    request: Bring the red box from shelf A to workstation B.
+    steps:
+      - { skill: navigate, params: { to: shelf_A, via: [aisle_in] } }
+      - { skill: detect, params: { cls: red_box } }
+      - { skill: pick, params: { object_id: "$detect.objects[0].id" } }
+      - { skill: navigate, params: { to: workstation_B, via: [aisle_out] } }
+      - { skill: place, params: { at: workstation_B } }
+
+  - id: go_to_workstation
+    scene: sim/scenes/warehouse_small.yaml
+    request: Go to workstation B.
+    steps:
+      - { skill: navigate, params: { to: workstation_B, via: [aisle_in, aisle_out] } }
+
+  - id: check_shelf
+    scene: sim/scenes/warehouse_small.yaml
+    request: Check that the red box is on shelf A.
+    steps:
+      - { skill: navigate, params: { to: shelf_A, via: [aisle_in] } }
+      - { skill: inspect, params: { target: shelf_A, checks: ["present:red_box"] } }
+
+  - id: inspection_round
+    scene: sim/scenes/lab_small.yaml
+    request: Do an inspection round of shelf A, workstation B and panel C, taking a picture at each, then come back to the dock.
+    steps:
+      - { skill: navigate, params: { to: shelf_A } }
+      - { skill: inspect, params: { target: shelf_A } }
+      - { skill: navigate, params: { to: workstation_B } }
+      - { skill: inspect, params: { target: workstation_B } }
+      - { skill: navigate, params: { to: panel_C } }
+      - { skill: inspect, params: { target: panel_C } }
+      - { skill: navigate, params: { to: dock } }
+
+  - id: announce_then_go
+    scene: sim/scenes/lab_small.yaml
+    request: Announce that you are heading to shelf A, then go there.
+    steps:
+      - { skill: say }
+      - { skill: navigate, params: { to: shelf_A } }
+
+  - id: deliver_and_confirm
+    scene: sim/scenes/warehouse_small.yaml
+    request: Bring the red box to workstation B, then wait until the operator confirms the delivery.
+    steps:
+      - { skill: navigate, params: { to: shelf_A, via: [aisle_in] } }
+      - { skill: detect, params: { cls: red_box } }
+      - { skill: pick, params: { object_id: "$detect.objects[0].id" } }
+      - { skill: navigate, params: { to: workstation_B, via: [aisle_out] } }
+      - { skill: place, params: { at: workstation_B } }
+      - { skill: wait_for_human }
+
+  - id: fetch_to_dock
+    scene: sim/scenes/warehouse_small.yaml
+    request: Fetch the red box from shelf A and leave it at the dock.
+    steps:
+      - { skill: navigate, params: { to: shelf_A, via: [aisle_in] } }
+      - { skill: detect, params: { cls: red_box } }
+      - { skill: pick, params: { object_id: "$detect.objects[0].id" } }
+      - { skill: navigate, params: { to: dock, via: [aisle_in] } }
+      - { skill: place, params: { at: dock } }
+
+  - id: slow_move
+    scene: sim/scenes/lab_small.yaml
+    request: Go to panel C slowly, no faster than 0.2 metres per second.
+    steps:
+      - { skill: navigate, params: { to: panel_C, max_speed: 0.2 } }
+
+  - id: impossible_skill
+    scene: sim/scenes/lab_small.yaml
+    request: Climb onto the roof and check the antenna.
+    steps:
+      - { skill: say }
+
+  - id: unknown_object
+    scene: sim/scenes/warehouse_small.yaml
+    request: Pick up the blue crate from workstation B.
+    steps:
+      - { skill: say }

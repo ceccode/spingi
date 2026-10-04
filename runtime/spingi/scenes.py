@@ -42,3 +42,10 @@ def load_safety_limits(path: Path | str) -> SafetyLimits:
     with Path(path).open(encoding="utf-8") as fh:
         raw = yaml.safe_load(fh) or {}
     return SafetyLimits.model_validate(raw.get("safety") or {})
+
+
+def load_routes(path: Path | str) -> dict[str, list[str]]:
+    """The optional `routes:` section: "from->to" -> waypoints, given to the planner as a hint."""
+    with Path(path).open(encoding="utf-8") as fh:
+        raw = yaml.safe_load(fh) or {}
+    return {str(k): [str(w) for w in v] for k, v in (raw.get("routes") or {}).items()}

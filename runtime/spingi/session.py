@@ -18,7 +18,7 @@ from spingi.core.events import EventLog
 from spingi.core.executor import Executor
 from spingi.core.plan import TaskPlan, load_plan
 from spingi.core.ports import HumanGateway
-from spingi.episode import write_episode, zip_episode
+from spingi.episode import RunConfig, write_episode, zip_episode
 from spingi.perception.fake import FakePerceiver
 from spingi.safety import SafetyMonitor
 from spingi.scenes import load_safety_limits, load_world
@@ -146,6 +146,9 @@ async def run_session(cfg: SessionConfig, human: HumanGateway, log: EventLog | N
             adapter=robot,
             adapter_name="sim_mujoco" if cfg.adapter == "sim" else "fake",
             robot_model="unitree_g1" if cfg.adapter == "sim" else "fake",
+            config=RunConfig(
+                perception_noise=cfg.perception_noise, position_sigma_m=cfg.position_sigma_m, seed=cfg.seed
+            ),
         )
         archive = zip_episode(run_dir) if cfg.zip_episode else None
 

@@ -1,7 +1,7 @@
 .PHONY: setup test lint demo demo-sim demo-sim-view demo-sim-record schemas bench
 
 setup:
-	uv sync --extra dev --extra sim --extra export
+	uv sync --extra dev --extra sim --extra export --extra llm
 
 test:
 	uv run pytest
