@@ -76,7 +76,7 @@ uv run spingi export lerobot runs/r-* --out runs/dataset
 
 ### 4. Ask in plain language
 
-With an Anthropic API key (`ANTHROPIC_API_KEY`), Claude turns a request into a plan that is validated against the skills before anything moves, and can run it straight away under your supervision:
+With an Anthropic API key in `runtime/.env` (copy `runtime/.env.example`; the file is ignored by git), Claude turns a request into a plan that is validated against the skills before anything moves, and can run it straight away under your supervision:
 
 ```bash
 uv run spingi plan "Bring the red box from shelf A to workstation B" --scene sim/scenes/warehouse_small.yaml --run --adapter sim

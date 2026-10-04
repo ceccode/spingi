@@ -155,8 +155,15 @@ At 60 % false negatives the same plan drops to about 72 % success and the gate f
 
 `spingi plan` sends the request to Claude (`claude-opus-5-5` by default, `--model` to change it) together with the skill summaries and the symbolic world of the scene: locations, known objects, battery, and the `routes:` section of the scene file, which tells the model which waypoints avoid the shelving. The answer is constrained by a JSON schema generated from the skill registry, so it can only contain whitelisted skills with parameters of the right shape; then it goes through the same validation as a hand-written plan. An invalid plan is sent back once with the errors; a second failure, a refusal or a truncated answer is reported and nothing runs (ADR-0010).
 
+The API key goes in `runtime/.env`, which git ignores:
+
 ```bash
-export ANTHROPIC_API_KEY=...
+cp .env.example .env    # then set ANTHROPIC_API_KEY=sk-ant-... in .env
+```
+
+Spingi reads `.env` from the current folder, or else from `runtime/`, at startup; a variable already exported in the shell wins over the file. Never put the key in `.env.example`, which is committed.
+
+```bash
 uv run spingi plan "Bring the red box to workstation B, then wait for the operator" --scene sim/scenes/warehouse_small.yaml --out plans/my_delivery.yaml
 uv run spingi plan "Check that the red box is on shelf A" --scene sim/scenes/warehouse_small.yaml --run --adapter sim
 ```

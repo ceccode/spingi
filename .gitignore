@@ -1,6 +1,11 @@
 # Applications built on top of the runtime and the viewer live in separate private repositories.
 private/
 
+# Secrets: .env files anywhere in the repository (templates are named .env.example)
+.env
+.env.*
+!.env.example
+
 # Editor and assistant configuration
 .claude/
 .DS_Store

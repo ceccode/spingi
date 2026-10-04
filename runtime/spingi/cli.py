@@ -19,6 +19,7 @@ import sys
 from pathlib import Path
 
 from spingi.core.human import ScriptedHuman
+from spingi.dotenv import load_dotenv
 from spingi.session import SessionConfig, run_session
 from spingi.skills import default_registry
 
@@ -26,6 +27,7 @@ DEFAULT_SCENE = Path("sim/scenes/lab_small.yaml")
 
 
 def main(argv: list[str] | None = None) -> int:
+    load_dotenv()  # ./.env or runtime/.env, never overriding exported variables
     parser = argparse.ArgumentParser(prog="spingi", description="Physical Agent Runtime for humanoid robots")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -213,7 +215,7 @@ def _api_call(fn):
     except TypeError as exc:
         if "authentication" not in str(exc):
             raise
-        return None, "no Anthropic credentials: set ANTHROPIC_API_KEY (or log in with `ant auth login`)"
+        return None, "no Anthropic credentials: put ANTHROPIC_API_KEY in runtime/.env (see .env.example) or export it"
     except anthropic.AuthenticationError:
         return None, "the Anthropic API rejected the credentials (401)"
     except anthropic.RateLimitError as exc:
