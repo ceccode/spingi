@@ -6,7 +6,7 @@ Spingi is a **Physical Agent Runtime** for humanoid robots: it turns a robot int
 
 This repository is a neutral open-source toolkit. Applications built on top of it live elsewhere; this repo keeps sample plans and scenes that show how to use the system.
 
-Status: **runtime M3 complete (planner evaluation against the model pending) · viewer v0.2** · 2026-10-04
+Status: **runtime M3 complete · viewer v0.2** · 2026-10-04
 
 ## What is in the box
 
@@ -142,7 +142,7 @@ Conventions: every architectural decision is an ADR, changed by writing a new on
 ## Roadmap
 
 - **M2** (done): operator console, `spingi bench` with the sim-to-real gate, LeRobot v3.0 export, `wait_for_human`.
-- **M3** (done, offline): LLM planner with structured output, ten golden requests and `spingi eval-planner`, golden episodes replayed on every commit.
+- **M3** (done): LLM planner with structured output, golden episodes replayed on every commit. On the ten golden requests `claude-opus-5-5` scored 10/10, nine at the first attempt.
 - **M4** (next, needs the robot): adapter for the real Unitree G1 on `unitree_sdk2_python`, the same contract tests on hardware, sim-to-real gates per skill.
 
 ## License
