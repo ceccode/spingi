@@ -39,6 +39,12 @@
           "default": 0,
           "title": "Seed",
           "type": "integer"
+        },
+        "perception": {
+          "default": "truth",
+          "description": "truth (scene ground truth) or markers (AprilTags in frames)",
+          "title": "Perception",
+          "type": "string"
         }
       },
       "title": "RunConfig",

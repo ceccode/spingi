@@ -42,7 +42,7 @@ The zip produced by `--zip` (`runs/<run_id>.zip`) contains the `<run_id>/` folde
   "duration_s": 0.504,
   "sim_time_s": 39.36,
   "sample_rate_hz": 10.0,
-  "config": { "perception_noise": 0.0, "position_sigma_m": 0.0, "seed": 0 },
+  "config": { "perception_noise": 0.0, "position_sigma_m": 0.0, "seed": 0, "perception": "truth" },
   "files": ["events.jsonl", "frames/", "plan.yaml", "scene.yaml", "trajectory.jsonl"]
 }
 ```
@@ -57,7 +57,7 @@ The zip produced by `--zip` (`runs/<run_id>.zip`) contains the `<run_id>/` folde
 | `duration_s` | Wall-clock seconds between the first and the last event. In fast simulation it is much shorter than `sim_time_s`. |
 | `sim_time_s` | Total simulated time, when the adapter has a simulated clock (optional). |
 | `sample_rate_hz` | Nominal rate of `trajectory.jsonl`, when the adapter samples at a fixed rate (optional). |
-| `config` | Optional. The run settings needed to run the episode again with `spingi replay`: `perception_noise` (false-negative rate of the perceiver), `position_sigma_m` (Gaussian noise on perceived positions, metres), `seed`. Episodes written before it existed do not have it; replay then uses no noise and seed 0. |
+| `config` | Optional. The run settings needed to run the episode again with `spingi replay`: `perception_noise` (false-negative rate of the perceiver), `position_sigma_m` (Gaussian noise on perceived positions, metres), `seed`, and `perception` (`truth`: the simulator's ground truth; `markers`: AprilTags read from the rendered frames). Episodes written before it existed do not have it; replay then uses no noise, seed 0 and ground truth. |
 | `files` | Sorted list of the other entries in the folder; directories end with `/`. |
 
 ## trajectory.jsonl

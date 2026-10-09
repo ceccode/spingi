@@ -129,6 +129,13 @@ def _session_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--scene", type=Path, default=DEFAULT_SCENE)
     p.add_argument("--adapter", choices=["fake", "sim"], default="fake")
     p.add_argument("--robot", choices=ROBOTS, default=DEFAULT_ROBOT, help="which robot the adapter stands for")
+    p.add_argument(
+        "--perception",
+        choices=["truth", "markers"],
+        default="truth",
+        help="truth: ground truth from the scene (with --noise/--sigma); markers: AprilTags read from the rendered "
+        "frames, as from a real camera (sim adapter, perception extra)",
+    )
     p.add_argument("--runs-dir", type=Path, default=Path("runs"))
     p.add_argument("--noise", type=float, default=0.0, help="perception false-negative rate, 0..1")
     p.add_argument("--sigma", type=float, default=0.0, help="perception position noise, metres")
@@ -141,6 +148,7 @@ def _config(args) -> SessionConfig:
         scene=args.scene,
         adapter=args.adapter,
         robot=args.robot,
+        perception=args.perception,
         runs_dir=args.runs_dir,
         perception_noise=args.noise,
         position_sigma_m=args.sigma,

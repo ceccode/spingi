@@ -32,6 +32,9 @@ export = [
 llm = [
     "anthropic>=0.70",
 ]
+perception = [
+    "opencv-python-headless>=4.9",
+]
 
 [project.scripts]
 spingi = "spingi.cli:main"

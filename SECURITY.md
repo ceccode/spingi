@@ -25,5 +25,5 @@ Use GitHub's private vulnerability reporting on this repository (Security tab, "
 
 ## Known limits
 
-- The watchdog runs in the same process as the heartbeat. On hardware the robot's own command timeout must be configured as the last line of defence (planned for the G1 adapter, milestone M4).
+- The watchdog runs in the same process as the heartbeat. On hardware the robot's own command timeout must be configured as the last line of defence (a rule of the adapter contract since M4.0, implemented by the hardware adapter in M4.1).
 - The research robots Spingi targets are not certified machines. Run them in a fenced area with a hardware e-stop; see the safety section of `docs/runtime-spec.md`.

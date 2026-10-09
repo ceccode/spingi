@@ -27,6 +27,7 @@ from spingi.scenes import load_safety_limits, load_world
 from spingi.skills import default_registry
 
 AdapterKind = Literal["fake", "sim"]
+PerceptionKind = Literal["truth", "markers"]
 
 MONITOR_PERIOD_S = 0.1  # robot time between safety checks (fast simulation yields every 0.2 s)
 ESTOP_TIMEOUT_S = 2.0  # wall-clock limit for a stop or e-stop command to return
@@ -38,6 +39,9 @@ class SessionConfig:
     scene: Path
     adapter: AdapterKind = "fake"
     robot: str = DEFAULT_ROBOT  # a profile alias from spingi.robots: which robot the adapter stands for
+    # truth: the perceiver reads the scene's ground truth (with --noise/--sigma); markers: it reads AprilTags from
+    # the rendered frames, like it will from a real camera (sim adapter only; noise settings do not apply).
+    perception: PerceptionKind = "truth"
     runs_dir: Path = Path("runs")
     perception_noise: float = 0.0  # false-negative rate of the perceiver
     position_sigma_m: float = 0.0  # gaussian noise on perceived positions
@@ -94,10 +98,17 @@ async def run_session(cfg: SessionConfig, human: HumanGateway, log: EventLog | N
             record_video=cfg.record_video,
             watchdog_ms=cfg.watchdog_ms,
         )
-        perceiver = SimPerceiver(
-            robot, false_negative_rate=cfg.perception_noise, position_sigma_m=cfg.position_sigma_m, seed=cfg.seed
-        )
+        if cfg.perception == "markers":
+            from spingi.perception.markers import MarkerPerceiver
+
+            perceiver = MarkerPerceiver.for_adapter(robot, cfg.scene)
+        else:
+            perceiver = SimPerceiver(
+                robot, false_negative_rate=cfg.perception_noise, position_sigma_m=cfg.position_sigma_m, seed=cfg.seed
+            )
     else:
+        if cfg.perception == "markers":
+            raise ValueError("perception 'markers' reads camera images: it needs the sim adapter")
         robot = FakeAdapter(start=state.robot.pose, watchdog_ms=cfg.watchdog_ms, capabilities=profile.capabilities)
         perceiver = FakePerceiver(
             objects=list(state.objects.values()), false_negative_rate=cfg.perception_noise, seed=cfg.seed
@@ -182,7 +193,10 @@ async def run_session(cfg: SessionConfig, human: HumanGateway, log: EventLog | N
             adapter_name="sim_mujoco" if cfg.adapter == "sim" else "fake",
             robot_model=profile.name,
             config=RunConfig(
-                perception_noise=cfg.perception_noise, position_sigma_m=cfg.position_sigma_m, seed=cfg.seed
+                perception_noise=cfg.perception_noise,
+                position_sigma_m=cfg.position_sigma_m,
+                seed=cfg.seed,
+                perception=cfg.perception,
             ),
         )
         archive = zip_episode(run_dir) if cfg.zip_episode else None

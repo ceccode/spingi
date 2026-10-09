@@ -1,7 +1,7 @@
 {
   "format_version": "0.1",
-  "run_id": "r-20261009-064943-cbfe6d",
-  "created_at": "2026-10-09T04:49:45Z",
+  "run_id": "r-20261009-093144-585123",
+  "created_at": "2026-10-09T07:31:45Z",
   "robot": {
     "model": "unitree_g1",
     "adapter": "sim_mujoco"
@@ -10,13 +10,14 @@
   "status": "success",
   "steps_completed": 8,
   "steps_total": 8,
-  "duration_s": 0.856,
+  "duration_s": 0.912,
   "sim_time_s": 72.2,
   "sample_rate_hz": 10.0,
   "config": {
     "perception_noise": 0.5,
     "position_sigma_m": 0.0,
-    "seed": 7
+    "seed": 7,
+    "perception": "truth"
   },
   "files": [
     "events.jsonl",

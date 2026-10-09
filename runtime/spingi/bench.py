@@ -30,6 +30,7 @@ async def bench(
     progress=None,
 ) -> tuple[BenchReport, list[RunMetrics]]:
     plan = load_plan(base.plan)
+    gate = gate or Gate(max_p95_s=plan.deadline_s)  # a plan that declares a budget is held to it (spec 8.4)
     metrics: list[RunMetrics] = []
     for i in range(runs):
         run_id = f"{new_run_id()}-{i:03d}"
@@ -86,8 +87,11 @@ def format_report(report: BenchReport) -> str:
         f"        retries per run     {report.retries_per_run:.2f}",
     ]
     if report.sim_time_p50_s is not None:
+        budget = f"   (gate <= {g.max_p95_s:g} s, the plan's deadline_s)" if g.max_p95_s is not None else ""
+        status = f"  {mark(c['p95_within_budget'])}" if "p95_within_budget" in c else "      "
         lines.append(
-            f"        simulated time       p50 {report.sim_time_p50_s:.1f} s · p95 {report.sim_time_p95_s:.1f} s"
+            f"{status}  simulated time       p50 {report.sim_time_p50_s:.1f} s · p95 {report.sim_time_p95_s:.1f} s"
+            f"{budget}"
         )
     if report.failures:
         lines.append(f"        failures             {json.dumps(report.failures)}")

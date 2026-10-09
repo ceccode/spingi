@@ -138,7 +138,7 @@ Safety layers run on the robot's own clock (simulated time in MuJoCo), so a simu
 make test
 ```
 
-runs the runtime suite (unit, adapter contract on every adapter and robot, MuJoCo scenarios, golden episodes, architecture and licensing rules): 218 tests in about 14 seconds. The viewer has `npm test` (23 tests) and `npm run build`. CI is GitHub Actions ([.github/workflows/ci.yml](.github/workflows/ci.yml)), on every push to `main` and every pull request, without a GPU: runtime lint, format check and tests (with offscreen MuJoCo rendering through EGL), viewer install, audit of the production dependencies, tests and build.
+runs the runtime suite (unit, adapter contract on every adapter and robot, MuJoCo scenarios, golden episodes, architecture and licensing rules): 233 tests in about 25 seconds. The viewer has `npm test` (23 tests) and `npm run build`. CI is GitHub Actions ([.github/workflows/ci.yml](.github/workflows/ci.yml)), on every push to `main` and every pull request, without a GPU: runtime lint, format check and tests (with offscreen MuJoCo rendering through EGL), viewer install, audit of the production dependencies, tests and build.
 
 Conventions: every architectural decision is an ADR, changed by writing a new one; the runtime never imports the viewer and the viewer never imports the runtime, they only share the episode format; `spingi.core` imports nothing from adapters, skills, planner or perception, and a test enforces it.
 
@@ -146,7 +146,9 @@ Conventions: every architectural decision is an ADR, changed by writing a new on
 
 - **M2** (done): operator console, `spingi bench` with the sim-to-real gate, LeRobot v3.0 export, `wait_for_human`.
 - **M3** (done): LLM planner with structured output, golden episodes replayed on every commit. On the ten golden requests `claude-opus-5-5` scored 10/10, nine at the first attempt.
-- **M4** (next, needs a robot): adapter for the real Unitree robots on `unitree_sdk2_python` (the G1 and the Go2 share it, so a Go2 can exercise the hardware path first), the same contract tests on hardware, sim-to-real gates per skill.
+- **M4.0** (in progress, no robot needed): perception on real images (AprilTag markers, exercised on MuJoCo frames), the lab safety checklist, the remaining decisions as ADRs, the p95 check of the gate.
+- **M4.1** (needs a Go2 and a fenced area): one Unitree adapter on `unitree_sdk2_python`, parametrized by the robot profile, contract tests with the robot connected, sim-to-real gate on `navigate` and `inspect`.
+- **M4.2** (needs a G1): the same adapter and gate on the humanoid, then `pick` and `place` in M5.
 
 ## License
 

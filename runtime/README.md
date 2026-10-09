@@ -10,14 +10,14 @@ All commands run from this folder. Requirements: Python 3.11+ and [uv](https://d
 make setup
 ```
 
-installs the package with its extras: `dev` (pytest, ruff), `sim` (MuJoCo, numpy, imageio, and trimesh with scipy for the viewer model export), `export` (pandas, pyarrow) and `llm` (the Anthropic SDK, used only by `spingi plan` and `spingi eval-planner`). Nothing else is needed: the G1 and Go2 models are in `sim/models/`.
+installs the package with its extras: `dev` (pytest, ruff), `sim` (MuJoCo, numpy, imageio, and trimesh with scipy for the viewer model export), `export` (pandas, pyarrow), `llm` (the Anthropic SDK, used only by `spingi plan` and `spingi eval-planner`) and `perception` (OpenCV, for the AprilTag perceiver). Nothing else is needed: the G1 and Go2 models are in `sim/models/`, the tag images in `sim/markers/`.
 
 ## Command line
 
 ```
-spingi run <plan.yaml> [--scene S] [--adapter fake|sim] [--robot g1|go2] [--operator auto|console] [--on-failure abort|skip|retry]
-           [--noise P] [--sigma M] [--seed K] [--runs-dir D] [--view] [--record] [--realtime] [--zip] [--quiet]
-spingi bench <plan.yaml> [--scene S] [--adapter fake|sim] [--robot g1|go2] [--runs N] [--noise P] [--sigma M] [--seed K]
+spingi run <plan.yaml> [--scene S] [--adapter fake|sim] [--robot g1|go2] [--perception truth|markers] [--operator auto|console]
+           [--on-failure abort|skip|retry] [--noise P] [--sigma M] [--seed K] [--runs-dir D] [--view] [--record] [--realtime] [--zip] [--quiet]
+spingi bench <plan.yaml> [--scene S] [--adapter fake|sim] [--robot g1|go2] [--perception truth|markers] [--runs N] [--noise P] [--sigma M] [--seed K]
              [--on-failure abort|skip|retry] [--runs-dir D] [--gate] [--keep-failed]
 spingi export lerobot <episode_dir>... --out <dataset_dir> [--fps 10]
 spingi plan "<request>" [--scene S] [--robot g1|go2] [--out plan.yaml] [--model M] [--run [--yes] [--adapter fake|sim] [--operator auto|console]]
@@ -33,6 +33,7 @@ spingi robots
 | `--adapter sim` | The robot in MuJoCo: realistic travel times, collisions with obstacles, head camera, kinematic grasp. |
 | `--robot g1` (default), `--robot go2` | Which robot the adapter stands for (ADR-0012): the Unitree G1 humanoid, or the Unitree Go2 quadruped, which has no arm. In MuJoCo it picks the model; on every adapter it decides which skills a plan may use. `spingi robots` lists the profiles. |
 | `--scene` | Scene file; default `sim/scenes/lab_small.yaml`. |
+| `--perception truth` (default), `--perception markers` | Who answers `detect` and `inspect`. `truth`: the simulator's ground truth, with `--noise` and `--sigma` to make it unreliable. `markers`: the AprilTags on the objects, read from the frames the head camera renders with OpenCV, as from a real camera (`sim` adapter only; the noise options do not apply). The G1 reads the box on shelf A from 0.9 m; the Go2 cannot, the shelf's edge hides it from its low camera, which is the kind of thing this mode is for. |
 | `--operator auto` (default) | Requests for a human are answered with `--on-failure` (abort, skip or retry) and the event log is printed at the end. |
 | `--operator console` | You supervise: live event lines on the terminal, prompts when a step needs you, Ctrl+C to e-stop the robot and end the run. |
 | `--on-failure` | The fixed answer of `--operator auto` (default `abort`); in `spingi bench`, the answer to every operator request. |
@@ -103,6 +104,8 @@ A plan is an ordered list of steps. Each step names a skill, its parameters and 
 | `pick` | `object_id`, `arm=right` | object pose known and within 0.9 m, hand empty | `robot.holding` set, object removed from the scene |
 | `place` | `at`, `arm=right` | holding something, robot at `at` | object put down ahead of the robot, `holding` cleared |
 | `inspect` | `target`, `checks=[]` | robot at `target` | a head-camera frame; `present:<cls>` / `absent:<cls>` checks evaluated, anomalies listed |
+
+With `--perception markers` a `Frame` carries a `camera_model` (intrinsics and the camera's world pose, written by the adapter) and `MarkerPerceiver` (`spingi/perception/markers.py`) turns the tags it finds into world positions: the tag's centre, then the object's centre by the tag's inset. Objects with a `marker_id` in the scene get their tag on four side faces in the simulator; ids go from 0 to 63 and must be unique in a scene (`sim/markers/`).
 | `wait_for_human` | `prompt`, `timeout_s=300` | – | the robot stops and waits; the operator answers `continue` or `abort` |
 | `say` | `text` | – | the text in the event log |
 
@@ -145,7 +148,7 @@ The session arms the safety monitor before the first step: it caps the adapter s
 
 ## Benchmarks and the sim-to-real gate
 
-`spingi bench` runs the same plan many times, with a different perception seed each time, and computes the metrics of the spec (section 8.5) from the event logs alone: success rate, operator requests per 100 runs, retries, fatal runs, safety violations, simulated time p50 and p95. It checks them against the gate of section 8.4 (success ≥ 95 %, operator requests ≤ 5 per 100, no fatal run, no safety violation); with `--gate` a failed gate exits with status 1, ready for CI. The report goes to `runs/bench-<id>/report.json`, one line per run to `runs.jsonl`, and with `--keep-failed` the event log of every failed run is kept.
+`spingi bench` runs the same plan many times, with a different perception seed each time, and computes the metrics of the spec (section 8.5) from the event logs alone: success rate, operator requests per 100 runs, retries, fatal runs, safety violations, simulated time p50 and p95. It checks them against the gate of section 8.4 (success ≥ 95 %, operator requests ≤ 5 per 100, no fatal run, no safety violation, and p95 of the simulated time within the plan's `deadline_s` when the plan declares one); with `--gate` a failed gate exits with status 1, ready for CI. The report goes to `runs/bench-<id>/report.json`, one line per run to `runs.jsonl`, and with `--keep-failed` the event log of every failed run is kept.
 
 ```
 plan demo_material_runner · scene sim/scenes/warehouse_small.yaml · unitree_g1 on sim · 100 runs
@@ -156,7 +159,7 @@ perception noise: false negatives 20%, position sigma 0.02 m
   ok    fatal runs          0   (gate <= 0)
   ok    safety violations   0   (gate <= 0)
         retries per run     0.25
-        simulated time       p50 72.2 s · p95 72.2 s
+  ok    simulated time       p50 72.2 s · p95 72.2 s   (gate <= 300 s, the plan's deadline_s)
 
 GATE PASSED
 ```
@@ -200,7 +203,7 @@ uv run spingi plan "Check that the red box is on shelf A" --scene sim/scenes/war
 spingi/core        types, ports (RobotAdapter, Clock, Perceiver, HumanGateway), WallClock, Skill, TaskPlan, EventLog, Executor, ScriptedHuman
 spingi/skills      one file per skill
 spingi/safety      SafetyMonitor and limits
-spingi/perception  FakePerceiver, SimPerceiver (ground truth from the scene)
+spingi/perception  FakePerceiver, SimPerceiver (ground truth from the scene), MarkerPerceiver (AprilTags in frames)
 spingi/adapters    FakeAdapter, sim_mujoco/ (the G1 or the Go2 in MuJoCo, from the profile)
 spingi/planner     StaticPlanner (YAML), LLMPlanner (Claude, structured output), schema, evaluation
 spingi/console     terminal operator console (reporter + HumanGateway)
@@ -213,7 +216,7 @@ spingi/episode.py  episode writer and the pydantic models behind docs/schemas
 spingi/scenes.py   initial WorldState, safety limits and routes from a scene file
 spingi/robots.py   robot profiles: name, capabilities, how the simulator loads and moves the model (ADR-0012)
 spingi/cli.py      the `spingi` command; spingi/dotenv.py loads .env
-plans/  sim/scenes/  sim/models/  tests/  scripts/ (gen_schemas, record_golden, export_glb)
+plans/  sim/scenes/  sim/models/  sim/markers/  tests/  scripts/ (gen_schemas, record_golden, export_glb)
 ```
 
 `spingi.core` imports nothing from the other packages; `tests/test_architecture.py` enforces it.
@@ -224,7 +227,7 @@ plans/  sim/scenes/  sim/models/  tests/  scripts/ (gen_schemas, record_golden, 
 make test
 ```
 
-218 tests, about 14 seconds. Unit tests on the fake adapter, contract tests run against every adapter and robot (fake and sim, as the G1 and as the Go2), scenario tests in MuJoCo (inspection round on both robots, warehouse delivery, a delivery refused on the Go2, wall, geofence, speed cap, rendering, Ctrl+C operator stop, every golden plan, robot time for the watchdog, the monitor and the plan deadline), golden episodes replayed, metrics and gate, bench, console, LeRobot export, the LLM planner with a fake client (request shape, schema, retry with errors, refusals), episode and schema tests, architecture rules, and a licensing test that keeps `LICENSE` and `NOTICE` in this folder (shipped in the wheel) equal to the repository's. No test calls the network. Rendering tests skip themselves on machines without an OpenGL context.
+233 tests, about 25 seconds (4 skip by design: arm tests on robots without an arm). Unit tests on the fake adapter, the marker perceiver on synthetic images, contract tests run against every adapter and robot (fake and sim, as the G1 and as the Go2), scenario tests in MuJoCo (inspection round on both robots, warehouse delivery, a delivery refused on the Go2, wall, geofence, speed cap, rendering, AprilTags read from rendered frames, Ctrl+C operator stop, every golden plan, robot time for the watchdog, the monitor and the plan deadline), golden episodes replayed, metrics and gate, bench, console, LeRobot export, the LLM planner with a fake client (request shape, schema, retry with errors, refusals), episode and schema tests, architecture rules, and a licensing test that keeps `LICENSE` and `NOTICE` in this folder (shipped in the wheel) equal to the repository's. No test calls the network. Rendering tests skip themselves on machines without an OpenGL context.
 
 `make lint` runs ruff with the rules `E`, `F`, `I`, `B`, `UP`, `S` (bandit), `ASYNC`, `SIM`, `RUF`, `PIE`, `BLE`; a blind `except` needs a `noqa` that says why. CI runs the same lint, `ruff format --check` and the tests on GitHub Actions.
 
@@ -236,6 +239,6 @@ make test
 
 **A robot**: a `RobotProfile` in `spingi/robots.py` (name, alias, label, kind, capabilities, and for the simulator the model folder, the MJCF file, the root body, the standing height and the hand offsets), the vendored MJCF with its license under `sim/models/<name>/` and in `NOTICE`, a `head` camera in the MJCF, a GLB for the viewer (`scripts/export_glb.py --robot <alias>`, then `npm run model:compress` in `viewer/`, and the table in `viewer/src/episode.ts`), the profile in `ADAPTERS` of the contract tests, and a golden episode.
 
-**A perceiver**: implement `detect` and `localize` from the `Perceiver` protocol.
+**A perceiver**: implement `detect` and `localize` from the `Perceiver` protocol. A perceiver that reads pixels gets the image through a callable and the camera through `frame.camera_model`, like `MarkerPerceiver`; it never asks the adapter for anything else, so it can be tested on synthetic images (`tests/unit/test_markers.py`).
 
 **An operator interface** (web console, chat, pager): implement `HumanGateway.ask`, honouring `request.options`, and subscribe to the `EventLog` to show the run live.

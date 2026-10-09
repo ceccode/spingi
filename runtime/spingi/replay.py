@@ -75,6 +75,7 @@ async def replay(episode_dir: Path, runs_dir: Path | None = None) -> ReplayRepor
             perception_noise=cfg_rec.perception_noise if cfg_rec else 0.0,
             position_sigma_m=cfg_rec.position_sigma_m if cfg_rec else 0.0,
             seed=cfg_rec.seed if cfg_rec else 0,
+            perception=cfg_rec.perception if cfg_rec else "truth",  # type: ignore[arg-type]
         )
         # The operator gives the same answers, in the same order, as in the recording.
         human = ScriptedHuman(responses=_operator_answers(recorded), default="abort")

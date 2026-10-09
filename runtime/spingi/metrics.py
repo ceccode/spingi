@@ -57,6 +57,7 @@ class Gate(BaseModel):
     max_needs_human_per_100: float = 5.0
     max_fatal_runs: int = 0
     max_safety_violations: int = 0
+    max_p95_s: float | None = None  # the plan's robot-time budget (deadline_s); None when the plan declares none
 
 
 class BenchReport(BaseModel):
@@ -126,6 +127,9 @@ def summarize(
         "fatal_runs": report["fatal_runs"] <= gate.max_fatal_runs,
         "safety_violations": report["safety_violations"] <= gate.max_safety_violations,
     }
+    if gate.max_p95_s is not None:  # p95 of the successful runs' robot time within the plan's budget
+        p95 = report["sim_time_p95_s"]
+        checks["p95_within_budget"] = p95 is not None and p95 <= gate.max_p95_s
     return BenchReport(**report, checks=checks, passed=all(checks.values()))
 
 

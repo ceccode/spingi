@@ -17,8 +17,8 @@ from typing import Literal
 import mujoco
 import numpy as np
 
-from spingi.adapters.sim_mujoco.scene import write_scene
-from spingi.core.ports import Arm, CapabilityMissing, Frame, GripResult, JointState, RobotEstopped
+from spingi.adapters.sim_mujoco.scene import OFFSCREEN_SIZE, write_scene
+from spingi.core.ports import Arm, CameraModel, CapabilityMissing, Frame, GripResult, JointState, RobotEstopped
 from spingi.core.types import Pose2D, Pose3D
 from spingi.robots import RobotProfile, get_profile
 
@@ -31,6 +31,8 @@ class WatchdogExpired(RuntimeError):
 
 class SimAdapter:
     YIELD_EVERY = 10  # ticks between cooperative yields in fast mode (0.2 s of simulated time)
+    IMAGE_CACHE = 4  # rendered head-camera images kept in memory for the perceiver, by frame id
+    VIDEO_SIZE = (640, 480)
 
     def __init__(
         self,
@@ -50,6 +52,7 @@ class SimAdapter:
         battery_drain_per_m: float = 0.5,
         watchdog_ms: int | None = None,
         grasp_range_m: float = 0.9,
+        camera_size: tuple[int, int] = OFFSCREEN_SIZE,
     ) -> None:
         self.profile = get_profile(robot)
         self.capabilities = self.profile.capabilities
@@ -76,6 +79,10 @@ class SimAdapter:
         self.battery_drain_per_m = battery_drain_per_m
         self.watchdog_ms = watchdog_ms
         self.grasp_range_m = grasp_range_m  # an object within this distance of the base can be grasped
+        if camera_size[0] > OFFSCREEN_SIZE[0] or camera_size[1] > OFFSCREEN_SIZE[1]:
+            raise ValueError(f"camera_size {camera_size} exceeds the offscreen buffer {OFFSCREEN_SIZE}")
+        self.camera_size = camera_size  # (width, height) of the head-camera frames
+        self._images: dict[str, np.ndarray] = {}
         self.sim_time_s = 0.0
         self.clock = SimClock(self)  # robot time = simulated time; the watchdog counts it too
         self._last_heartbeat = 0.0
@@ -93,7 +100,7 @@ class SimAdapter:
 
         self._robot_geoms = self._subtree_geoms(self.profile.sim.root_body)
         self._floor = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, "floor")
-        self._renderer: mujoco.Renderer | None = None
+        self._renderers: dict[tuple[int, int], mujoco.Renderer] = {}  # one per (height, width): frames and video
         self.render_error: str | None = None
         self._video_writer = None  # frames are streamed to disk, never accumulated in memory
         self._frame_counter = 0
@@ -198,16 +205,51 @@ class SimAdapter:
     # --- sensors -----------------------------------------------------------
     async def get_camera(self, name: str = "head") -> Frame:
         self._frame_counter += 1
-        frame = Frame(id=f"sim-{self._frame_counter}", ts=self.sim_time_s, camera=name, width=320, height=240)
-        img = self._render(name, 240, 320)
-        if img is not None and self.record_dir is not None:
-            import imageio.v3 as iio
+        width, height = self.camera_size
+        frame = Frame(
+            id=f"sim-{self._frame_counter}",
+            ts=self.sim_time_s,
+            camera=name,
+            width=width,
+            height=height,
+            camera_model=self._camera_model(name, width, height),
+        )
+        img = self._render(name, height, width)
+        if img is not None:
+            self._images[frame.id] = img
+            while len(self._images) > self.IMAGE_CACHE:
+                del self._images[next(iter(self._images))]
+            if self.record_dir is not None:
+                import imageio.v3 as iio
 
-            out = self.record_dir / "frames" / f"{frame.id}.png"
-            out.parent.mkdir(parents=True, exist_ok=True)
-            iio.imwrite(out, img)
-            frame.data_ref = f"frames/{frame.id}.png"  # relative to the episode folder: no local paths in episodes
+                out = self.record_dir / "frames" / f"{frame.id}.png"
+                out.parent.mkdir(parents=True, exist_ok=True)
+                iio.imwrite(out, img)
+                frame.data_ref = f"frames/{frame.id}.png"  # relative to the episode folder: no local paths in episodes
         return frame
+
+    def image(self, frame_id: str) -> np.ndarray | None:
+        """The rendered image of a recent frame (RGB, height x width x 3), for a perceiver that reads pixels."""
+        return self._images.get(frame_id)
+
+    def _camera_model(self, name: str, width: int, height: int) -> CameraModel | None:
+        cam = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_CAMERA, name)
+        if cam < 0:
+            return None
+        fovy = math.radians(float(self.model.cam_fovy[cam]))
+        f = (height / 2) / math.tan(fovy / 2)  # MuJoCo cameras have square pixels and a vertical field of view
+        # MuJoCo camera axes: x right, y up, looking along -z. OpenCV: x right, y down, looking along +z.
+        rot = self.data.cam_xmat[cam].reshape(3, 3) @ np.diag([1.0, -1.0, -1.0])
+        return CameraModel(
+            fx=f,
+            fy=f,
+            cx=width / 2,
+            cy=height / 2,
+            width=width,
+            height=height,
+            position=tuple(float(v) for v in self.data.cam_xpos[cam]),
+            rotation=tuple(float(v) for v in rot.ravel()),
+        )
 
     async def get_joint_state(self) -> JointState:
         names = [self.model.joint(i).name for i in range(1, self.model.njnt)]
@@ -244,9 +286,9 @@ class SimAdapter:
             self._video_writer.close()
             self._video_writer = None
             video = self.record_dir / "run.mp4" if self.record_dir is not None else None
-        if self._renderer is not None:
-            self._renderer.close()
-            self._renderer = None
+        for renderer in self._renderers.values():
+            renderer.close()
+        self._renderers.clear()
         return video
 
     # --- internals ---------------------------------------------------------
@@ -269,9 +311,8 @@ class SimAdapter:
         q[3], q[4], q[5], q[6] = math.cos(self.pose.yaw / 2), 0.0, 0.0, math.sin(self.pose.yaw / 2)
         self.data.qvel[:] = 0.0
         if self.held_object is not None:
-            g = self._object_geom(self.held_object)
             x, y = self._hand_xy()
-            self.model.geom_pos[g] = (x, y, self.profile.sim.hand_height_m)
+            self.model.body_pos[self._object_body(self.held_object)] = (x, y, self.profile.sim.hand_height_m)
         mujoco.mj_forward(self.model, self.data)
 
     # --- objects (kinematic grasp, ADR-0007) --------------------------------
@@ -289,6 +330,10 @@ class SimAdapter:
     def _object_geom(self, object_id: str) -> int:
         return mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, f"obj_{object_id}")
 
+    def _object_body(self, object_id: str) -> int:
+        """The static body that carries the object's box and its tag decals; moving it moves them together."""
+        return mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, f"objb_{object_id}")
+
     def _nearest_object(self, max_dist: float) -> str | None:
         best, best_d = None, max_dist
         for oid, pos in self.object_positions().items():
@@ -299,11 +344,10 @@ class SimAdapter:
 
     def _release(self, object_id: str) -> None:
         """Puts the object down in front of the robot, on the highest obstacle top below the hand, else on the floor."""
-        g = self._object_geom(object_id)
         x, y = self._hand_xy()
-        half_h = float(self.model.geom_size[g][2])
+        half_h = float(self.model.geom_size[self._object_geom(object_id)][2])
         z = self._surface_height(x, y) + half_h
-        self.model.geom_pos[g] = (x, y, z)
+        self.model.body_pos[self._object_body(object_id)] = (x, y, z)
         mujoco.mj_forward(self.model, self.data)
 
     def _surface_height(self, x: float, y: float) -> float:
@@ -340,7 +384,7 @@ class SimAdapter:
         if self._viewer is not None:
             self._viewer.sync()
         if self.record_video and self.record_dir is not None and self.ticks % self.record_every == 0:
-            img = self._render("track", 480, 640)
+            img = self._render("track", self.VIDEO_SIZE[1], self.VIDEO_SIZE[0])
             if img is not None:
                 self._write_video_frame(img)
         if self.realtime:
@@ -386,12 +430,11 @@ class SimAdapter:
 
     def _render(self, camera: str, height: int, width: int) -> np.ndarray | None:
         try:
-            if self._renderer is None or self._renderer.height != height or self._renderer.width != width:
-                if self._renderer is not None:
-                    self._renderer.close()
-                self._renderer = mujoco.Renderer(self.model, height, width)
-            self._renderer.update_scene(self.data, camera=camera)
-            return self._renderer.render().copy()
+            renderer = self._renderers.get((height, width))
+            if renderer is None:
+                renderer = self._renderers[(height, width)] = mujoco.Renderer(self.model, height, width)
+            renderer.update_scene(self.data, camera=camera)
+            return renderer.render().copy()
         except Exception as exc:  # noqa: BLE001 - no OpenGL context (headless CI): perception gets no image
             self.render_error = repr(exc)  # kept for diagnosis instead of being swallowed
             return None

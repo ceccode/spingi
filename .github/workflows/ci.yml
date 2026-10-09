@@ -33,7 +33,7 @@ jobs:
       - name: Install system libraries for MuJoCo rendering
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libegl1 libgl1 libglvnd0
       - name: Install
-        run: uv sync --locked --extra dev --extra sim --extra export --extra llm
+        run: uv sync --locked --extra dev --extra sim --extra export --extra llm --extra perception
       - name: Lint
         run: uv run ruff check spingi tests scripts
       - name: Format

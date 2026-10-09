@@ -14,8 +14,24 @@ from spingi.core.types import ObjectRef, Pose2D, Pose3D
 Arm = Literal["left", "right"]
 
 
+class CameraModel(BaseModel):
+    """Pinhole intrinsics and where the camera was in the world when the frame was taken, in OpenCV axes (x right,
+    y down, z forward). The adapter writes it; a perceiver can then turn pixels into world coordinates without
+    asking the robot anything else."""
+
+    fx: float
+    fy: float
+    cx: float
+    cy: float
+    width: int
+    height: int
+    position: tuple[float, float, float]
+    rotation: tuple[float, float, float, float, float, float, float, float, float]  # row-major, world_from_camera
+
+
 class Frame(BaseModel):
-    """An image or a reference to one. In v0 an id and the timestamp are enough."""
+    """An image or a reference to one: an id, the timestamp, where the file is and how the camera saw the world.
+    Never the bytes."""
 
     id: str
     ts: float
@@ -23,6 +39,7 @@ class Frame(BaseModel):
     width: int = 0
     height: int = 0
     data_ref: str | None = None  # path or blob id; never the bytes in the model
+    camera_model: CameraModel | None = None  # present when the adapter knows its camera (needed by MarkerPerceiver)
 
 
 class GripResult(BaseModel):

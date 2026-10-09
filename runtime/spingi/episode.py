@@ -32,6 +32,7 @@ class RunConfig(BaseModel):
     perception_noise: float = Field(default=0.0, description="perceiver false-negative rate")
     position_sigma_m: float = Field(default=0.0, description="perceiver position noise, metres")
     seed: int = 0
+    perception: str = Field(default="truth", description="truth (scene ground truth) or markers (AprilTags in frames)")
 
 
 class Manifest(BaseModel):

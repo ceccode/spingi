@@ -53,3 +53,17 @@ def test_summary_fails_the_gate_on_each_threshold():
     assert summarize(
         ok + bad, plan_id="p", scene="s", adapter="fake", perception_noise=0.3, position_sigma_m=0.0, gate=lenient
     ).passed
+
+
+def test_p95_is_checked_against_the_plan_budget_when_one_is_declared():
+    runs = [run_metrics(fake_run(f"r{i}", "success", sim_t=10 + i), 3) for i in range(20)]
+    base = dict(plan_id="p", scene="s", adapter="fake", perception_noise=0.0, position_sigma_m=0.0)
+    r = summarize(runs, **base)
+    assert "p95_within_budget" not in r.checks and r.passed
+    r = summarize(runs, gate=Gate(max_p95_s=60.0), **base)
+    assert r.checks["p95_within_budget"] and r.passed
+    r = summarize(runs, gate=Gate(max_p95_s=20.0), **base)
+    assert not r.checks["p95_within_budget"] and not r.passed
+    failed = [run_metrics(fake_run(f"x{i}", "aborted"), 3) for i in range(3)]
+    r = summarize(failed, gate=Gate(max_p95_s=60.0), **base)
+    assert not r.checks["p95_within_budget"]  # no successful run: the budget cannot be shown to hold

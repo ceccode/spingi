@@ -16,7 +16,9 @@ Every significant architectural decision is a file in this folder: `NNNN-title.m
 | [0010](0010-llm-planner-structured-output.md) | LLM planner with structured output, validated like any plan | Accepted | M3 |
 | [0011](0011-robot-time-and-terminal-estop.md) | Robot time, terminal e-stop and latched safety stops | Accepted | M3+ |
 | [0012](0012-robot-profiles-and-capabilities.md) | Robot profiles and capabilities; the Go2 quadruped as a second robot | Accepted | M3+ |
+| [0013](0013-locomotion-vendor-controller.md) | Locomotion from the vendor's controller; the simulator stays kinematic | Proposed | M4.0 |
+| [0014](0014-runtime-on-a-laptop-then-on-board.md) | The runtime on a laptop in the lab, on-board for a pilot | Proposed | M4.0 |
 
-Still open (see the spec, section 13, Q10 and Q11): locomotion, vendor controller or a pre-trained policy in simulation (meanwhile the simulator moves the base kinematically, 0006); runtime on-board or on a laptop. Both are to be decided by M4. Multi-robot missions (a dog scouting for a humanoid) are out of scope for v0 and would need their own ADR after M4 (see 0012).
+Proposed, to be accepted before the first robot (M4.1): 0013 (locomotion) and 0014 (where the runtime runs), written in M4.0, the prerequisites milestone that needs no robot. Q14 of the spec (perception on the real robot) is answered in practice by `MarkerPerceiver` (M4.0) and will get its ADR with the first lab results. Multi-robot missions (a dog scouting for a humanoid) are out of scope for v0 and would need their own ADR after M4 (see 0012).
 
 New ADRs start from [template.md](template.md).
