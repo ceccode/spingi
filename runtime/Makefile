@@ -1,4 +1,4 @@
-.PHONY: setup test lint demo demo-sim demo-sim-view demo-sim-record schemas bench
+.PHONY: setup test lint demo demo-sim demo-sim-go2 demo-sim-view demo-sim-record schemas bench
 
 setup:
 	uv sync --extra dev --extra sim --extra export --extra llm
@@ -14,6 +14,9 @@ demo:
 
 demo-sim:
 	uv run spingi run plans/demo_inspection_round.yaml --adapter sim --quiet
+
+demo-sim-go2:
+	uv run spingi run plans/demo_inspection_round.yaml --adapter sim --robot go2 --quiet
 
 demo-sim-record:
 	uv run spingi run plans/demo_inspection_round.yaml --adapter sim --record --quiet

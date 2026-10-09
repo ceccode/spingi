@@ -10,26 +10,28 @@ All commands run from this folder. Requirements: Python 3.11+ and [uv](https://d
 make setup
 ```
 
-installs the package with its extras: `dev` (pytest, ruff), `sim` (MuJoCo, numpy, imageio, and trimesh with scipy for the viewer model export), `export` (pandas, pyarrow) and `llm` (the Anthropic SDK, used only by `spingi plan` and `spingi eval-planner`). Nothing else is needed: the G1 model is in `sim/models/`.
+installs the package with its extras: `dev` (pytest, ruff), `sim` (MuJoCo, numpy, imageio, and trimesh with scipy for the viewer model export), `export` (pandas, pyarrow) and `llm` (the Anthropic SDK, used only by `spingi plan` and `spingi eval-planner`). Nothing else is needed: the G1 and Go2 models are in `sim/models/`.
 
 ## Command line
 
 ```
-spingi run <plan.yaml> [--scene S] [--adapter fake|sim] [--operator auto|console] [--on-failure abort|skip|retry]
+spingi run <plan.yaml> [--scene S] [--adapter fake|sim] [--robot g1|go2] [--operator auto|console] [--on-failure abort|skip|retry]
            [--noise P] [--sigma M] [--seed K] [--runs-dir D] [--view] [--record] [--realtime] [--zip] [--quiet]
-spingi bench <plan.yaml> [--scene S] [--adapter fake|sim] [--runs N] [--noise P] [--sigma M] [--seed K]
+spingi bench <plan.yaml> [--scene S] [--adapter fake|sim] [--robot g1|go2] [--runs N] [--noise P] [--sigma M] [--seed K]
              [--on-failure abort|skip|retry] [--runs-dir D] [--gate] [--keep-failed]
 spingi export lerobot <episode_dir>... --out <dataset_dir> [--fps 10]
-spingi plan "<request>" [--scene S] [--out plan.yaml] [--model M] [--run [--yes] [--adapter fake|sim] [--operator auto|console]]
+spingi plan "<request>" [--scene S] [--robot g1|go2] [--out plan.yaml] [--model M] [--run [--yes] [--adapter fake|sim] [--operator auto|console]]
 spingi eval-planner [--cases plans/golden/planner_cases.yaml] [--model M] [--out report.json] [--min-pass-rate R]
 spingi replay <episode_dir>...
-spingi skills
+spingi skills [--robot g1|go2]
+spingi robots
 ```
 
 | Option | Effect |
 |--------|--------|
 | `--adapter fake` (default) | In-memory robot: instantaneous moves, no physics. For logic and unit tests. |
-| `--adapter sim` | Unitree G1 in MuJoCo: realistic travel times, collisions with obstacles, head camera, kinematic grasp. |
+| `--adapter sim` | The robot in MuJoCo: realistic travel times, collisions with obstacles, head camera, kinematic grasp. |
+| `--robot g1` (default), `--robot go2` | Which robot the adapter stands for (ADR-0012): the Unitree G1 humanoid, or the Unitree Go2 quadruped, which has no arm. In MuJoCo it picks the model; on every adapter it decides which skills a plan may use. `spingi robots` lists the profiles. |
 | `--scene` | Scene file; default `sim/scenes/lab_small.yaml`. |
 | `--operator auto` (default) | Requests for a human are answered with `--on-failure` (abort, skip or retry) and the event log is printed at the end. |
 | `--operator console` | You supervise: live event lines on the terminal, prompts when a step needs you, Ctrl+C to e-stop the robot and end the run. |
@@ -48,6 +50,7 @@ Make targets wrap the common cases:
 |--------|---------|
 | `make demo` | Inspection round on the fake adapter |
 | `make demo-sim` | Same plan on the G1 in MuJoCo |
+| `make demo-sim-go2` | Same plan on the Go2 quadruped in MuJoCo |
 | `make demo-sim-view` | Same, in the MuJoCo viewer |
 | `make demo-sim-record` | Same, with video |
 | `make bench` | Material runner in `warehouse_small`, 100 simulated runs with 20 % perception false negatives and 0.02 m position noise, gate checked |
@@ -105,9 +108,11 @@ A plan is an ordered list of steps. Each step names a skill, its parameters and 
 
 Skills never call each other; composition is the plan's job. Pre and postconditions are pure functions of the world state, which makes them unit-testable without a robot.
 
+Each skill declares the robot capabilities it `requires`: `navigate` needs `locomotion`, `detect` and `inspect` need `camera`, `pick` and `place` need `arm`. A robot profile (`spingi/robots.py`) says what the robot has: the G1 has all three, the Go2 has no arm. A plan with a skill the robot cannot run is rejected at validation (`step 2: skill 'pick' needs arm, which this robot does not have`) and the run ends as `invalid_plan` before anything moves; `spingi skills --robot go2` lists what is left.
+
 ## Episodes
 
-Every `spingi run` leaves an episode in `runs/<run_id>/` ([../docs/episode-format.md](../docs/episode-format.md)): `manifest.json`, copies of the plan and the scene, `events.jsonl` (every event with wall-clock and simulated time), `trajectory.jsonl` (robot pose at 10 Hz, object positions when they change), `frames/` (head-camera PNGs referenced by `perception.result` events through `frame_ref`, a path relative to the episode folder, written only when an OpenGL context is available) and, with `--record`, `run.mp4`, streamed to disk while the run goes on. `manifest.json` also records the perception noise and seed, so that `spingi replay` can run the episode again.
+Every `spingi run` leaves an episode in `runs/<run_id>/` ([../docs/episode-format.md](../docs/episode-format.md)): `manifest.json`, copies of the plan and the scene, `events.jsonl` (every event with wall-clock and simulated time), `trajectory.jsonl` (robot pose at 10 Hz, object positions when they change), `frames/` (head-camera PNGs referenced by `perception.result` events through `frame_ref`, a path relative to the episode folder, written only when an OpenGL context is available) and, with `--record`, `run.mp4`, streamed to disk while the run goes on. `manifest.json` also records the robot profile (`robot.model`, which the viewer uses to draw the right robot) and the perception noise and seed, so that `spingi replay` can run the episode again on the same robot.
 
 ## Operator console
 
@@ -143,7 +148,7 @@ The session arms the safety monitor before the first step: it caps the adapter s
 `spingi bench` runs the same plan many times, with a different perception seed each time, and computes the metrics of the spec (section 8.5) from the event logs alone: success rate, operator requests per 100 runs, retries, fatal runs, safety violations, simulated time p50 and p95. It checks them against the gate of section 8.4 (success ≥ 95 %, operator requests ≤ 5 per 100, no fatal run, no safety violation); with `--gate` a failed gate exits with status 1, ready for CI. The report goes to `runs/bench-<id>/report.json`, one line per run to `runs.jsonl`, and with `--keep-failed` the event log of every failed run is kept.
 
 ```
-plan demo_material_runner · scene sim/scenes/warehouse_small.yaml · adapter sim · 100 runs
+plan demo_material_runner · scene sim/scenes/warehouse_small.yaml · unitree_g1 on sim · 100 runs
 perception noise: false negatives 20%, position sigma 0.02 m
 
   ok    success rate        100.0%   (gate >= 95%)
@@ -160,11 +165,11 @@ At 60 % false negatives the same plan drops to about 74 % success with 26 operat
 
 ## Export to LeRobot
 
-`spingi export lerobot` turns episodes into a LeRobotDataset v3.0 folder (ADR-0009): `meta/info.json`, `meta/stats.json`, `meta/tasks.parquet`, `meta/episodes/…parquet`, `data/…parquet`. Each frame, at 10 Hz, has `observation.state` and `action` as base x, y, yaw and gripper state (the action is the next state), the plan description as the task, and `next.done` / `next.success` from the outcome. Camera images are not exported yet: Spingi frames are taken per inspection, not at a fixed rate. Checked against lerobot 0.6.1: the exported folder loads with `LeRobotDataset(repo_id, root=...)`. Folders without a `manifest.json` are refused, as are trajectories that end outside 0 to 24 hours. Requires the `export` extra (pandas, pyarrow), installed by `make setup`.
+`spingi export lerobot` turns episodes into a LeRobotDataset v3.0 folder (ADR-0009): `meta/info.json`, `meta/stats.json`, `meta/tasks.parquet`, `meta/episodes/…parquet`, `data/…parquet`. Each frame, at 10 Hz, has `observation.state` and `action` as base x, y, yaw and gripper state (the action is the next state), the plan description as the task, and `next.done` / `next.success` from the outcome. Camera images are not exported yet: Spingi frames are taken per inspection, not at a fixed rate. `robot_type` in `info.json` is the profile of the episodes; episodes of different robots are refused in one dataset. Checked against lerobot 0.6.1: the exported folder loads with `LeRobotDataset(repo_id, root=...)`. Folders without a `manifest.json` are refused, as are trajectories that end outside 0 to 24 hours. Requires the `export` extra (pandas, pyarrow), installed by `make setup`.
 
 ## Planning from natural language
 
-`spingi plan` sends the request to Claude (`claude-opus-5-5` by default, `--model` to change it) together with the skill summaries and the symbolic world of the scene: locations, known objects, battery, and the `routes:` section of the scene file, which tells the model which waypoints avoid the shelving. The answer is constrained by a JSON schema generated from the skill registry, so it can only contain whitelisted skills with parameters of the right shape; then it goes through the same validation as a hand-written plan. The world is sent inside a `<world>` block that the system prompt marks as data, never instructions. An invalid plan is sent back once with the errors; a second failure, a refusal or a truncated answer is reported and nothing runs (ADR-0010).
+`spingi plan` sends the request to Claude (`claude-opus-5-5` by default, `--model` to change it) together with the robot's description, the summaries of the skills that robot can run (`--robot go2` leaves out `pick` and `place`) and the symbolic world of the scene: locations, known objects, battery, and the `routes:` section of the scene file, which tells the model which waypoints avoid the shelving. The answer is constrained by a JSON schema generated from the skill registry, so it can only contain whitelisted skills with parameters of the right shape; then it goes through the same validation as a hand-written plan. The world is sent inside a `<world>` block that the system prompt marks as data, never instructions. An invalid plan is sent back once with the errors; a second failure, a refusal or a truncated answer is reported and nothing runs (ADR-0010).
 
 The API key goes in `runtime/.env`, which git ignores:
 
@@ -187,7 +192,7 @@ uv run spingi plan "Check that the red box is on shelf A" --scene sim/scenes/war
 
 `spingi replay <episode>` runs a recorded episode again with the plan, scene, adapter, perception noise, seed and operator answers it recorded, then compares the behaviour: steps, skill outcomes, retries, operator requests and answers, safety events, final status, final position within 5 cm. Timestamps are not compared.
 
-`tests/golden/episodes/` holds three recorded runs: the material runner with 50 % perception noise and two retries, the inspection round, and the wall that blocks the robot with an operator who answers retry, then abort. They are replayed on every commit; a difference means the runtime, a skill or the simulator changed behaviour. After an intended change, re-record them with `uv run python scripts/record_golden.py` and review the diff.
+`tests/golden/episodes/` holds four recorded runs: the material runner with 50 % perception noise and two retries, the inspection round on the G1 and on the Go2, and the wall that blocks the robot with an operator who answers retry, then abort. They are replayed on every commit; a difference means the runtime, a skill or the simulator changed behaviour. After an intended change, re-record them with `uv run python scripts/record_golden.py` and review the diff.
 
 ## Architecture in one screen
 
@@ -196,7 +201,7 @@ spingi/core        types, ports (RobotAdapter, Clock, Perceiver, HumanGateway), 
 spingi/skills      one file per skill
 spingi/safety      SafetyMonitor and limits
 spingi/perception  FakePerceiver, SimPerceiver (ground truth from the scene)
-spingi/adapters    FakeAdapter, sim_mujoco/ (G1 in MuJoCo)
+spingi/adapters    FakeAdapter, sim_mujoco/ (the G1 or the Go2 in MuJoCo, from the profile)
 spingi/planner     StaticPlanner (YAML), LLMPlanner (Claude, structured output), schema, evaluation
 spingi/console     terminal operator console (reporter + HumanGateway)
 spingi/export      LeRobot v3.0 exporter
@@ -206,8 +211,9 @@ spingi/bench.py    many runs with noise, report
 spingi/replay.py   run an episode again and compare behaviour
 spingi/episode.py  episode writer and the pydantic models behind docs/schemas
 spingi/scenes.py   initial WorldState, safety limits and routes from a scene file
+spingi/robots.py   robot profiles: name, capabilities, how the simulator loads and moves the model (ADR-0012)
 spingi/cli.py      the `spingi` command; spingi/dotenv.py loads .env
-plans/  sim/scenes/  sim/models/  tests/  scripts/ (gen_schemas, record_golden, export_g1_glb)
+plans/  sim/scenes/  sim/models/  tests/  scripts/ (gen_schemas, record_golden, export_glb)
 ```
 
 `spingi.core` imports nothing from the other packages; `tests/test_architecture.py` enforces it.
@@ -218,7 +224,7 @@ plans/  sim/scenes/  sim/models/  tests/  scripts/ (gen_schemas, record_golden, 
 make test
 ```
 
-176 tests, about 12 seconds. Unit tests on the fake adapter, contract tests run against every adapter (fake and sim), scenario tests in MuJoCo (inspection round, warehouse delivery, wall, geofence, speed cap, rendering, Ctrl+C operator stop, every golden plan, robot time for the watchdog, the monitor and the plan deadline), golden episodes replayed, metrics and gate, bench, console, LeRobot export, the LLM planner with a fake client (request shape, schema, retry with errors, refusals), episode and schema tests, architecture rules, and a licensing test that keeps `LICENSE` and `NOTICE` in this folder (shipped in the wheel) equal to the repository's. No test calls the network. Rendering tests skip themselves on machines without an OpenGL context.
+218 tests, about 14 seconds. Unit tests on the fake adapter, contract tests run against every adapter and robot (fake and sim, as the G1 and as the Go2), scenario tests in MuJoCo (inspection round on both robots, warehouse delivery, a delivery refused on the Go2, wall, geofence, speed cap, rendering, Ctrl+C operator stop, every golden plan, robot time for the watchdog, the monitor and the plan deadline), golden episodes replayed, metrics and gate, bench, console, LeRobot export, the LLM planner with a fake client (request shape, schema, retry with errors, refusals), episode and schema tests, architecture rules, and a licensing test that keeps `LICENSE` and `NOTICE` in this folder (shipped in the wheel) equal to the repository's. No test calls the network. Rendering tests skip themselves on machines without an OpenGL context.
 
 `make lint` runs ruff with the rules `E`, `F`, `I`, `B`, `UP`, `S` (bandit), `ASYNC`, `SIM`, `RUF`, `PIE`, `BLE`; a blind `except` needs a `noqa` that says why. CI runs the same lint, `ruff format --check` and the tests on GitHub Actions.
 
@@ -226,7 +232,9 @@ make test
 
 **A skill**: a file in `spingi/skills/`, a class extending `Skill` with `name`, `Params` (pydantic) and `preconditions` / `execute` / `postconditions`; register it in `default_registry()`; unit tests with `FakeAdapter` and `FakePerceiver`, a scenario test if it moves the robot in a new way; an ADR if it introduces a design decision.
 
-**An adapter**: implement the `RobotAdapter` protocol in `spingi/adapters/`, add it to `ADAPTERS` in `tests/contract/test_adapter_contract.py` so the shared contract suite runs on it. Adapters translate; they hold no task logic. Besides the motion and sensor methods the port asks for a `clock` (the robot's time: `WallClock` on hardware), an `estopped` flag, `set_speed_limit` (which can only lower the cap) and a `GripResult` from `gripper`; every motion command must check the e-stop (raise `RobotEstopped`) and the watchdog before it acts.
+**An adapter**: implement the `RobotAdapter` protocol in `spingi/adapters/`, add it to `ADAPTERS` in `tests/contract/test_adapter_contract.py` so the shared contract suite runs on it. Adapters translate; they hold no task logic. Besides the motion and sensor methods the port asks for a `clock` (the robot's time: `WallClock` on hardware), an `estopped` flag, `capabilities`, `set_speed_limit` (which can only lower the cap) and a `GripResult` from `gripper`; every motion command must check the e-stop (raise `RobotEstopped`) and the watchdog before it acts, and a command for a part the robot lacks raises `CapabilityMissing`.
+
+**A robot**: a `RobotProfile` in `spingi/robots.py` (name, alias, label, kind, capabilities, and for the simulator the model folder, the MJCF file, the root body, the standing height and the hand offsets), the vendored MJCF with its license under `sim/models/<name>/` and in `NOTICE`, a `head` camera in the MJCF, a GLB for the viewer (`scripts/export_glb.py --robot <alias>`, then `npm run model:compress` in `viewer/`, and the table in `viewer/src/episode.ts`), the profile in `ADAPTERS` of the contract tests, and a golden episode.
 
 **A perceiver**: implement `detect` and `localize` from the `Perceiver` protocol.
 

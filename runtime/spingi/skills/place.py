@@ -18,6 +18,7 @@ class PlaceParams(BaseModel):
 
 class PlaceSkill(Skill):
     name = "place"
+    requires = frozenset({"arm"})
     Params = PlaceParams
     default_deadline_s = 30.0
 

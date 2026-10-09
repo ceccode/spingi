@@ -1,9 +1,10 @@
-"""SimAdapter: Unitree G1 in MuJoCo with a kinematically moved base.
+"""SimAdapter: a robot in MuJoCo with a kinematically moved base (the Unitree G1 by default, or the Go2).
 
 What it simulates in v0 (ADR-0006): base pose at the requested speed with clamping, collisions with
 obstacles (the robot stops where it hits), battery, e-stop, watchdog, rendered head camera,
 third-person video recording. What it does NOT simulate: real walking (the legs stay in the
-"stand" pose), arm dynamics, falling.
+standing keyframe), arm dynamics, falling. Which model is loaded and how it is moved comes from a
+`RobotProfile` (ADR-0012).
 """
 
 from __future__ import annotations
@@ -16,9 +17,10 @@ from typing import Literal
 import mujoco
 import numpy as np
 
-from spingi.adapters.sim_mujoco.scene import DEFAULT_MODEL_DIR, write_scene
-from spingi.core.ports import Arm, Frame, GripResult, JointState, RobotEstopped
+from spingi.adapters.sim_mujoco.scene import write_scene
+from spingi.core.ports import Arm, CapabilityMissing, Frame, GripResult, JointState, RobotEstopped
 from spingi.core.types import Pose2D, Pose3D
+from spingi.robots import RobotProfile, get_profile
 
 EstopEngaged = RobotEstopped  # kept as an alias for existing imports
 
@@ -28,13 +30,13 @@ class WatchdogExpired(RuntimeError):
 
 
 class SimAdapter:
-    BASE_Z = 0.79  # pelvis height in the "stand" keyframe of the menagerie model
     YIELD_EVERY = 10  # ticks between cooperative yields in fast mode (0.2 s of simulated time)
 
     def __init__(
         self,
         scene_path: Path | str,
-        model_dir: Path | str = DEFAULT_MODEL_DIR,
+        robot: RobotProfile | str = "g1",
+        model_dir: Path | str | None = None,
         dt: float = 0.02,
         speed_cap: float = 1.0,
         yaw_rate: float = 1.0,
@@ -49,9 +51,11 @@ class SimAdapter:
         watchdog_ms: int | None = None,
         grasp_range_m: float = 0.9,
     ) -> None:
+        self.profile = get_profile(robot)
+        self.capabilities = self.profile.capabilities
         self.scene_path = Path(scene_path)
-        self.model_dir = Path(model_dir)
-        xml_path = write_scene(self.scene_path, self.model_dir)
+        self.model_dir = Path(model_dir) if model_dir is not None else self.profile.sim.path
+        xml_path = write_scene(self.scene_path, self.model_dir, robot_file=self.profile.sim.file)
         try:
             self.model = mujoco.MjModel.from_xml_path(str(xml_path))
         finally:
@@ -87,7 +91,7 @@ class SimAdapter:
         self.ticks = 0
         self.calls: list[tuple[str, dict]] = []
 
-        self._robot_geoms = self._subtree_geoms("pelvis")
+        self._robot_geoms = self._subtree_geoms(self.profile.sim.root_body)
         self._floor = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, "floor")
         self._renderer: mujoco.Renderer | None = None
         self.render_error: str | None = None
@@ -164,6 +168,7 @@ class SimAdapter:
     # --- manipulation (v0: no real arm movement) ---------------------------
     async def move_arm(self, arm: Arm, target: Pose3D, duration_s: float) -> None:
         self._record("move_arm", arm=arm, target=target.model_dump(), duration_s=duration_s)
+        self._need_arm()
         self._guard()
         for _ in range(max(1, int(duration_s / self.dt))):
             self._guard()  # e-stop or a lapsed watchdog interrupts the motion
@@ -171,6 +176,7 @@ class SimAdapter:
 
     async def gripper(self, arm: Arm, action: Literal["open", "close"]) -> GripResult:
         self._record("gripper", arm=arm, action=action)
+        self._need_arm()
         self._guard()
         released_at = None
         if action == "close" and self.held_object is None:
@@ -259,21 +265,26 @@ class SimAdapter:
 
     def _apply_pose(self) -> None:
         q = self.data.qpos
-        q[0], q[1], q[2] = self.pose.x, self.pose.y, self.BASE_Z
+        q[0], q[1], q[2] = self.pose.x, self.pose.y, self.profile.sim.base_z
         q[3], q[4], q[5], q[6] = math.cos(self.pose.yaw / 2), 0.0, 0.0, math.sin(self.pose.yaw / 2)
         self.data.qvel[:] = 0.0
         if self.held_object is not None:
             g = self._object_geom(self.held_object)
-            self.model.geom_pos[g] = (
-                self.pose.x + self.HAND_FORWARD_M * math.cos(self.pose.yaw),
-                self.pose.y + self.HAND_FORWARD_M * math.sin(self.pose.yaw),
-                self.HAND_HEIGHT_M,
-            )
+            x, y = self._hand_xy()
+            self.model.geom_pos[g] = (x, y, self.profile.sim.hand_height_m)
         mujoco.mj_forward(self.model, self.data)
 
     # --- objects (kinematic grasp, ADR-0007) --------------------------------
-    HAND_FORWARD_M = 0.35
-    HAND_HEIGHT_M = 0.95
+    def _need_arm(self) -> None:
+        if "arm" not in self.capabilities:
+            raise CapabilityMissing(f"{self.profile.name} has no arm")
+
+    def _hand_xy(self) -> tuple[float, float]:
+        """Where the hand is, in the world: in front of the base, by the profile's distance."""
+        forward = self.profile.sim.hand_forward_m
+        if forward is None:
+            raise CapabilityMissing(f"{self.profile.name} has no arm")
+        return self.pose.x + forward * math.cos(self.pose.yaw), self.pose.y + forward * math.sin(self.pose.yaw)
 
     def _object_geom(self, object_id: str) -> int:
         return mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, f"obj_{object_id}")
@@ -289,8 +300,7 @@ class SimAdapter:
     def _release(self, object_id: str) -> None:
         """Puts the object down in front of the robot, on the highest obstacle top below the hand, else on the floor."""
         g = self._object_geom(object_id)
-        x = self.pose.x + self.HAND_FORWARD_M * math.cos(self.pose.yaw)
-        y = self.pose.y + self.HAND_FORWARD_M * math.sin(self.pose.yaw)
+        x, y = self._hand_xy()
         half_h = float(self.model.geom_size[g][2])
         z = self._surface_height(x, y) + half_h
         self.model.geom_pos[g] = (x, y, z)

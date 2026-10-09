@@ -1,0 +1,18 @@
+# 0012: Robot profiles and capabilities; a quadruped as a second robot
+
+Status: Accepted · Date: 2026-10-09 · Milestone: M3+
+
+## Context
+Until now the runtime had one robot, the Unitree G1, and its details were written where they were needed: the model folder and the `pelvis` body in the simulator, the hand offsets for the kinematic grasp, the name `unitree_g1` in the session, the LeRobot export and the viewer. The ports (`RobotAdapter`, `Perceiver`, `HumanGateway`) never mentioned the G1, so the design was already robot-agnostic; the code was not. Supporting a robot dog as a support robot (inspection rounds, patrols, a mobile sensor) raised two questions: where the per-robot facts live, and what happens to the skills a dog cannot run, since a Go2 without an arm cannot `pick` or `place`.
+
+Multi-robot missions, one dog scouting while a humanoid manipulates, are not in scope: the spec's v0 non-goals keep one robot per run, and a session has one adapter, one safety monitor and one world state.
+
+## Decision
+**A robot is a profile, and a profile is data.** `spingi/robots.py` holds one `RobotProfile` per robot: the name written in episodes (`unitree_g1`, `unitree_go2`), the alias on the command line (`g1`, `go2`), a label for people and for the planner's prompt, the kind, the set of **capabilities**, and a `SimModel` block that tells `SimAdapter` which MJCF to include, which body carries the free joint, how high the base stands and where the hand is. Nothing else in the runtime branches on the robot's name.
+
+**Capabilities gate the skills.** The `RobotAdapter` port declares `capabilities`, a subset of `locomotion`, `camera`, `arm`. Each skill declares what it `requires` (`navigate` needs `locomotion`, `detect` and `inspect` need `camera`, `pick` and `place` need `arm`; `say` and `wait_for_human` need nothing). `validate_plan` rejects a step whose skill needs a capability the robot lacks, with the reason spelled out, so the run ends as `invalid_plan` before anything moves. The LLM planner is built from `registry.subset(capabilities)`: the schema it is constrained by has no `pick` variant for a dog, and the first message names the robot. An adapter without an arm raises `CapabilityMissing` on the arm methods instead of pretending.
+
+**The Go2 is the second profile.** Its MJCF comes from mujoco_menagerie like the G1's (BSD-3, meshes converted to binary STL to keep the repository small, a `head` camera added on the base). The same kinematic adapter moves it: only the root body, the standing height and the absence of hand offsets differ. The viewer picks `go2.glb` or `g1.glb` from `manifest.robot.model`. A session, a benchmark, a replay and a LeRobot export all carry the profile name; episodes from different robots are refused in one dataset, since the state vector means one thing per robot.
+
+## Consequences
+Adding a robot is a profile, a vendored model with its license in `NOTICE`, a GLB for the viewer and the contract suite run on it; the golden set gains an inspection round on the Go2. Plans are portable between robots exactly as far as their capabilities overlap, and the planner cannot propose a manipulation to a robot that has no arm. The simulation claims nothing new: a kinematic base on a flat floor shows the dog's travel times, footprint and camera, not stairs, ramps or rough terrain, which are the reasons to choose a quadruped; that stays with the open locomotion decision. The real Go2 and G1 share `unitree_sdk2_python` and its DDS transport, so the M4 hardware adapter can be built once and parametrized by profile, and the cheaper robot can exercise the hardware path first. Multi-robot coordination remains a separate decision, after M4.

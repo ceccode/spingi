@@ -23,7 +23,10 @@ from spingi.planner.schema import drop_nulls, plan_schema
 DEFAULT_MODEL = "claude-opus-5-5"
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
-SYSTEM_PROMPT = """You plan tasks for a humanoid robot that works in a known site.
+DEFAULT_ROBOT_DESCRIPTION = "a humanoid robot with two arms and a head camera"
+
+SYSTEM_PROMPT = """You plan tasks for a robot that works in a known site. The first line of the message says which
+robot it is; a robot without an arm cannot pick up or put down anything, and its skill list has no pick or place.
 
 You write a plan: an ordered list of steps, each one a skill from the list you are given, with its parameters.
 There are no branches and no loops. If the request cannot be done with these skills, the locations and the objects
@@ -100,8 +103,10 @@ class LLMPlanner:
         effort: str = "medium",
         max_attempts: int = 2,
         use_fallbacks: bool = True,
+        robot: str = DEFAULT_ROBOT_DESCRIPTION,
     ) -> None:
-        self.registry = registry
+        self.registry = registry  # only the skills this robot can run (SkillRegistry.subset, ADR-0012)
+        self.robot = robot
         self.model = model
         self.effort = effort
         self.max_attempts = max_attempts
@@ -132,6 +137,7 @@ class LLMPlanner:
 
     def first_message(self, request_text: str, state: WorldState, routes: dict[str, list[str]] | None) -> str:
         return (
+            f"Robot: {self.robot}\n\n"
             f"Skills:\n{describe_skills(self.registry)}\n\n"
             f"<world>\n{describe_world(state, routes)}\n</world>\n\n"
             f"Request: {request_text}"

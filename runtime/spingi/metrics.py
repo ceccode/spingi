@@ -63,6 +63,7 @@ class BenchReport(BaseModel):
     plan_id: str
     scene: str
     adapter: str
+    robot: str = "unitree_g1"  # profile name; reports written before robot profiles existed were all on the G1
     runs: int
     perception_noise: float
     position_sigma_m: float
@@ -88,6 +89,7 @@ def summarize(
     perception_noise: float,
     position_sigma_m: float,
     gate: Gate | None = None,
+    robot: str = "unitree_g1",
 ) -> BenchReport:
     runs = list(metrics)
     if not runs:
@@ -104,6 +106,7 @@ def summarize(
         plan_id=plan_id,
         scene=scene,
         adapter=adapter,
+        robot=robot,
         runs=n,
         perception_noise=perception_noise,
         position_sigma_m=position_sigma_m,

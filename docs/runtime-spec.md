@@ -4,7 +4,7 @@ Status: v0.1, M0 to M3 implemented · Date: 2026-10-01, aligned with the code on
 
 Parts that are specified but not built yet are marked *(not implemented yet)*.
 
-> A minimal runtime that turns a humanoid robot into a **reliable executor of simple physical tasks**, programmable by an AI agent but never directly controlled by it. Designed to be developed and tested entirely in simulation before touching the robot.
+> A minimal runtime that turns a legged robot (a humanoid like the Unitree G1, or a quadruped like the Go2 for support tasks) into a **reliable executor of simple physical tasks**, programmable by an AI agent but never directly controlled by it. Designed to be developed and tested entirely in simulation before touching the robot.
 
 ---
 
@@ -27,7 +27,7 @@ Parts that are specified but not built yet are marked *(not implemented yet)*.
 
 ### 1.1 In scope (v0)
 
-- One robot at a time.
+- One robot at a time, described by a **robot profile** (`unitree_g1` humanoid, `unitree_go2` quadruped; ADR-0012). A plan may only use the skills the robot's capabilities allow.
 - **Sequential** tasks, composed of whitelisted skills.
 - **Known and mapped** environment: named locations, known objects (markers or predefined classes).
 - Two targets: `SimAdapter` (MuJoCo) and `UnitreeG1Adapter` *(not implemented yet, M4)*. A third adapter, `FakeAdapter`, is in-memory and serves unit tests.
@@ -313,8 +313,10 @@ class RobotAdapter(Protocol):
 
     clock: Clock                              # the robot's time (below)
     estopped: bool                            # True from estop() until a manual reset; terminal for the Executor
+    capabilities: frozenset[Capability]       # what the robot has: locomotion, camera, arm (ADR-0012)
 
 class RobotEstopped(RuntimeError): ...        # raised by any motion command while the e-stop is engaged
+class CapabilityMissing(RuntimeError): ...    # raised by a command for a part the robot does not have (an arm on a Go2)
 
 class GripResult(BaseModel):                  # what the gripper reports; skills check it instead of trusting the command
     holding: bool
@@ -340,7 +342,8 @@ Rules:
 - After `estop`, `estopped` is `True` and every motion command raises `RobotEstopped` until a manual reset (`reset_estop()`, not reachable from the runtime).
 - A collision stops the robot where it is, while walking and while turning in place (`SimAdapter` records `blocked_by`).
 - `estop` has no preconditions and cannot fail silently. If the SDK does not respond, the adapter logs it as `FATAL` *(applies to `UnitreeG1Adapter`, not implemented yet)*.
-- Three implementations: `FakeAdapter` (in-memory, instantaneous, for unit tests), `SimAdapter` (MuJoCo, kinematic base, ADR-0006), `UnitreeG1Adapter` *(not implemented yet, M4)*.
+- `capabilities` says which parts the robot really has. Each skill declares what it `requires` (`navigate`: `locomotion`; `detect`, `inspect`: `camera`; `pick`, `place`: `arm`); `validate_plan` rejects a plan that needs more than the robot has, so it ends as `invalid_plan` before anything moves, and the LLM planner is built from `registry.subset(capabilities)`. The robot's name, model and capabilities come from a `RobotProfile` in `spingi/robots.py` (ADR-0012), never from code paths per robot.
+- Three implementations: `FakeAdapter` (in-memory, instantaneous, for unit tests), `SimAdapter` (MuJoCo, kinematic base, ADR-0006; loads the G1 or the Go2 from the profile), `UnitreeG1Adapter` *(not implemented yet, M4; the Go2 shares the SDK, so one adapter parametrized by profile is the plan)*.
 
 ### 3.6 Perceiver
 
@@ -614,7 +617,7 @@ Perception noise is not part of the scene: it is a run setting (`--noise`, `--si
 
 Rules: one scene per use case (`lab_small`, `lab_blocked`, `lab_geofence`, `warehouse_small` today), several noise settings per scene. Scenes are test data, versioned with the tests.
 
-Validation: names of locations, objects, classes and routes (both ends and every waypoint) match `^[A-Za-z0-9_-]{1,64}$`, and every number is finite (no NaN or infinity in poses, the geofence or the limits). Names and numbers are checked when the world is loaded and again when `SimAdapter` generates the MJCF (location and object names, positions, obstacle and object sizes, which must also be positive), so nothing unchecked reaches the simulator's XML. The G1 model directory is resolved from the location of the `spingi` package, never from the working directory; the generated MJCF goes next to it under a unique name (concurrent runs do not collide) and is deleted once MuJoCo has loaded it.
+Validation: names of locations, objects, classes and routes (both ends and every waypoint) match `^[A-Za-z0-9_-]{1,64}$`, and every number is finite (no NaN or infinity in poses, the geofence or the limits). Names and numbers are checked when the world is loaded and again when `SimAdapter` generates the MJCF (location and object names, positions, obstacle and object sizes, which must also be positive), so nothing unchecked reaches the simulator's XML. The robot model directory (G1 or Go2, from the profile) is resolved from the location of the `spingi` package, never from the working directory; the generated MJCF goes next to it under a unique name (concurrent runs do not collide) and is deleted once MuJoCo has loaded it.
 
 ### 8.4 Sim2real gate (per skill)
 
@@ -662,14 +665,14 @@ They are computed from the event log (`spingi.metrics`). No metric requires extr
 | Python 3.11+ | Unitree SDK, MuJoCo, ML ecosystem. | C++ in the core: premature. |
 | `pydantic` v2 | Validation and JSON for free on every contract. | plain dataclasses: no validation. |
 | `asyncio` | Concurrent safety monitor and console without threads (the one exception is the console's blocking `input()`, read in a daemon thread). | threads: harder to test. |
-| MuJoCo ≥ 3.2 (`sim` extra; 3.14 in `uv.lock`), G1 model from mujoco_menagerie | Fast, headless, runs in CI without a GPU, G1 model available. | Isaac Sim as the only sim: heavy, needs a GPU, not in CI. |
+| MuJoCo ≥ 3.2 (`sim` extra; 3.14 in `uv.lock`), G1 and Go2 models from mujoco_menagerie | Fast, headless, runs in CI without a GPU, both models available under BSD-3. | Isaac Sim as the only sim: heavy, needs a GPU, not in CI. |
 | Isaac Lab (optional) | Only for RL training of policies (locomotion, grasp), outside the runtime. | – |
-| `unitree_sdk2_python` | Official SDK for the G1 *(not used yet, M4)*. | ROS2 driver: heavy dependency. |
+| `unitree_sdk2_python` | Official SDK for the G1 and the Go2, same DDS transport *(not used yet, M4)*. | ROS2 driver: heavy dependency. |
 | Claude API, structured output (`anthropic`, `llm` extra) | Planner with validated structured output (ADR-0010). Model and provider replaceable behind `LLMPlanner`. | Forced tool use: rejected by current Claude models. |
 | AprilTag + fixed-class detector *(not implemented yet)* | Robust, zero training for locations. | VLM right away: slow, non-deterministic, hard to test. |
 | `pandas` + `pyarrow` (`export` extra) | Parquet files of the LeRobot v3.0 export (ADR-0009). | – |
 | `imageio` + `imageio-ffmpeg` (`sim` extra) | Head-camera PNG frames and the run video. | – |
-| `trimesh` + `scipy` (`sim` extra) | Only for `scripts/export_g1_glb.py`, which exports the G1 for the Viewer. | – |
+| `trimesh` + `scipy` (`sim` extra) | Only for `scripts/export_glb.py`, which exports a robot model for the Viewer, and for converting vendored meshes. | – |
 | `pytest` + `pytest-asyncio`, `ruff` (`dev` extra) | Standard. Ruff rules `E`, `F`, `I`, `B`, `UP` plus `S` (bandit), `ASYNC`, `SIM`, `RUF`, `PIE`, `BLE`: every blind `except` says why. | – |
 | YAML for plans and scenes | Readable, diffable, not Turing-complete. | Custom DSL: over-engineering. |
 
@@ -692,14 +695,14 @@ Core dependencies: `pydantic`, `pyyaml`. Everything else is in the adapters and 
 │   │   ├── planner/           # StaticPlanner, LLMPlanner, plan schema, golden-case evaluation
 │   │   ├── safety/            # SafetyMonitor, SafetyLimits, Geofence
 │   │   ├── perception/        # FakePerceiver, SimPerceiver
-│   │   ├── adapters/          # fake.py, sim_mujoco/ (unitree_g1/ at M4)
+│   │   ├── adapters/          # fake.py, sim_mujoco/ (the real robots' adapter at M4)
 │   │   ├── console/           # terminal operator console
 │   │   ├── export/            # LeRobot v3.0 exporter
-│   │   └── *.py               # cli, session, bench, metrics, replay, episode, scenes, dotenv
+│   │   └── *.py               # cli, session, bench, metrics, replay, episode, scenes, robots, dotenv
 │   ├── plans/                 # TaskPlan YAML; plans/golden/ holds the planner cases
 │   ├── sim/scenes/            # YAML scenes
-│   ├── sim/models/            # G1 model (mujoco_menagerie)
-│   ├── scripts/               # gen_schemas, record_golden, export_g1_glb
+│   ├── sim/models/            # G1 and Go2 models (mujoco_menagerie), one folder each with its license
+│   ├── scripts/               # gen_schemas, record_golden, export_glb
 │   ├── runs/                  # output (gitignored)
 │   ├── tests/                 # unit · contract · sim · golden · test_architecture.py · test_licensing.py
 │   ├── LICENSE, NOTICE        # copies of the root files shipped in the wheel, kept equal by a test
@@ -719,12 +722,12 @@ Rule: `spingi/core` imports nothing from `adapters`, `skills`, `planner`, `perce
 | **M1** | Sim navigation + inspection | `SimAdapter` MuJoCo with the G1, `warehouse_small` scene, `SimPerceiver`, `inspect` skill, Safety Monitor (watchdog, geofence, speed cap) | "4-point inspection round" scenario: 20/20 runs green in CI; safety tests that prove every layer | Done (2026-10-02). Kinematic base (ADR-0006); the inspection round runs in `lab_small` (`warehouse_small` arrived with M2). Measured by the scenario tests (inspection round, geofence, wall, speed cap), run on every commit; a run without noise is deterministic |
 | **M2** | Sim transport | `detect`, `pick`, `place` with markers, `wait_for_human`, console v0, robustness tests with noise | `move_red_box` scenario: ≥ 95 % over 100 runs with noise; correct escalation on failures | Done (2026-10-04). `detect`, `pick`, `place` with a kinematic grasp (ADR-0007, ground-truth perception, no markers yet), `navigate` with `via`, `wait_for_human`, terminal console (ADR-0008), `spingi bench` with the gate, LeRobot export (ADR-0009). Measured with `make bench`: `demo_material_runner` in `warehouse_small`, 100 runs, 20 % false negatives, 0.02 m position noise: 100 % success, 0 operator requests, 0 fatal runs, 0 safety violations. Escalation covered by unit tests and the `blocked_wall_operator` golden episode |
 | **M3** | Planner | `StaticPlanner`, `LLMPlanner`, golden plans, replay | 10 natural-language requests → plans equivalent to the golden ones; validation rejects malformed plans | Done (2026-10-04). `LLMPlanner` with structured output (ADR-0010), ten golden cases, `spingi eval-planner`, `spingi replay` with three golden episodes in CI. Measured with `spingi eval-planner` and `claude-opus-5-5`: 10 of 10 equivalent, 9 at the first attempt and 1 after the validation round, 3 to 7 seconds per plan |
-| **M4** | Robot in the lab | `UnitreeG1Adapter`, contract tests on the G1, sim2real gate on `navigate` and `inspect` | Gate of §8.4 passed for 2 skills; complete recording of every run; signed lab safety checklist | Not started |
+| **M4** | Robot in the lab | `UnitreeG1Adapter` (one Unitree adapter parametrized by profile; a Go2 can exercise the hardware path first), contract tests on the robot, sim2real gate on `navigate` and `inspect` | Gate of §8.4 passed for 2 skills; complete recording of every run; signed lab safety checklist | Not started |
 | **M5** | Pilot-ready | `pick`/`place` on the G1 with standard containers, metrics dashboard, operating procedures | Gate passed for 4 skills; 1 day of continuous operation in the lab without `FATAL` | Not started |
 
 M0–M3 do not require the robot. The M3 planner evaluation calls the Claude API and is run on demand, not in CI.
 
-**Status as of 2026-10-04: M0 to M3 complete.** 176 runtime tests green in about 12 seconds. Clarifications that emerged during implementation are normative and now part of the contracts: a `$step.field` reference is always the whole value of a parameter (§3.4); `on_failure.then: needs_human` stops the robot before asking, and the operator's `retry` answer resets the step's retry budget, at most three times per step (§4). A review before M4 added robot time, the terminal e-stop and latched safety stops (ADR-0011, §3.5, §4, §5).
+**Status as of 2026-10-04: M0 to M3 complete.** 176 runtime tests green in about 12 seconds. Clarifications that emerged during implementation are normative and now part of the contracts: a `$step.field` reference is always the whole value of a parameter (§3.4); `on_failure.then: needs_human` stops the robot before asking, and the operator's `retry` answer resets the step's retry budget, at most three times per step (§4). A review before M4 added robot time, the terminal e-stop and latched safety stops (ADR-0011, §3.5, §4, §5). Robot profiles and capabilities, with the Go2 quadruped as a second robot in simulation, followed on 2026-10-09 (ADR-0012, §1.1, §3.5): 218 runtime tests.
 
 ---
 

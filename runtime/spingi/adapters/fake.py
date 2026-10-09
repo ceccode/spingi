@@ -10,7 +10,16 @@ import asyncio
 import time
 from typing import Literal
 
-from spingi.core.ports import Arm, Frame, GripResult, JointState, RobotEstopped
+from spingi.core.ports import (
+    ALL_CAPABILITIES,
+    Arm,
+    Capability,
+    CapabilityMissing,
+    Frame,
+    GripResult,
+    JointState,
+    RobotEstopped,
+)
 from spingi.core.types import Pose2D, Pose3D
 
 EstopEngaged = RobotEstopped  # kept as an alias for existing imports
@@ -30,7 +39,9 @@ class FakeAdapter:
         battery_drain_per_m: float = 0.5,
         watchdog_ms: int | None = None,
         clock=time.monotonic,
+        capabilities: frozenset[Capability] = ALL_CAPABILITIES,
     ) -> None:
+        self.capabilities = capabilities
         self.pose = start or Pose2D(x=0.0, y=0.0, yaw=0.0)
         self.battery_pct = battery_pct
         self.speed_cap = speed_cap
@@ -85,6 +96,7 @@ class FakeAdapter:
     # --- manipulation ------------------------------------------------------
     async def move_arm(self, arm: Arm, target: Pose3D, duration_s: float) -> None:
         self._record("move_arm", arm=arm, target=target.model_dump(), duration_s=duration_s)
+        self._need("arm")
         self._guard()
         self.mode = "manipulating"
         self.mode = "idle"
@@ -92,6 +104,7 @@ class FakeAdapter:
     async def gripper(self, arm: Arm, action: Literal["open", "close"]) -> GripResult:
         """Closing always grasps something (the fake cannot tell what); `grasp_fails` simulates an empty grasp."""
         self._record("gripper", arm=arm, action=action)
+        self._need("arm")
         self._guard()
         self.gripper_closed = action == "close" and not self.grasp_fails
         return GripResult(holding=self.gripper_closed)
@@ -152,6 +165,10 @@ class FakeAdapter:
         if self._watchdog_expired():
             self.blocked_by = "watchdog"
             raise WatchdogExpired("no heartbeat from the safety monitor: motion refused")
+
+    def _need(self, capability: Capability) -> None:
+        if capability not in self.capabilities:
+            raise CapabilityMissing(f"this robot has no {capability}")
 
     def _watchdog_expired(self) -> bool:
         if self.watchdog_ms is None:

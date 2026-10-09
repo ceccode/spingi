@@ -2,17 +2,17 @@
 
 *Spingi* is Italian for "push!", the word you shout at someone who should keep going. Pronounced *speen-jee*.
 
-Spingi is a **Physical Agent Runtime** for humanoid robots: it turns a robot into a reliable executor of simple physical tasks (go there, look at this, fetch that, put it here), with safety limits, retries and human escalation built in. It is developed **sim-first**: everything runs and is tested in MuJoCo with the Unitree G1 model before any real robot is involved. Every run produces an **episode** that the **Spingi Viewer** replays in the browser.
+Spingi is a **Physical Agent Runtime** for legged robots, humanoids and quadrupeds: it turns a robot into a reliable executor of simple physical tasks (go there, look at this, fetch that, put it here), with safety limits, retries and human escalation built in. It is developed **sim-first**: everything runs and is tested in MuJoCo with the Unitree G1 humanoid and the Unitree Go2 quadruped before any real robot is involved. Every run produces an **episode** that the **Spingi Viewer** replays in the browser.
 
 This repository is a neutral open-source toolkit. Applications built on top of it live elsewhere; this repo keeps sample plans and scenes that show how to use the system.
 
-Status: **runtime M3 complete · viewer v0.2** · 2026-10-04
+Status: **runtime M3 complete, two robots in simulation · viewer v0.2** · 2026-10-09
 
 ## What is in the box
 
 | Folder | Project | What it does |
 |--------|---------|--------------|
-| [runtime/](runtime/README.md) | **Spingi runtime** (Python) | Executes a declarative *plan* made of *skills* on a *robot adapter*. Ships with a fake adapter for unit tests and a MuJoCo adapter with the Unitree G1. Writes an episode for every run. |
+| [runtime/](runtime/README.md) | **Spingi runtime** (Python) | Executes a declarative *plan* made of *skills* on a *robot adapter*. Ships with a fake adapter for unit tests and a MuJoCo adapter that drives the Unitree G1 or the Unitree Go2. Writes an episode for every run. |
 | [viewer/](viewer/README.md) | **Spingi Viewer** (web, Three.js) | Loads an episode `.zip` and replays it: robot and objects moving in the 3D scene, event timeline, head-camera frames, safety and operator events. Live at **[spingi-viewer.netlify.app](https://spingi-viewer.netlify.app)**. |
 | [docs/episode-format.md](docs/episode-format.md) | **Episode format** | The contract between the two: a folder with `manifest.json`, `scene.yaml`, `plan.yaml`, `events.jsonl`, `trajectory.jsonl`, `frames/`. JSON schemas in [docs/schemas/](docs/schemas/). |
 
@@ -30,7 +30,7 @@ cd runtime && make setup
 make demo-sim
 ```
 
-This runs the inspection round on the G1 in MuJoCo as fast as the CPU allows and leaves an episode in `runtime/runs/<run_id>/`. To watch it live in the MuJoCo viewer (macOS uses `mjpython`, already included):
+This runs the inspection round on the G1 in MuJoCo as fast as the CPU allows and leaves an episode in `runtime/runs/<run_id>/`. `make demo-sim-go2` runs the same round on the Go2 quadruped. To watch it live in the MuJoCo viewer (macOS uses `mjpython`, already included):
 
 ```bash
 make demo-sim-view
@@ -105,7 +105,7 @@ steps:
     params: { at: workstation_B }
 ```
 
-Skills available today: `navigate`, `detect`, `pick`, `place`, `inspect`, `wait_for_human`, `say`. `uv run spingi skills` prints their parameters. A scene is a YAML file too: named locations, obstacles, objects and safety limits (geofence, speed cap, battery minimum). See [runtime/sim/scenes/](runtime/sim/scenes/).
+Skills available today: `navigate`, `detect`, `pick`, `place`, `inspect`, `wait_for_human`, `say`. `uv run spingi skills` prints their parameters. Each run stands for one robot profile (`--robot g1`, the default, or `--robot go2`): a skill the robot cannot run, `pick` or `place` on a Go2 without an arm, makes the plan invalid before anything moves, and the LLM planner never sees it ([ADR-0012](adr/0012-robot-profiles-and-capabilities.md)). A scene is a YAML file too: named locations, obstacles, objects and safety limits (geofence, speed cap, battery minimum). See [runtime/sim/scenes/](runtime/sim/scenes/).
 
 ## How it works
 
@@ -127,7 +127,7 @@ Safety layers run on the robot's own clock (simulated time in MuJoCo), so a simu
 |----------|---------|
 | [docs/runtime-spec.md](docs/runtime-spec.md) | Principles, architecture, contracts, execution model, safety layers, testing strategy, milestones |
 | [docs/episode-format.md](docs/episode-format.md) | The episode folder, manifest, trajectory, frames, compatibility rules |
-| [adr/](adr/README.md) | Architecture decisions 0001–0011 and the ones still open |
+| [adr/](adr/README.md) | Architecture decisions 0001–0012 and the ones still open |
 | [runtime/README.md](runtime/README.md) | CLI reference, scenes, plans, skills, episodes, tests, how to add a skill or an adapter |
 | [viewer/README.md](viewer/README.md) | Running, loading episodes, deploying |
 | [SECURITY.md](SECURITY.md) | Threat model and how to report a security or safety problem |
@@ -138,7 +138,7 @@ Safety layers run on the robot's own clock (simulated time in MuJoCo), so a simu
 make test
 ```
 
-runs the runtime suite (unit, adapter contract, MuJoCo scenarios, golden episodes, architecture and licensing rules): 176 tests in about 12 seconds. The viewer has `npm test` (21 tests) and `npm run build`. CI is GitHub Actions ([.github/workflows/ci.yml](.github/workflows/ci.yml)), on every push to `main` and every pull request, without a GPU: runtime lint, format check and tests (with offscreen MuJoCo rendering through EGL), viewer install, audit of the production dependencies, tests and build.
+runs the runtime suite (unit, adapter contract on every adapter and robot, MuJoCo scenarios, golden episodes, architecture and licensing rules): 218 tests in about 14 seconds. The viewer has `npm test` (23 tests) and `npm run build`. CI is GitHub Actions ([.github/workflows/ci.yml](.github/workflows/ci.yml)), on every push to `main` and every pull request, without a GPU: runtime lint, format check and tests (with offscreen MuJoCo rendering through EGL), viewer install, audit of the production dependencies, tests and build.
 
 Conventions: every architectural decision is an ADR, changed by writing a new one; the runtime never imports the viewer and the viewer never imports the runtime, they only share the episode format; `spingi.core` imports nothing from adapters, skills, planner or perception, and a test enforces it.
 
@@ -146,8 +146,8 @@ Conventions: every architectural decision is an ADR, changed by writing a new on
 
 - **M2** (done): operator console, `spingi bench` with the sim-to-real gate, LeRobot v3.0 export, `wait_for_human`.
 - **M3** (done): LLM planner with structured output, golden episodes replayed on every commit. On the ten golden requests `claude-opus-5-5` scored 10/10, nine at the first attempt.
-- **M4** (next, needs the robot): adapter for the real Unitree G1 on `unitree_sdk2_python`, the same contract tests on hardware, sim-to-real gates per skill.
+- **M4** (next, needs a robot): adapter for the real Unitree robots on `unitree_sdk2_python` (the G1 and the Go2 share it, so a Go2 can exercise the hardware path first), the same contract tests on hardware, sim-to-real gates per skill.
 
 ## License
 
-Apache License 2.0, see [LICENSE](LICENSE). The Unitree G1 model in `runtime/sim/models/unitree_g1`, and the viewer's `g1.glb` derived from it, are redistributed under their own BSD 3-Clause license, see [NOTICE](NOTICE); the viewer serves the license text at `/NOTICE.txt`, and the Python package ships copies of `LICENSE` and `NOTICE`.
+Apache License 2.0, see [LICENSE](LICENSE). The Unitree G1 and Go2 models in `runtime/sim/models/`, and the viewer's `g1.glb` and `go2.glb` derived from them, are redistributed under their own BSD 3-Clause license, see [NOTICE](NOTICE); the viewer serves the license text at `/NOTICE.txt`, and the Python package ships copies of `LICENSE` and `NOTICE`.

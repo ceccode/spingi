@@ -1,12 +1,13 @@
 """Command line.
 
-  spingi run <plan.yaml> [--scene S] [--adapter fake|sim] [--operator auto|console] [--view] [--record] [--zip] ...
-  spingi bench <plan.yaml> [--scene S] [--adapter fake|sim] [--runs N] [--noise P] [--sigma M] [--gate]
+  spingi run <plan.yaml> [--scene S] [--adapter fake|sim] [--robot g1|go2] [--operator auto|console] [--view] ...
+  spingi bench <plan.yaml> [--scene S] [--adapter fake|sim] [--robot R] [--runs N] [--noise P] [--sigma M] [--gate]
   spingi export lerobot <episode_dir>... --out <dataset_dir>
-  spingi plan "<request>" [--scene S] [--out plan.yaml] [--run ...]      (needs the llm extra and an API key)
+  spingi plan "<request>" [--scene S] [--robot R] [--out plan.yaml] [--run ...]  (needs the llm extra and an API key)
   spingi eval-planner [--cases plans/golden/planner_cases.yaml]        (needs the llm extra and an API key)
   spingi replay <episode_dir> [<episode_dir>...]
-  spingi skills
+  spingi skills [--robot R]
+  spingi robots
 
 The MuJoCo viewer on macOS requires `uv run mjpython -m spingi.cli run ... --view`.
 """
@@ -20,10 +21,12 @@ from pathlib import Path
 
 from spingi.core.human import ScriptedHuman
 from spingi.dotenv import load_dotenv
+from spingi.robots import DEFAULT_ROBOT, PROFILES, get_profile
 from spingi.session import SessionConfig, run_session
 from spingi.skills import default_registry
 
 DEFAULT_SCENE = Path("sim/scenes/lab_small.yaml")
+ROBOTS = sorted(PROFILES)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -78,6 +81,7 @@ def main(argv: list[str] | None = None) -> int:
     plan.add_argument("--model", default=None, help="Claude model id (default: claude-opus-5-5)")
     plan.add_argument("--run", action="store_true", help="run the plan right away (with --adapter, --operator)")
     plan.add_argument("--adapter", choices=["fake", "sim"], default="fake")
+    plan.add_argument("--robot", choices=ROBOTS, default=DEFAULT_ROBOT, help="plan for this robot's skills only")
     plan.add_argument("--operator", choices=["auto", "console"], default="console")
     plan.add_argument("--yes", action="store_true", help="with --run: do not ask for confirmation before running")
 
@@ -90,13 +94,22 @@ def main(argv: list[str] | None = None) -> int:
     replay = sub.add_parser("replay", help="run recorded episodes again and compare their behaviour")
     replay.add_argument("episodes", type=Path, nargs="+")
 
-    sub.add_parser("skills", help="list the whitelisted skills and their parameters")
+    skills = sub.add_parser("skills", help="list the whitelisted skills and their parameters")
+    skills.add_argument("--robot", choices=ROBOTS, default=None, help="only the skills this robot can run")
+
+    sub.add_parser("robots", help="list the robot profiles and their capabilities")
     args = parser.parse_args(argv)
 
     if args.cmd == "skills":
         registry = default_registry()
+        if args.robot:
+            registry = registry.subset(get_profile(args.robot).capabilities)
         for name in registry.names():
             print(name, registry.get(name).Params.model_json_schema().get("properties", {}))
+        return 0
+    if args.cmd == "robots":
+        for profile in PROFILES.values():
+            print(f"{profile.alias:<4} {profile.name:<12} {profile.kind:<10} {', '.join(sorted(profile.capabilities))}")
         return 0
     if args.cmd == "export":
         return _export(args)
@@ -115,6 +128,7 @@ def _session_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("plan", type=Path)
     p.add_argument("--scene", type=Path, default=DEFAULT_SCENE)
     p.add_argument("--adapter", choices=["fake", "sim"], default="fake")
+    p.add_argument("--robot", choices=ROBOTS, default=DEFAULT_ROBOT, help="which robot the adapter stands for")
     p.add_argument("--runs-dir", type=Path, default=Path("runs"))
     p.add_argument("--noise", type=float, default=0.0, help="perception false-negative rate, 0..1")
     p.add_argument("--sigma", type=float, default=0.0, help="perception position noise, metres")
@@ -126,6 +140,7 @@ def _config(args) -> SessionConfig:
         plan=args.plan,
         scene=args.scene,
         adapter=args.adapter,
+        robot=args.robot,
         runs_dir=args.runs_dir,
         perception_noise=args.noise,
         position_sigma_m=args.sigma,
@@ -207,12 +222,14 @@ def _export(args) -> int:
     return 0
 
 
-def _llm_planner(model: str | None):
+def _llm_planner(model: str | None, robot: str = DEFAULT_ROBOT):
     try:
         from spingi.planner.llm import DEFAULT_MODEL, LLMPlanner
     except ImportError as exc:  # pragma: no cover - depends on the environment
         raise SystemExit(f"missing dependency ({exc}); install the llm extra: uv sync --extra llm") from exc
-    return LLMPlanner(default_registry(), model=model or DEFAULT_MODEL)
+    profile = get_profile(robot)
+    registry = default_registry().subset(profile.capabilities)  # the model never sees skills this robot lacks
+    return LLMPlanner(registry, model=model or DEFAULT_MODEL, robot=profile.label)
 
 
 NO_CREDENTIALS = "no Anthropic credentials: put ANTHROPIC_API_KEY in runtime/.env (see .env.example) or export it"
@@ -244,7 +261,7 @@ def _plan(args) -> int:
     from spingi.planner.llm import PlanningError
     from spingi.scenes import load_routes, load_world
 
-    planner = _llm_planner(args.model)
+    planner = _llm_planner(args.model, args.robot)
     try:
         result, error = _api_call(lambda: planner.plan(args.request, load_world(args.scene), load_routes(args.scene)))
     except PlanningError as exc:
@@ -262,11 +279,11 @@ def _plan(args) -> int:
         out.write_text(text, encoding="utf-8")
         print(f"plan written to {out}")
     if args.run:
-        if not args.yes and not _confirm(f"Run this plan on the {args.adapter} adapter? [y/N] "):
+        if not args.yes and not _confirm(f"Run this plan on the {args.adapter} adapter as {args.robot}? [y/N] "):
             print("not run")
             return 0
-        run_args = ["run", str(out), "--scene", str(args.scene), "--adapter", args.adapter, "--operator", args.operator]
-        return main(run_args)
+        run_args = ["run", str(out), "--scene", str(args.scene), "--adapter", args.adapter, "--robot", args.robot]
+        return main([*run_args, "--operator", args.operator])
     return 0
 
 

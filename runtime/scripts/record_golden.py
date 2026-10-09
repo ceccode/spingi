@@ -40,6 +40,15 @@ GOLDEN = {
         ),
         ["retry", "abort"],
     ),
+    "inspection_round_go2": (
+        SessionConfig(
+            plan=Path("plans/demo_inspection_round.yaml"),
+            scene=Path("sim/scenes/lab_small.yaml"),
+            adapter="sim",
+            robot="go2",
+        ),
+        [],
+    ),
 }
 
 

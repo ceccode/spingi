@@ -9,6 +9,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, Field, ValidationError
 
+from spingi.core.ports import Capability
 from spingi.core.skill import SkillRegistry
 
 REF_PATTERN = re.compile(r"^\$(?P<step>[A-Za-z_][A-Za-z0-9_]*|\d+)\.(?P<path>.+)$")
@@ -46,16 +47,23 @@ def load_plan(path: Path | str) -> TaskPlan:
         raise PlanError(f"invalid plan ({path}): {exc}") from exc
 
 
-def validate_plan(plan: TaskPlan, registry: SkillRegistry) -> list[str]:
+def validate_plan(
+    plan: TaskPlan, registry: SkillRegistry, capabilities: frozenset[Capability] | None = None
+) -> list[str]:
     """Returns the list of errors. Empty = valid plan.
 
-    Checks: every skill exists; every params passes the skill schema (`$...` references are
-    replaced by a placeholder before validation); every reference points to a previous step.
+    Checks: every skill exists; the robot has the capabilities every skill needs (when `capabilities` is given);
+    every params passes the skill schema (`$...` references are replaced by a placeholder before validation);
+    every reference points to a previous step.
     """
     errors: list[str] = []
     for i, step in enumerate(plan.steps):
         if step.skill not in registry:
             errors.append(f"step {i}: unknown skill '{step.skill}'")
+            continue
+        missing = registry.get(step.skill).missing(capabilities) if capabilities is not None else []
+        if missing:
+            errors.append(f"step {i}: skill '{step.skill}' needs {', '.join(missing)}, which this robot does not have")
             continue
         for key, value in step.params.items():
             ref = parse_ref(value)

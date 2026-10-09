@@ -1,8 +1,8 @@
 """Generates the MJCF of a scene from the declarative YAML (ADR-0004).
 
-The scene includes the G1 model and adds the floor, locations (visual discs), obstacles (boxes with
-collision) and objects (boxes without collision in v0). The generated file goes into the model folder
-because `<include>` and `meshdir` resolve relative to the main file.
+The scene includes the robot model (G1 by default, see `spingi.robots`) and adds the floor, locations (visual
+discs), obstacles (boxes with collision) and objects (boxes without collision in v0). The generated file goes
+into the model folder because `<include>` and `meshdir` resolve relative to the main file.
 """
 
 from __future__ import annotations
@@ -17,7 +17,8 @@ from typing import Any
 import yaml
 
 # Resolved from this file, never from the working directory: a folder you run `spingi` in must not supply the robot.
-DEFAULT_MODEL_DIR = Path(__file__).resolve().parents[3] / "sim" / "models" / "unitree_g1"
+MODELS_DIR = Path(__file__).resolve().parents[3] / "sim" / "models"
+DEFAULT_MODEL_DIR = MODELS_DIR / "unitree_g1"
 
 
 def load_scene_yaml(path: Path | str) -> dict[str, Any]:
@@ -100,10 +101,10 @@ def build_scene_xml(scene: dict[str, Any], robot_file: str = "g1.xml") -> str:
     return "\n".join(parts) + "\n"
 
 
-def write_scene(scene_path: Path | str, model_dir: Path | str = DEFAULT_MODEL_DIR) -> Path:
+def write_scene(scene_path: Path | str, model_dir: Path | str = DEFAULT_MODEL_DIR, robot_file: str = "g1.xml") -> Path:
     """Writes the MJCF next to the robot model (includes and meshes resolve from there) under a unique name, so
     concurrent runs never overwrite each other. The caller deletes it once MuJoCo has loaded it."""
-    xml = build_scene_xml(load_scene_yaml(scene_path))
+    xml = build_scene_xml(load_scene_yaml(scene_path), robot_file=robot_file)
     fd, name = tempfile.mkstemp(prefix="_gen_", suffix=".xml", dir=model_dir)
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         fh.write(xml)

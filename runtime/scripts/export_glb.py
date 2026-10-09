@@ -1,28 +1,37 @@
-"""Exports the G1 in the "stand" pose as a single GLB for the viewer, from the mesh data MuJoCo already loaded.
+"""Exports a robot in its standing pose as a single GLB for the viewer, from the mesh data MuJoCo already loaded.
 
-Usage: uv run python scripts/export_g1_glb.py [out.glb]
+Usage: uv run python scripts/export_glb.py [--robot g1|go2] [out.glb]
 Takes only the visual geoms (group 2), applies each geom's world pose with the base at the origin,
-assigns the MJCF material color. The robot in the GLB is at (0,0,0), yaw 0, Z up.
+assigns the MJCF material color. The robot in the GLB is at (0,0,0), yaw 0, Z up. The output goes to
+viewer/public/models/<alias>.glb unless a path is given; `npm run model:compress` shrinks it afterwards.
 """
 
 from __future__ import annotations
 
-import sys
+import argparse
 from pathlib import Path
 
 import mujoco
 import numpy as np
 import trimesh
 
-MODEL = Path("sim/models/unitree_g1/scene.xml")
-OUT = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("../viewer/public/models/g1.glb")
+from spingi.robots import PROFILES, get_profile
+
+VIEWER_MODELS = Path(__file__).resolve().parents[2] / "viewer" / "public" / "models"
 
 
 def main() -> None:
-    model = mujoco.MjModel.from_xml_path(str(MODEL))
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--robot", choices=sorted(PROFILES), default="g1")
+    parser.add_argument("out", nargs="?", type=Path)
+    args = parser.parse_args()
+    profile = get_profile(args.robot)
+    out = args.out or VIEWER_MODELS / f"{profile.alias}.glb"
+
+    model = mujoco.MjModel.from_xml_path(str(profile.sim.path / "scene.xml"))
     data = mujoco.MjData(model)
     mujoco.mj_resetDataKeyframe(model, data, 0)
-    data.qpos[:3] = (0.0, 0.0, 0.79)
+    data.qpos[:3] = (0.0, 0.0, profile.sim.base_z)
     data.qpos[3:7] = (1.0, 0.0, 0.0, 0.0)
     mujoco.mj_forward(model, data)
 
@@ -50,9 +59,9 @@ def main() -> None:
         scene.add_geometry(mesh, node_name=name, geom_name=name)
         count += 1
 
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    scene.export(OUT)
-    print(f"{count} meshes -> {OUT} ({OUT.stat().st_size / 1e6:.1f} MB)")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    scene.export(out)
+    print(f"{profile.name}: {count} meshes -> {out} ({out.stat().st_size / 1e6:.1f} MB)")
 
 
 if __name__ == "__main__":

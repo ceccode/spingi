@@ -8,7 +8,7 @@ from typing import Any, ClassVar
 from pydantic import BaseModel, Field
 
 from spingi.core.events import EventLog
-from spingi.core.ports import HumanGateway, Perceiver, RobotAdapter
+from spingi.core.ports import Capability, HumanGateway, Perceiver, RobotAdapter
 from spingi.core.types import StateDelta, WorldState
 
 
@@ -79,6 +79,12 @@ class Skill:
     name: ClassVar[str]
     Params: ClassVar[type[BaseModel]]
     default_deadline_s: ClassVar[float] = 30.0
+    requires: ClassVar[frozenset[Capability]] = frozenset()  # robot capabilities the skill needs (ADR-0012)
+
+    @classmethod
+    def missing(cls, capabilities: frozenset[Capability]) -> list[str]:
+        """The capabilities this skill needs and the robot does not have, sorted; empty = usable."""
+        return sorted(cls.requires - capabilities)
 
     def preconditions(self, params: BaseModel, state: WorldState) -> Check:
         return Check.passed()
@@ -117,6 +123,10 @@ class SkillRegistry:
 
     def names(self) -> list[str]:
         return sorted(self._skills)
+
+    def subset(self, capabilities: frozenset[Capability]) -> SkillRegistry:
+        """The skills a robot with these capabilities can run: what the planner is allowed to see for it."""
+        return SkillRegistry([s for s in self._skills.values() if not s.missing(capabilities)])
 
     def schemas(self) -> dict[str, dict[str, Any]]:
         """JSON schema of each skill's parameters: this is what the LLM Planner sees."""

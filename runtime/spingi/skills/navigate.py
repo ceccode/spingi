@@ -23,6 +23,7 @@ class NavigateParams(BaseModel):
 
 class NavigateSkill(Skill):
     name = "navigate"
+    requires = frozenset({"locomotion"})
     Params = NavigateParams
     default_deadline_s = 60.0
 

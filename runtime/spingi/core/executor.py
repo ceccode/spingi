@@ -66,7 +66,7 @@ class Executor:
         run_id = self.log.run_id
         self.log.emit("run.start", plan_id=plan.id, steps=len(plan.steps))
 
-        errors = validate_plan(plan, self.registry)
+        errors = validate_plan(plan, self.registry, self.robot.capabilities)
         if errors:
             self.log.emit("plan.invalid", errors=errors)
             self.log.emit("run.end", status="invalid_plan")

@@ -15,6 +15,7 @@ class DetectParams(BaseModel):
 
 class DetectSkill(Skill):
     name = "detect"
+    requires = frozenset({"camera"})
     Params = DetectParams
     default_deadline_s = 15.0
 

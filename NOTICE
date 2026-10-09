@@ -10,6 +10,12 @@ Third-party material:
   TECHNOLOGY CO., LTD. ("Unitree Robotics"). Licensed under the BSD 3-Clause
   License; see runtime/sim/models/unitree_g1/LICENSE. Modified: a head camera
   was added to g1.xml (see runtime/sim/models/NOTES.md).
-- viewer/public/models/g1.glb is derived from the same meshes (merged in the
-  "stand" pose and compressed) and is redistributed under the same BSD 3-Clause
-  License; the viewer serves the license text at /NOTICE.txt.
+- Unitree Go2 robot description (runtime/sim/models/unitree_go2), from
+  google-deepmind/mujoco_menagerie. Copyright (c) 2016-2022 HangZhou YuShu
+  TECHNOLOGY CO., LTD. ("Unitree Robotics"). Licensed under the BSD 3-Clause
+  License; see runtime/sim/models/unitree_go2/LICENSE. Modified: a head camera
+  was added to go2.xml and the meshes were converted from OBJ to binary STL
+  (see runtime/sim/models/NOTES.md).
+- viewer/public/models/g1.glb and go2.glb are derived from the same meshes
+  (merged in the standing pose and compressed) and are redistributed under the
+  same BSD 3-Clause License; the viewer serves the license texts at /NOTICE.txt.

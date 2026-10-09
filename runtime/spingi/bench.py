@@ -15,6 +15,7 @@ from spingi.core.events import EventLog
 from spingi.core.human import ScriptedHuman
 from spingi.core.plan import load_plan
 from spingi.metrics import BenchReport, Gate, RunMetrics, run_metrics, summarize
+from spingi.robots import get_profile
 from spingi.session import SessionConfig, new_run_id, run_session
 
 
@@ -51,6 +52,7 @@ async def bench(
         plan_id=plan.id,
         scene=str(base.scene),
         adapter=base.adapter,
+        robot=get_profile(base.robot).name,
         perception_noise=base.perception_noise,
         position_sigma_m=base.position_sigma_m,
         gate=gate,
@@ -71,7 +73,7 @@ def format_report(report: BenchReport) -> str:
     g = report.gate
     c = report.checks
     lines = [
-        f"plan {report.plan_id} · scene {report.scene} · adapter {report.adapter} · {report.runs} runs",
+        f"plan {report.plan_id} · scene {report.scene} · {report.robot} on {report.adapter} · {report.runs} runs",
         f"perception noise: false negatives {report.perception_noise:.0%}, position sigma {report.position_sigma_m} m",
         "",
         f"  {mark(c['success_rate'])}  success rate        {report.success_rate:.1%}"

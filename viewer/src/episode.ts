@@ -27,6 +27,13 @@ export interface Episode {
 }
 
 export const SUPPORTED_FORMAT = "0.1";
+/** The GLB drawn for each robot profile (runtime/spingi/robots.py). The model name comes from the episode, so it is
+ *  looked up in this table and never used as a path: an unknown robot is drawn as the G1. */
+export const ROBOT_MODELS: Record<string, string> = { unitree_g1: "/models/g1.glb", unitree_go2: "/models/go2.glb" };
+export const DEFAULT_ROBOT_MODEL = ROBOT_MODELS.unitree_g1!;
+export function robotModelUrl(model: unknown): string {
+  return (typeof model === "string" && Object.hasOwn(ROBOT_MODELS, model) ? ROBOT_MODELS[model] : undefined) ?? DEFAULT_ROBOT_MODEL;
+}
 /** Episodes come from strangers too: refuse archives that would exhaust the browser's memory (zip bombs). */
 export const MAX_ZIP_BYTES = 200 * 1024 * 1024;
 export const MAX_UNZIPPED_BYTES = 500 * 1024 * 1024;

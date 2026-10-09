@@ -23,6 +23,7 @@ class InspectParams(BaseModel):
 
 class InspectSkill(Skill):
     name = "inspect"
+    requires = frozenset({"camera"})
     Params = InspectParams
     default_deadline_s = 20.0
 

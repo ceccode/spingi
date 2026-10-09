@@ -15,7 +15,8 @@ Every significant architectural decision is a file in this folder: `NNNN-title.m
 | [0009](0009-lerobot-export-derived-format.md) | Episodes stay the source of truth; LeRobot v3.0 is an export | Accepted | M2 |
 | [0010](0010-llm-planner-structured-output.md) | LLM planner with structured output, validated like any plan | Accepted | M3 |
 | [0011](0011-robot-time-and-terminal-estop.md) | Robot time, terminal e-stop and latched safety stops | Accepted | M3+ |
+| [0012](0012-robot-profiles-and-capabilities.md) | Robot profiles and capabilities; the Go2 quadruped as a second robot | Accepted | M3+ |
 
-Still open (see the spec, section 13, Q10 and Q11): locomotion, vendor controller or a pre-trained policy in simulation (meanwhile the simulator moves the base kinematically, 0006); runtime on-board or on a laptop. Both are to be decided by M4.
+Still open (see the spec, section 13, Q10 and Q11): locomotion, vendor controller or a pre-trained policy in simulation (meanwhile the simulator moves the base kinematically, 0006); runtime on-board or on a laptop. Both are to be decided by M4. Multi-robot missions (a dog scouting for a humanoid) are out of scope for v0 and would need their own ADR after M4 (see 0012).
 
 New ADRs start from [template.md](template.md).

@@ -22,8 +22,8 @@ FORMAT_VERSION = "0.1"
 
 
 class RobotInfo(BaseModel):
-    model: str = Field(description="e.g. unitree_g1")
-    adapter: str = Field(description="e.g. fake, sim_mujoco, unitree_g1")
+    model: str = Field(description="robot profile name: unitree_g1, unitree_go2")
+    adapter: str = Field(description="e.g. fake, sim_mujoco; the real robot's adapter later")
 
 
 class RunConfig(BaseModel):

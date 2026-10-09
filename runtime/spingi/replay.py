@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from spingi.core.events import Event, EventLog
 from spingi.core.human import ScriptedHuman
 from spingi.episode import read_manifest, read_trajectory
+from spingi.robots import DEFAULT_ROBOT, get_profile
 from spingi.session import SessionConfig, run_session
 
 SIGNATURE_KINDS = ("step.start", "skill.end", "step.retry", "human.request", "human.response", "run.end")
@@ -60,11 +61,16 @@ async def replay(episode_dir: Path, runs_dir: Path | None = None) -> ReplayRepor
     recorded = EventLog.read(episode_dir / "events.jsonl")
     cfg_rec = manifest.config
     adapter = "sim" if manifest.robot.adapter == "sim_mujoco" else "fake"
+    try:
+        robot = get_profile(manifest.robot.model).alias
+    except KeyError:
+        robot = DEFAULT_ROBOT  # episodes recorded before robot profiles existed say "fake": they ran as the G1
     with tempfile.TemporaryDirectory() as tmp:
         cfg = SessionConfig(
             plan=episode_dir / "plan.yaml",
             scene=episode_dir / "scene.yaml",
             adapter=adapter,
+            robot=robot,
             runs_dir=runs_dir or Path(tmp),
             perception_noise=cfg_rec.perception_noise if cfg_rec else 0.0,
             position_sigma_m=cfg_rec.position_sigma_m if cfg_rec else 0.0,

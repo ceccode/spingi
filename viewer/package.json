@@ -9,7 +9,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "model:compress": "npx --yes @gltf-transform/cli@4 optimize public/models/g1.glb public/models/g1.glb --compress meshopt --simplify false"
+    "model:compress": "for m in g1 go2; do npx --yes @gltf-transform/cli@4 optimize public/models/$m.glb public/models/$m.glb --compress meshopt --simplify false; done"
   },
   "dependencies": {
     "fflate": "^0.8.2",

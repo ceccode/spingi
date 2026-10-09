@@ -1,15 +1,18 @@
-"""The same suite for every RobotAdapter: FakeAdapter and SimAdapter today, the real G1 adapter from M4."""
+"""The same suite for every RobotAdapter and every robot profile: FakeAdapter, SimAdapter with the G1 and with the
+Go2 today, the real robots' adapters from M4."""
 
 from pathlib import Path
 
 import pytest
 
 from spingi.adapters.fake import FakeAdapter
-from spingi.core.ports import Frame, RobotAdapter
-from spingi.core.types import Pose2D
+from spingi.core.ports import ALL_CAPABILITIES, CapabilityMissing, Frame, RobotAdapter
+from spingi.core.types import Pose2D, Pose3D
+from spingi.robots import GO2
 
 ADAPTERS = {
     "fake": lambda: FakeAdapter(speed_cap=0.6),
+    "fake-go2": lambda: FakeAdapter(speed_cap=0.6, capabilities=GO2.capabilities),
 }
 
 try:
@@ -19,6 +22,7 @@ try:
         from spingi.adapters.sim_mujoco import SimAdapter
 
         ADAPTERS["sim"] = lambda: SimAdapter("sim/scenes/lab_small.yaml", speed_cap=0.6)
+        ADAPTERS["sim-go2"] = lambda: SimAdapter("sim/scenes/lab_small.yaml", robot="go2", speed_cap=0.6)
 except ImportError:
     pass
 
@@ -68,9 +72,24 @@ async def test_speed_limit_never_goes_up(adapter):
     assert adapter.last_applied_speed <= 0.3
 
 
+def test_capabilities_are_declared(adapter):
+    assert adapter.capabilities and adapter.capabilities <= ALL_CAPABILITIES
+
+
 async def test_gripper_reports_what_it_holds(adapter):
+    if "arm" not in adapter.capabilities:
+        pytest.skip("no arm")
     opened = await adapter.gripper("right", "open")
     assert opened.holding is False
+
+
+async def test_a_missing_capability_raises_instead_of_pretending(adapter):
+    if "arm" in adapter.capabilities:
+        pytest.skip("has an arm")
+    with pytest.raises(CapabilityMissing):
+        await adapter.gripper("right", "close")
+    with pytest.raises(CapabilityMissing):
+        await adapter.move_arm("right", Pose3D(x=0.3, y=0.0, z=0.3), duration_s=0.1)
 
 
 def test_clock_is_monotonic(adapter):

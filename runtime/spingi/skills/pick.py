@@ -19,6 +19,7 @@ class PickParams(BaseModel):
 
 class PickSkill(Skill):
     name = "pick"
+    requires = frozenset({"arm"})
     Params = PickParams
     default_deadline_s = 30.0
 

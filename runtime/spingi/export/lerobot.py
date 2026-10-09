@@ -42,9 +42,11 @@ def export_lerobot(episode_dirs: list[Path], out: Path, fps: int = 10) -> dict:
     tasks: dict[str, int] = {}
     frames: list[dict] = []
     episodes: list[dict] = []
+    robots: set[str] = set()
     global_index = 0
     for ep_index, ep_dir in enumerate(episode_dirs):
         manifest = read_manifest(ep_dir)
+        robots.add(manifest.robot.model)
         task = _task_text(ep_dir, manifest.plan_id)
         task_index = tasks.setdefault(task, len(tasks))
         states = _resample(ep_dir, fps)
@@ -83,6 +85,8 @@ def export_lerobot(episode_dirs: list[Path], out: Path, fps: int = 10) -> dict:
             }
         )
 
+    if len(robots) > 1:  # one dataset describes one robot: its state vector means one thing
+        raise ValueError(f"episodes from different robots cannot share a dataset: {', '.join(sorted(robots))}")
     df = pd.DataFrame(frames)
     df["timestamp"] = df["timestamp"].astype("float32")
     df["observation.state"] = df["observation.state"].map(lambda v: [float(x) for x in v])
@@ -93,7 +97,9 @@ def export_lerobot(episode_dirs: list[Path], out: Path, fps: int = 10) -> dict:
     tasks_df.to_parquet(out / "meta" / "tasks.parquet")
 
     (out / "meta" / "stats.json").write_text(json.dumps(_stats(frames), indent=2) + "\n", encoding="utf-8")
-    info = _info(fps, total_episodes=len(episodes), total_frames=global_index, total_tasks=len(tasks))
+    info = _info(
+        fps, total_episodes=len(episodes), total_frames=global_index, total_tasks=len(tasks), robot_type=robots.pop()
+    )
     (out / "meta" / "info.json").write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
     return info
 
@@ -196,14 +202,14 @@ def _stats(frames: list[dict]) -> dict:
     return out
 
 
-def _info(fps: int, *, total_episodes: int, total_frames: int, total_tasks: int) -> dict:
+def _info(fps: int, *, total_episodes: int, total_frames: int, total_tasks: int, robot_type: str) -> dict:
     def scalar(dtype: str) -> dict:
         return {"dtype": dtype, "shape": [1], "names": None, "fps": float(fps)}
 
     vec = {"dtype": "float32", "shape": [len(STATE_NAMES)], "names": {"axes": STATE_NAMES}, "fps": float(fps)}
     return {
         "codebase_version": CODEBASE_VERSION,
-        "robot_type": "unitree_g1",
+        "robot_type": robot_type,
         "total_episodes": total_episodes,
         "total_frames": total_frames,
         "total_tasks": total_tasks,

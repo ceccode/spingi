@@ -40,6 +40,11 @@ class JointState(BaseModel):
     temperatures_c: list[float] = []
 
 
+class CapabilityMissing(RuntimeError):
+    """A command for a part the robot does not have (an arm on a quadruped). Plans are validated against the
+    robot's capabilities before they run, so reaching this means a bug, never a normal failure."""
+
+
 class RobotEstopped(RuntimeError):
     """Raised by an adapter for any motion command while its e-stop is engaged (until a manual reset)."""
 
@@ -56,9 +61,18 @@ class Clock(Protocol):
     async def sleep(self, seconds: float) -> None: ...
 
 
+Capability = Literal["locomotion", "camera", "arm"]
+ALL_CAPABILITIES: frozenset[Capability] = frozenset({"locomotion", "camera", "arm"})
+
+
 @runtime_checkable
 class RobotAdapter(Protocol):
-    """Translates abstract commands into calls to the robot (real or simulated). No task logic."""
+    """Translates abstract commands into calls to the robot (real or simulated). No task logic.
+
+    `capabilities` says which groups of commands this robot really has: a quadruped without an arm has
+    `locomotion` and `camera` only, and a plan that needs `arm` is rejected before it runs (ADR-0012). The arm
+    methods of such an adapter raise, they never pretend.
+    """
 
     async def walk_to(self, pose: Pose2D, max_speed: float) -> None: ...
     async def stop(self) -> None: ...
@@ -74,6 +88,7 @@ class RobotAdapter(Protocol):
 
     clock: Clock  # the robot's time (see Clock)
     estopped: bool  # True from estop() until a manual reset on the robot; the executor treats it as terminal
+    capabilities: frozenset[Capability]
 
 
 @runtime_checkable

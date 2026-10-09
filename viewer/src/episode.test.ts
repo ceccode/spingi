@@ -1,6 +1,21 @@
 import { strToU8 } from "fflate";
 import { describe, expect, it } from "vitest";
-import { describeEvent, eventTime, normalizePaths, objectsAt, parseEpisodeFiles, parseJsonl, poseAt, wrapAngle, type Sample } from "./episode";
+import {
+  DEFAULT_ROBOT_MODEL, describeEvent, eventTime, normalizePaths, objectsAt, parseEpisodeFiles, parseJsonl, poseAt,
+  robotModelUrl, wrapAngle, type Sample,
+} from "./episode";
+
+describe("robotModelUrl", () => {
+  it("maps the robot profile of the manifest to a bundled model", () => {
+    expect(robotModelUrl("unitree_g1")).toBe("/models/g1.glb");
+    expect(robotModelUrl("unitree_go2")).toBe("/models/go2.glb");
+  });
+  it("never builds a path from the episode's text: unknown or odd names fall back to the default", () => {
+    for (const bad of ["spot", "../../etc/passwd", "constructor", "__proto__", "", undefined, null, 7, {}]) {
+      expect(robotModelUrl(bad)).toBe(DEFAULT_ROBOT_MODEL);
+    }
+  });
+});
 
 const traj = [
   { t: 0, robot: { x: 0, y: 0, yaw: 0, mode: "idle" } },

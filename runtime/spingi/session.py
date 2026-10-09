@@ -21,6 +21,7 @@ from spingi.core.plan import TaskPlan, load_plan
 from spingi.core.ports import HumanGateway
 from spingi.episode import RunConfig, write_episode, zip_episode
 from spingi.perception.fake import FakePerceiver
+from spingi.robots import DEFAULT_ROBOT, get_profile
 from spingi.safety import SafetyMonitor
 from spingi.scenes import load_safety_limits, load_world
 from spingi.skills import default_registry
@@ -36,6 +37,7 @@ class SessionConfig:
     plan: Path
     scene: Path
     adapter: AdapterKind = "fake"
+    robot: str = DEFAULT_ROBOT  # a profile alias from spingi.robots: which robot the adapter stands for
     runs_dir: Path = Path("runs")
     perception_noise: float = 0.0  # false-negative rate of the perceiver
     position_sigma_m: float = 0.0  # gaussian noise on perceived positions
@@ -76,6 +78,7 @@ async def run_session(cfg: SessionConfig, human: HumanGateway, log: EventLog | N
     log = log or EventLog(run_id=run_id, path=run_dir / "events.jsonl" if cfg.write_episode else None)
     plan: TaskPlan = load_plan(cfg.plan)
     state = load_world(cfg.scene)
+    profile = get_profile(cfg.robot)
 
     if cfg.adapter == "sim":
         from spingi.adapters.sim_mujoco import SimAdapter
@@ -84,6 +87,7 @@ async def run_session(cfg: SessionConfig, human: HumanGateway, log: EventLog | N
         realtime = cfg.realtime or cfg.view
         robot = SimAdapter(
             cfg.scene,
+            robot=profile,
             realtime=realtime,
             viewer=cfg.view,
             record_dir=run_dir if cfg.write_episode else None,
@@ -94,7 +98,7 @@ async def run_session(cfg: SessionConfig, human: HumanGateway, log: EventLog | N
             robot, false_negative_rate=cfg.perception_noise, position_sigma_m=cfg.position_sigma_m, seed=cfg.seed
         )
     else:
-        robot = FakeAdapter(start=state.robot.pose, watchdog_ms=cfg.watchdog_ms)
+        robot = FakeAdapter(start=state.robot.pose, watchdog_ms=cfg.watchdog_ms, capabilities=profile.capabilities)
         perceiver = FakePerceiver(
             objects=list(state.objects.values()), false_negative_rate=cfg.perception_noise, seed=cfg.seed
         )
@@ -176,7 +180,7 @@ async def run_session(cfg: SessionConfig, human: HumanGateway, log: EventLog | N
             steps_completed=steps_completed,
             adapter=robot,
             adapter_name="sim_mujoco" if cfg.adapter == "sim" else "fake",
-            robot_model="unitree_g1" if cfg.adapter == "sim" else "fake",
+            robot_model=profile.name,
             config=RunConfig(
                 perception_noise=cfg.perception_noise, position_sigma_m=cfg.position_sigma_m, seed=cfg.seed
             ),

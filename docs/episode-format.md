@@ -51,7 +51,7 @@ The zip produced by `--zip` (`runs/<run_id>.zip`) contains the `<run_id>/` folde
 |-------|---------|
 | `format_version` | Always `"0.1"` for this version. |
 | `run_id`, `created_at` | Run identifier; creation time, RFC 3339 in UTC. |
-| `robot` | `model` (`unitree_g1`, or `fake`) and `adapter` (`fake`, `sim_mujoco`; `unitree_g1` later). |
+| `robot` | `model`: the robot profile the run stood for (`unitree_g1`, `unitree_go2`; see `runtime/spingi/robots.py`), which the viewer uses to pick the 3D model; `adapter`: what executed it (`fake`, `sim_mujoco`; the real robots' adapters later). Episodes recorded before robot profiles existed say `fake` as the model: they ran as the G1. |
 | `plan_id`, `steps_total`, `steps_completed` | The executed plan and how far it got. |
 | `status` | `success`, `aborted`, `invalid_plan`, `deadline`, `estop` (the robot was e-stopped: geofence, a `FATAL` skill outcome, a safety monitor failure) or `error` (the run raised; the robot was stopped), as in the `run.end` event. |
 | `duration_s` | Wall-clock seconds between the first and the last event. In fast simulation it is much shorter than `sim_time_s`. |

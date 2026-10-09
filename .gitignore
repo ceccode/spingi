@@ -19,7 +19,7 @@ __pycache__/
 dist/
 *.egg-info/
 runtime/runs/
-runtime/sim/models/unitree_g1/_gen_*.xml
+runtime/sim/models/*/_gen_*.xml
 
 # Viewer (web)
 viewer/node_modules/

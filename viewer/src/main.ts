@@ -1,8 +1,8 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import {
-  describeEvent, episodeDuration, eventTime, loadEpisodeFromZip, manifestRows, MAX_ZIP_BYTES, objectsAt, poseAt,
-  readCapped, safeEpisodeUrl, type Episode,
+  DEFAULT_ROBOT_MODEL, describeEvent, episodeDuration, eventTime, loadEpisodeFromZip, manifestRows, MAX_ZIP_BYTES,
+  objectsAt, poseAt, readCapped, robotModelUrl, safeEpisodeUrl, type Episode,
 } from "./episode";
 import { Player } from "./player";
 import { World } from "./world";
@@ -125,11 +125,25 @@ function render(episode: Episode, t: number): void {
   }
 }
 
+let robotModel = "";  // the GLB currently loaded, so that episodes of the same robot do not reload it
+
+/** Draws the robot the episode was recorded on (manifest.robot.model); a failed load keeps the previous model. */
+async function showRobot(url: string): Promise<void> {
+  if (url === robotModel) return;
+  await world.loadRobot(url);
+  robotModel = url;
+}
+
 async function show(ep: Episode): Promise<void> {
   episode = ep;
   world.build(ep.scene);
   const m = ep.manifest;
   ui.title.textContent = `${m.plan_id} · ${m.run_id}`;
+  try {
+    await showRobot(robotModelUrl(m.robot?.model));
+  } catch (err) {
+    ui.title.textContent += ` · robot model not loaded: ${(err as Error).message}`;
+  }
   ui.drop.classList.add("hidden");
   // Episode content is untrusted (a shared zip, a ?url= link): it only ever reaches the page as text.
   const dl = el("dl");
@@ -217,9 +231,9 @@ canvas.parentElement!.addEventListener("drop", async (e) => {
 
 (async () => {
   try {
-    await world.loadRobot("/models/g1.glb");
+    await showRobot(DEFAULT_ROBOT_MODEL);
   } catch (err) {
-    ui.title.textContent = `G1 model not loaded: ${(err as Error).message}`;
+    ui.title.textContent = `robot model not loaded: ${(err as Error).message}`;
   }
   // `?url=` in production; `#url=` also works in development (Vite rejects queries that look like paths).
   const url = new URLSearchParams(location.search).get("url") ?? new URLSearchParams(location.hash.slice(1)).get("url");

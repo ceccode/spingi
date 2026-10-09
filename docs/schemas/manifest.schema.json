@@ -3,12 +3,12 @@
     "RobotInfo": {
       "properties": {
         "model": {
-          "description": "e.g. unitree_g1",
+          "description": "robot profile name: unitree_g1, unitree_go2",
           "title": "Model",
           "type": "string"
         },
         "adapter": {
-          "description": "e.g. fake, sim_mujoco, unitree_g1",
+          "description": "e.g. fake, sim_mujoco; the real robot's adapter later",
           "title": "Adapter",
           "type": "string"
         }
