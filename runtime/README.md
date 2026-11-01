@@ -15,10 +15,11 @@ installs the package with its extras: `dev` (pytest, ruff), `sim` (MuJoCo, numpy
 ## Command line
 
 ```
-spingi run <plan.yaml> [--scene S] [--adapter fake|sim] [--robot g1|go2] [--physics] [--perception truth|markers] [--operator auto|console]
-           [--on-failure abort|skip|retry] [--noise P] [--sigma M] [--seed K] [--runs-dir D] [--view] [--record] [--realtime] [--zip] [--quiet]
-spingi bench <plan.yaml> [--scene S] [--adapter fake|sim] [--robot g1|go2] [--physics] [--perception truth|markers] [--runs N] [--noise P]
-             [--sigma M] [--seed K] [--on-failure abort|skip|retry] [--runs-dir D] [--gate] [--keep-failed]
+spingi run <plan.yaml> [--scene S] [--adapter fake|sim] [--robot g1|go2] [--physics] [--drift] [--camera-noise] [--perception truth|markers]
+           [--realistic] [--operator auto|console] [--on-failure abort|skip|retry] [--noise P] [--sigma M] [--seed K] [--runs-dir D]
+           [--view] [--record] [--realtime] [--zip] [--quiet]
+spingi bench <plan.yaml> [--scene S] [--adapter fake|sim] [--robot g1|go2] [--physics] [--drift] [--camera-noise] [--perception truth|markers]
+             [--realistic] [--runs N] [--noise P] [--sigma M] [--seed K] [--on-failure abort|skip|retry] [--runs-dir D] [--gate] [--keep-failed]
 spingi export lerobot <episode_dir>... --out <dataset_dir> [--fps 10]
 spingi plan "<request>" [--scene S] [--robot g1|go2] [--out plan.yaml] [--model M] [--run [--yes] [--adapter fake|sim] [--operator auto|console]]
 spingi eval-planner [--cases plans/golden/planner_cases.yaml] [--model M] [--out report.json] [--min-pass-rate R]
@@ -33,6 +34,9 @@ spingi robots
 | `--adapter sim` | The robot in MuJoCo: realistic travel times, collisions with obstacles, head camera, kinematic grasp. |
 | `--robot g1` (default), `--robot go2` | Which robot the adapter stands for (ADR-0012): the Unitree G1 humanoid, or the Unitree Go2 quadruped, which has no arm. In MuJoCo it picks the model; on every adapter it decides which skills a plan may use. `spingi robots` lists the profiles. |
 | `--physics` | The robot walks (`sim` adapter only, ADR-0015). Learned walking controllers move the legs on the scene's ground; the pose is what the physics gives; an obstacle pushed for 0.1 s blocks the walk, no progress for 4 s means stuck, and a fall e-stops the robot and ends the run. About twice as slow as the default, which glides the base along the path with the legs still, and still about 40 times faster than real time. Each `--seed` moves the start by a few centimetres, so repeated runs differ. |
+| `--drift` | The robot does not know exactly where it is (with `--physics`, ADR-0016). Its pose estimate drifts like a walking robot's odometry: a few per cent of the distance walked, about one per cent of every turn, more on gravel and dirt, and the few centimetres of the start jitter are unknown to it. `navigate` corrects it with the scene's landmarks; without them a long patrol ends up metres off. |
+| `--camera-noise` | The head camera's frames come out as a real camera's: slightly blurred, exposure that changes, sensor noise, JPEG compression (how the Go2 streams its camera), and a calibration about 1 % off (`sim` adapter). Episodes store the JPEG. |
+| `--realistic` | As close to the real robot as the simulator gets: `--adapter sim --physics --drift --camera-noise --perception markers`. About 1.5 times slower than `--physics`: every stop takes three frames. |
 | `--scene` | Scene file; default `sim/scenes/lab_small.yaml`. |
 | `--perception truth` (default), `--perception markers` | Who answers `detect` and `inspect`. `truth`: the simulator's ground truth, with `--noise` and `--sigma` to make it unreliable. `markers`: the AprilTags on the objects, read from the frames the head camera renders with OpenCV, as from a real camera (`sim` adapter only; the noise options do not apply). The G1 reads the box on shelf A from 0.9 m; the Go2 cannot, the shelf's edge hides it from its low camera, which is the kind of thing this mode is for. |
 | `--operator auto` (default) | Requests for a human are answered with `--on-failure` (abort, skip or retry) and the event log is printed at the end. |
@@ -54,7 +58,7 @@ Make targets wrap the common cases:
 | `make demo-sim` | Same plan on the G1 in MuJoCo |
 | `make demo-sim-go2` | Same plan on the Go2 quadruped in MuJoCo |
 | `make demo-sim-view` | Same, in the MuJoCo viewer |
-| `make demo-yard` | The Go2 walking a patrol of the outdoor yard, in physics, zipped for the viewer |
+| `make demo-yard` | The Go2 walking a patrol of the outdoor yard with `--realistic`, zipped for the viewer |
 | `make demo-track` | The Go2 walking the test track, in physics, zipped for the viewer |
 | `make demo-sim-record` | Same, with video |
 | `make bench` | Material runner in `warehouse_small`, 100 simulated runs with 20 % perception false negatives and 0.02 m position noise, gate checked |
@@ -69,7 +73,7 @@ Sample plans and scenes:
 | `plans/demo_material_runner.yaml` | `sim/scenes/warehouse_small.yaml` | L2 | Aisle waypoints, detect, pick, carry, place on a table, return |
 | any `navigate` to `workstation_B`, e.g. `tests/golden/plans/to_workstation.yaml` | `sim/scenes/lab_blocked.yaml` | – | A wall across the path: the robot stops, retries, asks the operator |
 | any `navigate` to `workstation_B` | `sim/scenes/lab_geofence.yaml` | – | A target outside the geofence: the safety monitor e-stops the robot and the run ends with status `estop` |
-| `plans/yard_patrol.yaml` | `sim/scenes/yard_outdoor.yaml` | L1 | Outdoors, for the Go2: a gauge on a pump at the end of a dirt track, an extinguisher on a loading dock up a ramp, a sign behind a kerb, back to the dock. Use `--physics` |
+| `plans/yard_patrol.yaml` | `sim/scenes/yard_outdoor.yaml` | L1 | Outdoors, for the Go2: a gauge on a pump at the end of a dirt track, an extinguisher on a loading dock up a ramp, a sign behind a kerb, back to the dock. Use `--physics`, or `--realistic` |
 | `plans/test_track.yaml` | `sim/scenes/test_track.yaml` | – | A straight course of 5 m stretches from concrete to a 15 cm step; the run stops at the first stretch the robot cannot walk. Use `--physics` |
 
 ## Scenes
@@ -122,6 +126,20 @@ terrain:
 
 Ramps and raised areas are solid, flat on top with vertical sides; heights go from 0 to 3 m and ramps up to 45 degrees. In kinematic runs the base follows the ground's height; in physics the robot walks on it. A route for a walking robot keeps about 0.6 m from obstacles and meets a kerb square on (`kerb_front` in `yard_outdoor.yaml`).
 
+`landmarks` are AprilTags at known places, on a post or flat on a wall or an obstacle (ADR-0016). With `--drift` they are how the robot finds out where it really is: `navigate` looks for the ones in view before it leaves and at every waypoint, corrects its pose with the first one it reads and, if the correction puts it off the waypoint, walks the difference.
+
+```yaml
+landmarks:
+  - { marker_id: 41, x: 13.2, y: 0.7, facing: -2.642, size_m: 0.3 }   # on a post; facing: where the tag looks, rad
+  - { marker_id: 48, x: 6.55, y: 7.49, facing: -1.5708, height_m: 0.45, size_m: 0.3, post: false }  # on the wall
+```
+
+`height_m` is the tag's centre above the ground (default 0.6, 3 m at most), `size_m` the side of its black square (default 0.2, 0.6 at most). Ids go from 0 to 63 and are shared with the objects' tags: one id, one tag. Landmarks have no collision: keep them off the routes. Where to put them was measured in MuJoCo with the noisy camera:
+- A tag is used up to 10 times its side away: 3 m for a 30 cm tag. Farther, its position is still good but the direction its face looks is off by a few degrees, and the corrected pose with it.
+- One 2–3 m ahead of every stop, seen at an angle of 20–35 degrees rather than straight ahead.
+- Two, one either side, of an inspection target the robot stands close to: arriving 30 cm off to one side, it still sees one.
+- One every 8–10 m on a long leg (add a waypoint): drift grows with the distance, and an error of half a metre puts the robot off a ramp.
+
 Names of locations, objects, classes and routes must match `^[A-Za-z0-9_-]{1,64}$`, and every number must be finite: NaN or infinity in a pose, the geofence or the limits is rejected. The checks run when the world is loaded and again when the MuJoCo scene is generated. Leaving the geofence e-stops the robot (latched until a manual reset); `estop_on_geofence: false` in the `safety:` section makes it a plain stop instead, repeated at every check while the robot is outside.
 
 ## Plans
@@ -132,15 +150,16 @@ A plan is an ordered list of steps. Each step names a skill, its parameters and 
 
 | Skill | Parameters | Precondition | Effect |
 |-------|------------|--------------|--------|
-| `navigate` | `to`, `via=[]`, `max_speed=0.5` | known locations, battery above minimum | robot within tolerance of `to`; at each `via` waypoint it faces the next one |
+| `navigate` | `to`, `via=[]`, `max_speed=0.5` | known locations, battery above minimum | robot within tolerance of `to`; at each `via` waypoint it faces the next one; before leaving and at every waypoint it corrects its pose with a landmark in view; a retry resumes from the waypoint it stands at |
 | `detect` | `cls`, `expect=1` | robot idle | objects of class `cls` added to the world state with their pose |
 | `pick` | `object_id`, `arm=right` | object pose known and within 0.9 m, hand empty | `robot.holding` set, object removed from the scene |
 | `place` | `at`, `arm=right` | holding something, robot at `at` | object put down ahead of the robot, `holding` cleared |
 | `inspect` | `target`, `checks=[]` | robot at `target` | a head-camera frame; `present:<cls>` / `absent:<cls>` checks evaluated, anomalies listed |
 
-With `--perception markers` a `Frame` carries a `camera_model` (intrinsics and the camera's world pose, written by the adapter) and `MarkerPerceiver` (`spingi/perception/markers.py`) turns the tags it finds into world positions: the tag's centre, then the object's centre by the tag's inset. Objects with a `marker_id` in the scene get their tag on four side faces in the simulator; ids go from 0 to 63 and must be unique in a scene (`sim/markers/`).
 | `wait_for_human` | `prompt`, `timeout_s=300` | – | the robot stops and waits; the operator answers `continue` or `abort` |
 | `say` | `text` | – | the text in the event log |
+
+With `--perception markers` a `Frame` carries a `camera_model` (intrinsics and the camera's pose, as the robot believes it is, written by the adapter) and `MarkerPerceiver` (`spingi/perception/markers.py`) turns the tags it finds into positions: the tag's centre and the direction its face looks, then the object's centre by the tag's inset. Objects with a `marker_id` in the scene get their tag on four side faces in the simulator; ids go from 0 to 63 and must be unique in a scene, landmarks included (`sim/markers/`).
 
 Skills never call each other; composition is the plan's job. Pre and postconditions are pure functions of the world state, which makes them unit-testable without a robot.
 
@@ -148,7 +167,7 @@ Each skill declares the robot capabilities it `requires`: `navigate` needs `loco
 
 ## Episodes
 
-Every `spingi run` leaves an episode in `runs/<run_id>/` ([../docs/episode-format.md](../docs/episode-format.md)): `manifest.json`, copies of the plan and the scene, `events.jsonl` (every event with wall-clock and simulated time), `trajectory.jsonl` (robot pose at 10 Hz, object positions when they change; with `--physics` at 25 Hz with the base's height and tilt and every joint angle, so the viewer moves the legs), `terrain.json` (the ground, for scenes that have one), `frames/` (head-camera PNGs referenced by `perception.result` events through `frame_ref`, a path relative to the episode folder, written only when an OpenGL context is available) and, with `--record`, `run.mp4`, streamed to disk while the run goes on. `manifest.json` also records the robot profile (`robot.model`, which the viewer uses to draw the right robot) and the perception noise and seed, so that `spingi replay` can run the episode again on the same robot.
+Every `spingi run` leaves an episode in `runs/<run_id>/` ([../docs/episode-format.md](../docs/episode-format.md)): `manifest.json`, copies of the plan and the scene, `events.jsonl` (every event with wall-clock and simulated time), `trajectory.jsonl` (robot pose at 10 Hz, object positions when they change; with `--physics` at 25 Hz with the base's height and tilt and every joint angle, so the viewer moves the legs; with `--drift` also where the robot believed it was), `terrain.json` (the ground, for scenes that have one), `frames/` (head-camera images referenced by `perception.result` and `robot.relocalized` events through `frame_ref`, a path relative to the episode folder: PNG, or the JPEG the camera sent with `--camera-noise`; written only when an OpenGL context is available) and, with `--record`, `run.mp4`, streamed to disk while the run goes on. `manifest.json` also records the robot profile (`robot.model`, which the viewer uses to draw the right robot) and the perception noise and seed, so that `spingi replay` can run the episode again on the same robot.
 
 ## Operator console
 
@@ -203,15 +222,28 @@ With `--physics` the robot walks, and the same gate measures drift, blocked path
 
 | Plan · scene | Robot | Runs | Success | Operator requests per 100 | Fatal runs (falls) | p95 simulated time |
 |---|---|---|---|---|---|---|
-| inspection round · `lab_small` | G1 | 30 | 100 % | 0 | 0 | 49.6 s |
-| inspection round · `lab_small` | Go2 | 30 | 100 % | 0 | 0 | 60.7 s |
-| material runner · `warehouse_small` | G1 | 30 | 100 % | 0 | 0 | 89.8 s |
-| yard patrol · `yard_outdoor` | Go2 | 30 | 93.3 % | 3.3 | 1 (1) | 164.5 s |
-| yard patrol · `yard_outdoor`, kinematic, for comparison | Go2 | 30 | 100 % | 0 | 0 | 99.9 s |
-| test track · `test_track` | Go2 | 20 | 65 % | 0 | 1 (1) | 112.1 s |
-| test track · `test_track` | G1 | 20 | 0 % | 0 | 20 (19; one stumbled out of the geofence) | – |
+| inspection round · `lab_small` | G1 | 30 | 100 % | 0 | 0 | 50.3 s |
+| inspection round · `lab_small` | Go2 | 30 | 100 % | 0 | 0 | 62.1 s |
+| material runner · `warehouse_small` | G1 | 30 | 100 % | 0 | 0 | 92.3 s |
+| yard patrol · `yard_outdoor` | Go2 | 30 | 86.7 % | 13.3 | 0 | 180.2 s |
+| yard patrol · `yard_outdoor`, kinematic, for comparison | Go2 | 30 | 100 % | 0 | 0 | 99.4 s |
+| test track · `test_track` | Go2 | 20 | 80 % | 0 | 1 (1) | 110.3 s |
+| test track · `test_track` | G1 | 20 | 0 % | 0 | 19 (19), and one stumbled out of the geofence | – |
 
-The kinematic base finishes the yard patrol every time in 100 s; walking, the Go2 needs 160 s and fails a few runs out of a hundred, at the kerb. On the test track the Go2 crosses every surface, the rough dirt and the ramps in all 20 runs and fails only at the steps: the 10 cm one in 3 runs, the 15 cm one in 4. The G1's controller was trained on flat floors: indoors it passes, outdoors it falls. The report counts falls among the fatal runs.
+The kinematic base finishes the yard patrol every time in 100 s; walking, the Go2 needs about 170 s and fails some runs at the 10 cm kerb in front of door C, where it gets stuck halfway up (about one climb in 15, measured on the kerb alone). On the test track the Go2 crosses every surface, the rough dirt and the ramps in all 20 runs and fails only at the steps: the 10 cm one in 2 runs, the 15 cm one in 2. The G1's controller was trained on flat floors: indoors it passes, outdoors it falls. The report counts falls among the fatal runs.
+
+With `--realistic` the robot also does not know exactly where it is (ADR-0016): its odometry drifts, its camera is noisy, the tags are read from the frames, and `navigate` corrects the pose with the scene's landmarks. The report adds the worst gap of each run between where the robot was and where it believed it was, at the end of a walk and before the correction; the landmark corrections per run; and the anomalies the inspections reported, which are false alarms when everything is in place:
+
+| Plan · scene | Robot | Runs | Success | Worst pose error per run, p50 · p95 | Landmark fixes per run | Anomalies per run | p95 simulated time |
+|---|---|---|---|---|---|---|---|
+| inspection round · `lab_small` | G1 | 30 | 100 % | 0.20 · 0.42 m | 8.5 | 1 (by design: no box at panel C) | 56.5 s |
+| inspection round · `lab_small` | Go2 | 30 | 100 % | 0.23 · 0.49 m | 8.4 | 2 (also the box on the shelf, out of the low camera's sight) | 82.5 s |
+| material runner · `warehouse_small` | G1 | 30 | 100 % | 0.41 · 0.94 m | 10.8 | 0 | 105.9 s |
+| yard patrol · `yard_outdoor` | Go2 | 30 | 100 % | 0.37 · 0.71 m | 25.5 | 0 | 229.5 s |
+| yard patrol · `yard_outdoor` without its landmarks | Go2 | 30 | 36.7 %, 3 falls, 53 operator requests per 100 | 1.43 · 2.26 m | 0 | 0.73 | 173.2 s |
+| test track · `test_track` | Go2 | 20 | 75 % | 0.28 · 0.53 m | 20.0 | 0 | 132.2 s |
+
+Without the tags the yard patrol drifts by more than a metre: the Go2 walks off the side of the ramp, stops short of a waypoint, or inspects the wrong spot and reports a gauge or a sign missing while it is there. With them it finishes every run, about 25 % slower because it stops to look and walks the difference after each correction. Errors of 0.4 to 0.9 m before a correction are what a few per cent of drift gives over the legs of these scenes, and the robot does not act on them: where a tag is in view, it corrects them before it inspects or picks. On the test track the Go2 fails only at the steps, as in `--physics`. The drift figures are rough figures for a legged robot, not measurements of a Go2; they will be replaced by the robot's own in the lab (M4.1).
 
 ## Export to LeRobot
 
@@ -276,7 +308,7 @@ scripts/ (gen_schemas, record_golden, record_samples, export_glb, import_policie
 make test
 ```
 
-278 tests, about 25 seconds (4 skip by design: arm tests on robots without an arm). Unit tests on the fake adapter, the marker perceiver on synthetic images, the ground (validation, seams, height fields and boxes, the viewer's copy), walking (going to a pose as velocity commands, the policy files against the robot models, the gait switch), falls in the executor and the gate, contract tests run against every adapter and robot (fake and sim, as the G1 and as the Go2), scenario tests in MuJoCo (inspection round on both robots, warehouse delivery, a delivery refused on the Go2, wall, geofence, speed cap, rendering, AprilTags read from rendered frames, Ctrl+C operator stop, every golden plan, robot time for the watchdog, the monitor and the plan deadline), physics locomotion in MuJoCo (both robots walk to a pose, the Go2 turns on the spot, climbs the loading-dock ramp and a 10 cm step, an obstacle blocks the G1, a shove makes it fall, a walking G1 grasps without being moved, a physics episode replays the same, an outdoor episode carries its ground), golden episodes replayed, metrics and gate, bench, console, LeRobot export, the LLM planner with a fake client (request shape, schema, retry with errors, refusals), episode and schema tests, architecture rules, and a licensing test that keeps `LICENSE` and `NOTICE` in this folder (shipped in the wheel) equal to the repository's. No test calls the network. Rendering tests skip themselves on machines without an OpenGL context.
+320 tests, about 45 seconds (4 skip by design: arm tests on robots without an arm). Unit tests on the fake adapter, the marker perceiver on synthetic images, the ground (validation, seams, height fields and boxes, the viewer's copy), walking (going to a pose as velocity commands, the policy files against the robot models, the gait switch), localization (a correction from a landmark against a drifted estimate, `navigate` correcting itself and walking the difference on a fake robot with a known error, misread and missed tags, a retried route resuming where the robot stands), drifting odometry and the noisy camera, falls in the executor and the gate, contract tests run against every adapter and robot (fake and sim, as the G1 and as the Go2), scenario tests in MuJoCo (inspection round on both robots, warehouse delivery, a delivery refused on the Go2, wall, geofence, speed cap, rendering, AprilTags read from rendered frames, Ctrl+C operator stop, every golden plan, robot time for the watchdog, the monitor and the plan deadline), physics locomotion in MuJoCo (both robots walk to a pose, the Go2 turns on the spot, climbs the loading-dock ramp and a 10 cm step, an obstacle blocks the G1, a shove makes it fall, a walking G1 grasps without being moved, a physics episode replays the same, an outdoor episode carries its ground), what the simulated robot knows (drift and its correction, a kinematic robot walking in its corrected frame, the camera model placed by the estimate, JPEG frames from the noisy camera, a landmark read from a noisy frame with the direction it faces, the head camera drawing a cabinet 40 cm away in the yard, a realistic inspection round correcting itself with the landmarks), golden episodes replayed, metrics and gate, bench, console, LeRobot export, the LLM planner with a fake client (request shape, schema, retry with errors, refusals), episode and schema tests, architecture rules, and a licensing test that keeps `LICENSE` and `NOTICE` in this folder (shipped in the wheel) equal to the repository's. No test calls the network. Rendering tests skip themselves on machines without an OpenGL context.
 
 `make lint` runs ruff with the rules `E`, `F`, `I`, `B`, `UP`, `S` (bandit), `ASYNC`, `SIM`, `RUF`, `PIE`, `BLE`; a blind `except` needs a `noqa` that says why. CI runs the same lint, `ruff format --check` and the tests on GitHub Actions.
 

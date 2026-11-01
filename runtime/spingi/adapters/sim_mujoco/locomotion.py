@@ -253,11 +253,13 @@ class WalkingController:
 class GaitSwitch:
     """Two policies on one robot: one walks, the other manoeuvres (turns on the spot, moves slowly into position).
 
-    The manoeuvring one drives whenever the wanted speed is low; the walking one when it is higher. They hand over
-    only while the commanded speed is low on both sides of the change, so neither takes over a running robot.
+    The walking one drives when the robot is wanted to go faster than a manoeuvre and mostly forwards; the
+    manoeuvring one otherwise, backwards and sideways included (HIMLoco stalls stepping back at an angle). They hand
+    over only while the commanded speed is low on both sides of the change, so neither takes over a running robot.
     """
 
     SLOW = 0.2  # m/s: wanted linear speeds up to this are manoeuvres
+    FORWARD = 0.7  # cosine of the widest angle off straight ahead that is still walking (about 45 degrees)
 
     def __init__(self, walk: WalkingController, maneuver: WalkingController) -> None:
         self.walk, self.maneuver = walk, maneuver
@@ -274,7 +276,8 @@ class GaitSwitch:
     def step(self, data: mujoco.MjData, command: np.ndarray) -> None:
         wanted_speed = float(np.hypot(self.wanted[0], self.wanted[1]))
         still = not self.wanted.any()
-        choice = self.walk if (wanted_speed > self.SLOW or still) else self.maneuver
+        walking = wanted_speed > self.SLOW and self.wanted[0] >= self.FORWARD * wanted_speed
+        choice = self.walk if (walking or still) else self.maneuver
         if choice is not self.active and float(np.hypot(command[0], command[1])) <= self.SLOW:
             choice.handover()
             self.active = choice

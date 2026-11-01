@@ -2,6 +2,7 @@
 
   spingi run <plan.yaml> [--scene S] [--adapter fake|sim] [--robot g1|go2] [--operator auto|console] [--view] ...
   spingi bench <plan.yaml> [--scene S] [--adapter fake|sim] [--robot R] [--runs N] [--noise P] [--sigma M] [--gate]
+      either with [--physics] [--drift] [--camera-noise] [--perception markers], or all four at once: --realistic
   spingi export lerobot <episode_dir>... --out <dataset_dir>
   spingi plan "<request>" [--scene S] [--robot R] [--out plan.yaml] [--run ...]  (needs the llm extra and an API key)
   spingi eval-planner [--cases plans/golden/planner_cases.yaml]        (needs the llm extra and an API key)
@@ -127,7 +128,7 @@ def main(argv: list[str] | None = None) -> int:
 def _session_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("plan", type=Path)
     p.add_argument("--scene", type=Path, default=DEFAULT_SCENE)
-    p.add_argument("--adapter", choices=["fake", "sim"], default="fake")
+    p.add_argument("--adapter", choices=["fake", "sim"], default=None, help="default: fake, or sim with --realistic")
     p.add_argument("--robot", choices=ROBOTS, default=DEFAULT_ROBOT, help="which robot the adapter stands for")
     p.add_argument(
         "--perception",
@@ -142,6 +143,22 @@ def _session_args(p: argparse.ArgumentParser) -> None:
         help="the robot walks with a learned controller on the scene's ground, and can be blocked or fall "
         "(sim adapter; default: the base glides along the path)",
     )
+    p.add_argument(
+        "--drift",
+        action="store_true",
+        help="the robot's pose estimate drifts like real odometry; landmarks in the scene correct it (with --physics)",
+    )
+    p.add_argument(
+        "--camera-noise",
+        action="store_true",
+        help="head-camera frames blurred, noisy and JPEG-compressed like a real camera's (sim adapter)",
+    )
+    p.add_argument(
+        "--realistic",
+        action="store_true",
+        help="as close to the real robot as the simulator gets: --adapter sim --physics --drift --camera-noise "
+        "--perception markers",
+    )
     p.add_argument("--runs-dir", type=Path, default=Path("runs"))
     p.add_argument("--noise", type=float, default=0.0, help="perception false-negative rate, 0..1")
     p.add_argument("--sigma", type=float, default=0.0, help="perception position noise, metres")
@@ -149,13 +166,18 @@ def _session_args(p: argparse.ArgumentParser) -> None:
 
 
 def _config(args) -> SessionConfig:
+    real = args.realistic
+    if real and args.adapter == "fake":
+        raise SystemExit("--realistic simulates the robot's sensors: it needs --adapter sim")
     return SessionConfig(
         plan=args.plan,
         scene=args.scene,
-        adapter=args.adapter,
+        adapter=args.adapter or ("sim" if real else "fake"),
         robot=args.robot,
-        perception=args.perception,
-        locomotion="physics" if args.physics else "kinematic",
+        perception="markers" if real else args.perception,
+        locomotion="physics" if args.physics or real else "kinematic",
+        odometry="drift" if args.drift or real else "truth",
+        camera_noise=args.camera_noise or real,
         runs_dir=args.runs_dir,
         perception_noise=args.noise,
         position_sigma_m=args.sigma,

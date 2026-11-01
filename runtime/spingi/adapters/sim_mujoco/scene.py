@@ -4,8 +4,9 @@ The scene includes the robot model (G1 by default, see `spingi.robots`) and adds
 section, the ground (`terrain.py`, ADR-0015), locations (visual discs), obstacles (boxes with collision, standing
 on the ground) and objects (boxes without collision in v0). An object with a `marker_id` carries its AprilTag on
 its four side faces, so the frames the head camera renders can be read by `MarkerPerceiver` like a real camera's
-(M4.0). The generated file goes into the model folder because `<include>` and `meshdir` resolve relative to the
-main file.
+(M4.0). Landmarks are tags at known places (ADR-0016), on a post or, with `post: false`, flat on a wall or an
+obstacle; they are drawn but have no collision, so a scene keeps them off the routes. The generated file goes into
+the model folder because `<include>` and `meshdir` resolve relative to the main file.
 """
 
 from __future__ import annotations
@@ -30,6 +31,8 @@ from spingi.adapters.sim_mujoco.terrain import (
 )
 from spingi.adapters.sim_mujoco.terrain import mjcf as terrain_mjcf
 from spingi.adapters.sim_mujoco.values import SceneError, color, name, num
+from spingi.core.types import Landmark
+from spingi.scenes import parse_landmarks
 
 # Resolved from this file, never from the working directory: a folder you run `spingi` in must not supply the robot.
 MODELS_DIR = Path(__file__).resolve().parents[3] / "sim" / "models"
@@ -117,11 +120,12 @@ def compile_scene(scene: dict[str, Any], robot_file: str = "g1.xml") -> Compiled
         return top
 
     objects = _objects(scene, surface_below)
+    landmarks = _landmarks(scene, {m: n for n, (_, _, m, _) in objects.items() if m is not None})
     assets = []
-    for _, _, marker_id, _ in objects.values():
-        if marker_id is not None:
-            assets.append(f'    <texture name="tag_{marker_id}" type="cube" file="{tag_image(marker_id)}"/>')
-            assets.append(f'    <material name="tag_{marker_id}" texture="tag_{marker_id}" rgba="1 1 1 1"/>')
+    tags = [m for _, _, m, _ in objects.values() if m is not None] + [lm.marker_id for lm, _ in landmarks]
+    for marker_id in tags:
+        assets.append(f'    <texture name="tag_{marker_id}" type="cube" file="{tag_image(marker_id)}"/>')
+        assets.append(f'    <material name="tag_{marker_id}" texture="tag_{marker_id}" rgba="1 1 1 1"/>')
     ter_assets, ter_geoms = terrain_mjcf(terrain, spec) if terrain is not None else ([], [])
     outdoor = terrain is not None and spec.surface != "floor"
     parts: list[str] = [
@@ -135,7 +139,7 @@ def compile_scene(scene: dict[str, Any], robot_file: str = "g1.xml") -> Compiled
         ),
         f'    <global azimuth="140" elevation="-20" offwidth="{OFFSCREEN_SIZE[0]}" offheight="{OFFSCREEN_SIZE[1]}"/>',
         '    <quality shadowsize="4096"/>',
-        '    <map haze="0.15" zfar="200"/>',
+        '    <map haze="0.15"/>',  # clipping planes: set in metres by the adapter
         "  </visual>",
         "  <asset>",
         (
@@ -195,10 +199,11 @@ def compile_scene(scene: dict[str, Any], robot_file: str = "g1.xml") -> Compiled
         )
     for n, ((x, y, z), (sx, sy, sz), marker_id, rgb) in objects.items():
         # One static body per object, moved by the adapter (kinematic grasp): the box and its tag decals move together.
+        # Massless: the tracking camera follows the centre of mass of whatever has one, and that must be the robot.
         parts.append(f'    <body name="objb_{n}" pos="{x} {y} {z}">')
         parts.append(
             f'      <geom name="obj_{n}" type="box" size="{sx / 2} {sy / 2} {sz / 2}" rgba="{_rgba(rgb)}" '
-            'contype="0" conaffinity="0"/>'
+            'contype="0" conaffinity="0" density="0"/>'
         )
         if marker_id is not None:
             decal, _ = marker_geometry([sx, sy, sz])
@@ -211,9 +216,11 @@ def compile_scene(scene: dict[str, Any], robot_file: str = "g1.xml") -> Compiled
             ):
                 parts.append(
                     f'      <geom name="tag_{n}_{face}" type="box" pos="{pos}" size="{size}" '
-                    f'material="tag_{marker_id}" contype="0" conaffinity="0"/>'
+                    f'material="tag_{marker_id}" contype="0" conaffinity="0" density="0"/>'
                 )
         parts.append("    </body>")
+    for lm, post in landmarks:
+        parts += _landmark_body(lm, ground(lm.pose.x, lm.pose.y), post)
     parts += ["  </worldbody>", "</mujoco>"]
     return CompiledScene(
         xml="\n".join(parts) + "\n",
@@ -244,6 +251,47 @@ def _check_geofence_inside(scene: dict[str, Any], spec: TerrainSpec) -> None:
 
 def _rgba(rgb: tuple[float, float, float]) -> str:
     return " ".join(f"{v:.3f}" for v in rgb) + " 1"
+
+
+def _landmarks(scene: dict[str, Any], object_tags: dict[int, str]) -> list[tuple[Landmark, bool]]:
+    """Validated landmarks, each with whether it stands on a post. A marker id names one tag in the scene."""
+    try:
+        landmarks = parse_landmarks(scene)
+    except (ValueError, TypeError, KeyError) as exc:  # pydantic's ValidationError is a ValueError
+        raise SceneError(f"landmarks: {exc}") from exc
+    out = []
+    for lm, raw in zip(landmarks, scene.get("landmarks") or [], strict=True):
+        tag_image(lm.marker_id)
+        if lm.marker_id in object_tags:
+            raise SceneError(f"marker_id {lm.marker_id} is used by both {object_tags[lm.marker_id]} and a landmark")
+        post = raw.get("post", True)
+        if not isinstance(post, bool):
+            raise SceneError(f"landmark {lm.marker_id}: post must be true or false")
+        out.append((lm, post))
+    return out
+
+
+def _landmark_body(lm: Landmark, ground_z: float, post: bool) -> list[str]:
+    """A tag on a white plate, facing `lm.pose.yaw`, on a grey post down to the ground unless it is on a wall. No mass:
+    the tracking camera follows the centre of mass of everything that has one, and that must be the robot."""
+    half = lm.size_m * TAG_CELLS / TAG_BLACK_CELLS / 2  # the decal carries the white quiet zone around the tag
+    yaw = lm.pose.yaw
+    out = [
+        f'    <body name="lmb_{lm.marker_id}" pos="{lm.pose.x} {lm.pose.y} {ground_z + lm.height_m}" '
+        f'quat="{math.cos(yaw / 2)} 0 0 {math.sin(yaw / 2)}">',
+        f'      <geom name="lm_{lm.marker_id}_tag" type="box" size="0.0005 {half} {half}" '
+        f'material="tag_{lm.marker_id}" contype="0" conaffinity="0" density="0"/>',
+        f'      <geom name="lm_{lm.marker_id}_plate" type="box" pos="-0.011 0 0" '
+        f'size="0.01 {half + 0.02} {half + 0.02}" rgba="0.93 0.93 0.91 1" contype="0" conaffinity="0" density="0"/>',
+    ]
+    pole = lm.height_m - half - 0.02
+    if post and pole > 0:
+        out.append(
+            f'      <geom name="lm_{lm.marker_id}_post" type="box" pos="-0.045 0 {-(half + 0.02) - pole / 2}" '
+            f'size="0.025 0.025 {pole / 2}" rgba="0.42 0.44 0.47 1" contype="0" conaffinity="0" density="0"/>'
+        )
+    out.append("    </body>")
+    return out
 
 
 def _objects(

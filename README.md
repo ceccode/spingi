@@ -50,6 +50,12 @@ By default the robot's base glides along the path with its legs still: fast and 
 uv run spingi run plans/yard_patrol.yaml --scene sim/scenes/yard_outdoor.yaml --adapter sim --robot go2 --physics --zip
 ```
 
+A walking robot does not know exactly where it is either. With `--realistic` it also gets drifting odometry, a camera with a real camera's noise and AprilTags read from its frames ([ADR-0016](adr/0016-drifting-odometry-landmarks-and-camera-noise.md)): its pose estimate drifts by a few per cent of the distance walked, and `navigate` corrects it with tags placed at known spots along the route (the scene's `landmarks`). Without the tags, drift alone makes most yard patrols fail (37 % succeed in 30 runs); with them the Go2 finished all 30, and the viewer shows where it believed it was next to where it was:
+
+```bash
+uv run spingi run plans/yard_patrol.yaml --scene sim/scenes/yard_outdoor.yaml --robot go2 --realistic --zip
+```
+
 `plans/test_track.yaml` on `sim/scenes/test_track.yaml` walks a robot over concrete, asphalt, gravel, grass, dirt, rough dirt, a 15 degree ramp and two steps, and stops where it fails: the Go2 usually finishes, the G1, whose controller was trained on flat floors only, falls early.
 
 ### 2. Replay the episode in the browser
@@ -154,7 +160,7 @@ Conventions: every architectural decision is an ADR, changed by writing a new on
 
 - **M2** (done): operator console, `spingi bench` with the sim-to-real gate, LeRobot v3.0 export, `wait_for_human`.
 - **M3** (done): LLM planner with structured output, golden episodes replayed on every commit. On the ten golden requests `claude-opus-5-5` scored 10/10, nine at the first attempt.
-- **M4.0** (in progress, no robot needed): perception on real images (AprilTag markers, exercised on MuJoCo frames), the lab safety checklist, the remaining decisions as ADRs, the p95 check of the gate, and a simulator where the robots walk with learned controllers on indoor floors and outdoor ground, so that plans meet drift, blocked paths and falls before a robot does.
+- **M4.0** (in progress, no robot needed): perception on real images (AprilTag markers, exercised on MuJoCo frames), the lab safety checklist, the remaining decisions as ADRs, the p95 check of the gate, and a simulator where the robots walk with learned controllers on indoor floors and outdoor ground, with drifting odometry corrected by AprilTag landmarks and a noisy camera, so that plans meet drift, blocked paths and falls before a robot does.
 - **M4.1** (needs a Go2 and a fenced area): one Unitree adapter on `unitree_sdk2_python`, parametrized by the robot profile, contract tests with the robot connected, sim-to-real gate on `navigate` and `inspect`.
 - **M4.2** (needs a G1): the same adapter and gate on the humanoid, then `pick` and `place` in M5.
 

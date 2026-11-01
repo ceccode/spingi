@@ -9,6 +9,13 @@
 
 Both: battery, e-stop, watchdog, rendered head camera, third-person video. Not simulated: arm dynamics (an object
 is carried kinematically, ADR-0007). Which model is loaded and how it is moved comes from a `RobotProfile` (ADR-0012).
+
+What the robot knows (ADR-0016): `pose` is the truth, which the simulator uses; `get_pose` returns the robot's
+estimate. With `odometry="drift"` (physics only) the estimate drifts as a real robot's odometry does, starting from
+where the robot was told it starts; `relocalize` corrects it. With `camera_noise` the head camera's frames are blurred,
+noisy and JPEG-compressed, and the robot's belief about its camera's focal length is slightly off. With `log`, the end
+of every walk is recorded as `sim.arrival`: where the robot really stopped against where it believes it stopped, for
+the gate; the runtime never reads it.
 """
 
 from __future__ import annotations
@@ -21,6 +28,7 @@ from typing import Literal
 import mujoco
 import numpy as np
 
+from spingi.adapters.sim_mujoco.camera import CameraNoise, degrade
 from spingi.adapters.sim_mujoco.locomotion import (
     FollowGains,
     FollowState,
@@ -30,12 +38,14 @@ from spingi.adapters.sim_mujoco.locomotion import (
     make_walker,
     ramp,
 )
+from spingi.adapters.sim_mujoco.odometry import Odometry, OdometryErrors, as_pose, compose, inverse, planar
 from spingi.adapters.sim_mujoco.scene import OFFSCREEN_SIZE, write_scene
 from spingi.adapters.sim_mujoco.terrain import fill_heights
 from spingi.core.ports import (
     Arm,
     CameraModel,
     CapabilityMissing,
+    EventSink,
     Frame,
     GripResult,
     JointState,
@@ -46,6 +56,7 @@ from spingi.core.types import Pose2D, Pose3D
 from spingi.robots import RobotProfile, get_profile
 
 Locomotion = Literal["kinematic", "physics"]
+OdometryMode = Literal["truth", "drift"]
 FOOT_FRICTION = 0.05  # below any ground's: MuJoCo takes the larger of the two, so the ground decides the grip
 
 EstopEngaged = RobotEstopped  # kept as an alias for existing imports
@@ -59,6 +70,7 @@ class SimAdapter:
     YIELD_EVERY = 10  # ticks between cooperative yields in fast mode (0.2 s of simulated time)
     IMAGE_CACHE = 4  # rendered head-camera images kept in memory for the perceiver, by frame id
     VIDEO_SIZE = (640, 480)
+    ZNEAR_M, ZFAR_M = 0.03, 200.0  # what the cameras draw: from 3 cm to 200 m
     # physics locomotion
     SETTLE_S = 0.5  # standing still after the reset, before the run starts: the feet find the ground
     STOP_SETTLE_S = 0.3  # zero command after arriving, so the robot stands on both feet before reporting
@@ -92,6 +104,9 @@ class SimAdapter:
         locomotion: Locomotion = "kinematic",
         start: Pose2D | None = None,
         seed: int = 0,
+        odometry: OdometryMode = "truth",
+        camera_noise: bool = False,
+        log: EventSink | None = None,
     ) -> None:
         self.profile = get_profile(robot)
         self.capabilities = self.profile.capabilities
@@ -104,11 +119,19 @@ class SimAdapter:
             xml_path.unlink(missing_ok=True)  # compiled into the model; the file is no longer needed
         if self.scene.terrain is not None:
             fill_heights(self.model, self.scene.terrain, self.scene.terrain_spec)
+        # MJCF gives the cameras' clipping planes relative to the model's size: in a 40 m yard the head camera would
+        # not draw anything nearer than half a metre, such as the cabinet it inspects. In metres instead.
+        self.model.vis.map.znear = self.ZNEAR_M / self.model.stat.extent
+        self.model.vis.map.zfar = self.ZFAR_M / self.model.stat.extent
         self.data = mujoco.MjData(self.model)
         if self.model.nkey > 0:
             mujoco.mj_resetDataKeyframe(self.model, self.data, 0)
         if locomotion not in ("kinematic", "physics"):
             raise ValueError(f"unknown locomotion {locomotion!r}: kinematic or physics")
+        if odometry not in ("truth", "drift"):
+            raise ValueError(f"unknown odometry {odometry!r}: truth or drift")
+        if odometry == "drift" and locomotion != "physics":
+            raise ValueError("odometry drift needs physics locomotion: the kinematic base moves exactly")
         self.locomotion: Locomotion = locomotion
         self.walker: Walker | None = None
         if locomotion == "physics":
@@ -144,6 +167,12 @@ class SimAdapter:
         self._objects_dirty = False
 
         self.pose = start or Pose2D(x=float(self.data.qpos[0]), y=float(self.data.qpos[1]), yaw=0.0)
+        told = self.pose  # where the robot is told it starts; with drift that is all it knows
+        self.log = log
+        self.odometry = Odometry(OdometryErrors() if odometry == "drift" else None, np.random.default_rng([seed, 1]))
+        self.camera_noise = CameraNoise() if camera_noise else None
+        self._camera_rng = np.random.default_rng([seed, 2])  # its own stream: frames taken do not change the drift
+        self._focal_scale = 1.0 + (self._camera_rng.normal(0.0, self.camera_noise.focal_error) if camera_noise else 0.0)
         if self.walker is not None:
             # A real robot never starts exactly on its mark: a few centimetres and degrees, different per seed, so
             # that repeated physics runs (bench) differ the way repeated real runs do.
@@ -181,11 +210,14 @@ class SimAdapter:
             for _ in range(round(self.SETTLE_S / dt)):  # before the run: not counted in its time
                 self.walker.step(self.data, np.zeros(3))
             self._read_physics_pose()
+        if odometry == "drift":  # the start jitter and the settling are errors the robot does not know about
+            self.odometry.relocalize(planar(self.pose), planar(told))
         self.trajectory: list[dict] = []
         self._sample(include_objects=True)
 
     # --- locomotion --------------------------------------------------------
     async def walk_to(self, pose: Pose2D, max_speed: float) -> None:
+        """`pose` is in the robot's own frame, like every pose the runtime handles: where it believes things are."""
         self._record("walk_to", pose=pose.model_dump(), max_speed=max_speed)
         self._guard()
         speed = min(max_speed, self.speed_cap)
@@ -194,7 +226,12 @@ class SimAdapter:
         self.mode = "walking"
         if self.walker is not None:
             await self._walk_physics(pose, speed)
-            return
+        else:
+            # The kinematic base never drifts: the target maps to the true frame once, through the last correction.
+            await self._walk_kinematic(as_pose(compose(inverse(self.odometry.offset), planar(pose))), speed)
+        self._report_arrival(pose)
+
+    async def _walk_kinematic(self, pose: Pose2D, speed: float) -> None:
         step = speed * self.dt
         while self.mode == "walking":
             if self._watchdog_expired():
@@ -222,8 +259,8 @@ class SimAdapter:
         self._sample()
 
     async def _walk_physics(self, pose: Pose2D, speed: float) -> None:
-        """Closed loop on the simulated pose: velocity commands to the walking controller until the robot is there,
-        an obstacle holds it, it stops making progress, or it falls."""
+        """Closed loop on the robot's pose estimate, as on the real robot: velocity commands to the walking controller
+        until the robot believes it is there, an obstacle holds it, it stops making progress, or it falls."""
         state, gains = FollowState(), FollowGains()
         target = (pose.x, pose.y, pose.yaw)
         best, best_t, arrived = math.inf, self.sim_time_s, False
@@ -233,7 +270,8 @@ class SimAdapter:
                 self.blocked_by = "watchdog"
                 await self.stop()
                 return
-            wanted = follow(self.pose.x, self.pose.y, self.pose.yaw, target, speed, state, gains)
+            est = self.estimate
+            wanted = follow(est.x, est.y, est.yaw, target, speed, state, gains)
             if wanted is None:
                 break
             self._wanted = self.walker.clip_command(*wanted)
@@ -247,11 +285,8 @@ class SimAdapter:
                 return
             if state.arrived != arrived:  # from walking to turning: progress is measured on the heading now
                 arrived, best, best_t = state.arrived, math.inf, self.sim_time_s
-            remaining = (
-                abs(_wrap(pose.yaw - self.pose.yaw))
-                if arrived
-                else math.hypot(pose.x - self.pose.x, pose.y - self.pose.y)
-            )
+            est = self.estimate
+            remaining = abs(_wrap(pose.yaw - est.yaw)) if arrived else math.hypot(pose.x - est.x, pose.y - est.y)
             if remaining < best - 0.03:
                 best, best_t = remaining, self.sim_time_s
             elif self.sim_time_s - best_t > self.STUCK_S:
@@ -294,7 +329,36 @@ class SimAdapter:
         self._sample()
 
     async def get_pose(self) -> Pose2D:
-        return self.pose
+        return self.estimate
+
+    async def relocalize(self, pose: Pose2D) -> None:
+        self._record("relocalize", pose=pose.model_dump())
+        self.odometry.relocalize(planar(self.pose), planar(pose))
+        self._sample()
+
+    @property
+    def estimate(self) -> Pose2D:
+        """Where the robot believes it is; `pose` is where it is."""
+        return as_pose(self.odometry.estimate(planar(self.pose)))
+
+    def believed(self, x: float, y: float, yaw: float = 0.0) -> tuple[float, float, float]:
+        """A true position and heading as the robot sees them, in its estimated frame: a perceiver places what the
+        camera sees from where the robot believes the camera is."""
+        return compose(self.odometry.offset, (x, y, yaw))
+
+    def _report_arrival(self, target: Pose2D) -> None:
+        if self.log is None:
+            return
+        est = self.estimate
+        self.log.emit(
+            "sim.arrival",
+            target=_xyyaw(target),
+            truth=_xyyaw(self.pose),
+            estimate=_xyyaw(est),
+            error_m=round(self.pose.distance_to(est), 3),
+            miss_m=round(self.pose.distance_to(target), 3),
+            **({"blocked_by": self.blocked_by} if self.blocked_by else {}),
+        )
 
     # --- manipulation (v0: no real arm movement) ---------------------------
     async def move_arm(self, arm: Arm, target: Pose3D, duration_s: float) -> None:
@@ -341,16 +405,24 @@ class SimAdapter:
         )
         img = self._render(name, height, width)
         if img is not None:
+            jpeg = None
+            if self.camera_noise is not None:
+                img, jpeg = degrade(img, self._camera_rng, self.camera_noise)
             self._images[frame.id] = img
             while len(self._images) > self.IMAGE_CACHE:
                 del self._images[next(iter(self._images))]
             if self.record_dir is not None:
-                import imageio.v3 as iio
-
-                out = self.record_dir / "frames" / f"{frame.id}.png"
+                # Relative to the episode folder, no local paths in episodes. A noisy camera writes the JPEG it sent,
+                # as the robot streams it; a clean render stays a lossless PNG.
+                frame.data_ref = f"frames/{frame.id}.{'jpg' if jpeg is not None else 'png'}"
+                out = self.record_dir / frame.data_ref
                 out.parent.mkdir(parents=True, exist_ok=True)
-                iio.imwrite(out, img)
-                frame.data_ref = f"frames/{frame.id}.png"  # relative to the episode folder: no local paths in episodes
+                if jpeg is not None:
+                    out.write_bytes(jpeg)
+                else:
+                    import imageio.v3 as iio
+
+                    iio.imwrite(out, img)
         return frame
 
     def image(self, frame_id: str) -> np.ndarray | None:
@@ -358,13 +430,19 @@ class SimAdapter:
         return self._images.get(frame_id)
 
     def _camera_model(self, name: str, width: int, height: int) -> CameraModel | None:
+        """The camera as the robot believes it is: placed by the pose estimate (the IMU gives the true tilt), with
+        the focal length of its calibration."""
         cam = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_CAMERA, name)
         if cam < 0:
             return None
         fovy = math.radians(float(self.model.cam_fovy[cam]))
-        f = (height / 2) / math.tan(fovy / 2)  # MuJoCo cameras have square pixels and a vertical field of view
+        f = (height / 2) / math.tan(fovy / 2) * self._focal_scale  # square pixels, vertical field of view
+        ox, oy, oyaw = self.odometry.offset
+        c, s = math.cos(oyaw), math.sin(oyaw)
+        turn = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
         # MuJoCo camera axes: x right, y up, looking along -z. OpenCV: x right, y down, looking along +z.
-        rot = self.data.cam_xmat[cam].reshape(3, 3) @ np.diag([1.0, -1.0, -1.0])
+        rot = turn @ self.data.cam_xmat[cam].reshape(3, 3) @ np.diag([1.0, -1.0, -1.0])
+        pos = turn @ self.data.cam_xpos[cam] + np.array([ox, oy, 0.0])
         return CameraModel(
             fx=f,
             fy=f,
@@ -372,7 +450,7 @@ class SimAdapter:
             cy=height / 2,
             width=width,
             height=height,
-            position=tuple(float(v) for v in self.data.cam_xpos[cam]),
+            position=tuple(float(v) for v in pos),
             rotation=tuple(float(v) for v in rot.ravel()),
         )
 
@@ -568,6 +646,9 @@ class SimAdapter:
             before = self.pose
             self.walker.step(self.data, self._command)
             self._read_physics_pose()
+            ground = self.scene.terrain
+            surface = ground.surface_at(self.pose.x, self.pose.y) if ground is not None else None
+            self.odometry.update(planar(before), planar(self.pose), self.dt, surface)
             self.battery_pct = max(0.0, self.battery_pct - before.distance_to(self.pose) * self.battery_drain_per_m)
             if self.fell is None:
                 self._check_fall()
@@ -608,6 +689,8 @@ class SimAdapter:
         if self.walker is not None or self.scene.terrain is not None:  # the base leaves the flat floor
             robot.update(z=round(self.base_z, 4), roll=round(self.roll, 4), pitch=round(self.pitch, 4))
         row = {"t": round(self.sim_time_s, 3), "robot": robot, "battery_pct": round(self.battery_pct, 2)}
+        if max(abs(v) for v in self.odometry.offset) > 1e-4:  # the robot believes it is elsewhere
+            row["estimate"] = {k: round(v, 4) for k, v in zip(("x", "y", "yaw"), planar(self.estimate), strict=True)}
         if include_objects:
             row["objects"] = self.object_positions()
         if self.walker is not None:
@@ -708,3 +791,7 @@ class SimClock:
 
 def _wrap(a: float) -> float:
     return (a + math.pi) % (2 * math.pi) - math.pi
+
+
+def _xyyaw(p: Pose2D) -> dict[str, float]:
+    return {"x": round(p.x, 3), "y": round(p.y, 3), "yaw": round(p.yaw, 3)}

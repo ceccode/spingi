@@ -26,11 +26,12 @@ terrain:
 locations:
   dock:      { pose: { x: 0.0, y: 0.0, yaw: 0.0 } }
   yard_gate: { pose: { x: 11.0, y: -0.5, yaw: 0.0 } }
+  track_mid: { pose: { x: 16.0, y: -0.8, yaw: 0.0 } }   # halfway down the dirt track: a tag to correct the drift
   pump_A:    { pose: { x: 20.6, y: -1.0, yaw: 0.0 } }
   ramp_foot: { pose: { x: 11.0, y: 4.5, yaw: 0.0 } }
   ramp_top:  { pose: { x: 16.6, y: 4.5, yaw: 0.0 } }
   dock_B:    { pose: { x: 18.6, y: 4.5, yaw: 0.0 } }
-  door_C:    { pose: { x: 6.0, y: 6.6, yaw: 1.57 }, tolerance_m: 0.25 }
+  door_C:    { pose: { x: 6.0, y: 6.4, yaw: 1.57 }, tolerance_m: 0.25 }   # 1 m from the sign: in the camera's view
   kerb_front: { pose: { x: 6.0, y: 4.0, yaw: 1.57 } }   # square to the kerb: a robot steps up a kerb head on
 obstacles:
   - { x: 6.0, y: 8.2, w: 16.0, d: 1.4, h: 3.5, color: "#b9b4aa" }    # building
@@ -43,13 +44,32 @@ obstacles:
 objects:
   gauge_01:        { cls: gauge, marker_id: 21, size: [0.06, 0.24, 0.24], pose: { x: 21.57, y: -1.0, z: 0.55 }, color: "#e8e8e8" }
   extinguisher_03: { cls: extinguisher, marker_id: 23, size: [0.24, 0.24, 0.5], pose: { x: 19.7, y: 4.5, z: 0.70 }, color: "#c62828" }
-  sign_05:         { cls: door_sign, marker_id: 25, size: [0.3, 0.04, 0.3], pose: { x: 6.0, y: 7.47, z: 0.95 }, color: "#f2c230" }
+  sign_05:         { cls: door_sign, marker_id: 25, size: [0.3, 0.1, 0.3], pose: { x: 6.0, y: 7.45, z: 0.95 }, color: "#f2c230" }
+# AprilTags at known places, on posts beside the routes or flat on a wall (`post: false`): where the robot stops, one
+# is 2-4 m ahead of it, so that it can correct its drifting pose estimate (ADR-0016). `facing` is where the tag looks.
+landmarks:
+  - { marker_id: 40, x: 2.3, y: -1.2, facing: 2.66, size_m: 0.3 }       # seen from the dock
+  - { marker_id: 41, x: 13.2, y: 0.7, facing: -2.642, size_m: 0.3 }     # yard gate, towards the pump
+  - { marker_id: 54, x: 18.3, y: 0.4, facing: -2.66, size_m: 0.3 }      # track halfway, towards the pump
+  - { marker_id: 55, x: 13.8, y: -1.9, facing: 0.464, size_m: 0.3 }     # track halfway, on the way back
+  - { marker_id: 42, x: 12.1, y: 1.8, facing: -2.017, size_m: 0.3 }     # yard gate, towards the ramp
+  - { marker_id: 43, x: 21.59, y: -0.62, facing: 3.1416, height_m: 0.45, size_m: 0.16, post: false }  # pump cabinet,
+  - { marker_id: 53, x: 21.59, y: -1.38, facing: 3.1416, height_m: 0.45, size_m: 0.16, post: false }  # either side
+  - { marker_id: 44, x: 13.3, y: 5.7, facing: -2.66, size_m: 0.3 }      # ramp foot, towards the ramp
+  - { marker_id: 50, x: 19.0, y: 5.9, facing: -2.613, size_m: 0.3 }     # ramp top, towards dock B
+  - { marker_id: 45, x: 20.39, y: 5.4, facing: 3.1416, height_m: 0.4, size_m: 0.3, post: false }  # pallets, at dock B
+  - { marker_id: 46, x: 14.3, y: 3.0, facing: 0.578, size_m: 0.3 }      # ramp top, on the way down
+  - { marker_id: 47, x: 8.9, y: 3.4, facing: 0.482, size_m: 0.3 }       # ramp foot, towards the kerb
+  - { marker_id: 51, x: 7.2, y: 5.9, facing: -2.134, size_m: 0.3 }      # kerb front, towards the door
+  - { marker_id: 48, x: 6.55, y: 7.49, facing: -1.5708, height_m: 0.45, size_m: 0.3, post: false }  # wall at door C,
+  - { marker_id: 52, x: 5.45, y: 7.49, facing: -1.5708, height_m: 0.45, size_m: 0.3, post: false }  # either side
+  - { marker_id: 49, x: 3.6, y: 3.6, facing: 0.165, size_m: 0.3 }       # kerb front, on the way back
 safety:
   geofence: { x_min: -2.5, x_max: 24.5, y_min: -7.5, y_max: 7.4 }
   max_speed: 1.0
   min_battery_pct: 5
 routes:
-  dock->pump_A: [yard_gate]
-  pump_A->dock_B: [yard_gate, ramp_foot, ramp_top]
+  dock->pump_A: [yard_gate, track_mid]
+  pump_A->dock_B: [track_mid, yard_gate, ramp_foot, ramp_top]
   dock_B->door_C: [ramp_top, ramp_foot, kerb_front]
   door_C->dock: [kerb_front]

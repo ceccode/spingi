@@ -34,6 +34,18 @@ locations:
   end_step_10:  { pose: { x: 42.0, y: 0.0, yaw: 0.0 }, tolerance_m: 0.3 }
   end_step_15:  { pose: { x: 47.0, y: 0.0, yaw: 0.0 }, tolerance_m: 0.3 }
 obstacles: []
+# A tag 2.6 m ahead of every stop, beside the course, alternately left and right: the robot corrects its drifting
+# pose estimate at each one (ADR-0016). `facing` is where the tag looks: back towards the stop.
+landmarks:
+  - { marker_id: 1, x: 2.3, y: 1.2, facing: -2.661, size_m: 0.3 }   # seen from start
+  - { marker_id: 2, x: 10.8, y: -1.2, facing: 2.661, size_m: 0.3 }   # seen from end_asphalt
+  - { marker_id: 3, x: 15.8, y: 1.2, facing: -2.661, size_m: 0.3 }   # seen from end_gravel
+  - { marker_id: 4, x: 20.8, y: -1.2, facing: 2.661, size_m: 0.3 }   # seen from end_grass
+  - { marker_id: 5, x: 25.8, y: 1.2, facing: -2.661, size_m: 0.3 }   # seen from end_dirt
+  - { marker_id: 6, x: 30.8, y: -1.2, facing: 2.661, size_m: 0.3 }   # seen from end_rough
+  - { marker_id: 7, x: 39.8, y: 1.2, facing: -2.661, size_m: 0.3 }   # seen from end_ramps
+  - { marker_id: 8, x: 44.3, y: -1.2, facing: 2.661, size_m: 0.3 }   # seen from end_step_10
+  - { marker_id: 9, x: 49.3, y: 1.2, facing: -2.661, size_m: 0.3 }   # seen from end_step_15
 safety:
   geofence: { x_min: -1.5, x_max: 51.5, y_min: -2.5, y_max: 2.5 }
   max_speed: 1.0

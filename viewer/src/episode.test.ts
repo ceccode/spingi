@@ -1,8 +1,8 @@
 import { strToU8 } from "fflate";
 import { describe, expect, it } from "vitest";
 import {
-  checkTrajectory, DEFAULT_ROBOT_MODEL, describeEvent, eventTime, jointsAt, normalizePaths, objectsAt, parseEpisodeFiles,
-  parseJsonl, poseAt, robotJointsUrl, robotModelUrl, wrapAngle, type Sample,
+  checkTrajectory, DEFAULT_ROBOT_MODEL, describeEvent, estimateAt, eventTime, jointsAt, landmarksOf, normalizePaths,
+  objectsAt, parseEpisodeFiles, parseJsonl, poseAt, robotJointsUrl, robotModelUrl, wrapAngle, type Sample,
 } from "./episode";
 
 describe("robotModelUrl", () => {
@@ -122,5 +122,53 @@ describe("physics episodes", () => {
   });
   it("finds the joint table next to the model", () => {
     expect(robotJointsUrl(robotModelUrl("unitree_go2"))).toBe("/models/go2.joints.json");
+  });
+});
+
+describe("what the robot believed (drifting odometry)", () => {
+  const drift: Sample[] = [
+    { t: 0, robot: { x: 0, y: 0, yaw: 0, mode: "idle" } },
+    { t: 1, robot: { x: 1, y: 0, yaw: 0, mode: "walking" }, estimate: { x: 1, y: 0.2, yaw: 0.1 } },
+    { t: 2, robot: { x: 2, y: 0, yaw: 0, mode: "walking" }, estimate: { x: 2, y: 0.4, yaw: 0.2 } },
+  ];
+  it("interpolates the believed pose, and has none while the belief was the truth", () => {
+    expect(estimateAt(drift, 0.5)).toBeNull();
+    const e = estimateAt(drift, 1.5)!;
+    expect(e.y).toBeCloseTo(0.3);
+    expect(e.yaw).toBeCloseTo(0.15);
+    expect(estimateAt(drift, 9)!.x).toBe(2);
+  });
+  it("refuses a believed pose that is not three numbers", () => {
+    expect(() => checkTrajectory([{ ...drift[1]!, estimate: { x: 1, y: NaN, yaw: 0 } }])).toThrow(/malformed/);
+    expect(() => checkTrajectory([{ ...drift[1]!, estimate: "here" as unknown as Sample["estimate"] }])).toThrow(/malformed/);
+  });
+  it("reads the scene's landmarks with their defaults and skips malformed ones", () => {
+    const lms = landmarksOf({
+      landmarks: [
+        { marker_id: 40, x: 2.6, y: -1.3, facing: 2.68 },
+        { marker_id: 41, x: 1, y: 1, facing: 0, size_m: 0.3, height_m: 0.45, post: false },
+        { marker_id: "x", x: 0, y: 0 }, { marker_id: 42, x: "1", y: 0 }, { marker_id: 43, x: 0, y: 0, size_m: 50 }, null,
+      ],
+    });
+    expect(lms.map((l) => l.markerId)).toEqual([40, 41]);
+    expect(lms[0]).toMatchObject({ height: 0.6, size: 0.2, post: true });
+    expect(lms[1]).toMatchObject({ height: 0.45, size: 0.3, post: false });
+    expect(landmarksOf({ landmarks: "nope" })).toEqual([]);
+  });
+  it("describes corrections, missed tags and the simulator's truth", () => {
+    const base = { ts: 0, run_id: "r" };
+    expect(describeEvent({ ...base, kind: "robot.relocalized", at: "dock", marker_id: 40, correction_m: 0.214, correction_rad: 0.04 }))
+      .toBe("tag 40 seen at dock: pose corrected by 0.21 m, 2.3°");
+    expect(describeEvent({ ...base, kind: "localization.missed", at: "pump_A", markers: [43, 53] })).toBe("at pump_A: tag 43, 53 expected, not seen");
+    expect(describeEvent({ ...base, kind: "sim.arrival", miss_m: 0.31, error_m: 0.29 })).toBe("simulator: stopped 0.31 m from the target, belief off by 0.29 m");
+  });
+  it("shows JPEG frames from a noisy camera as well as PNG ones", () => {
+    const manifest = { format_version: "0.1", run_id: "r", created_at: "", robot: { model: "unitree_go2", adapter: "sim_mujoco" }, plan_id: "p", status: "success", steps_completed: 0, steps_total: 0, duration_s: 0, files: [] };
+    const ep = parseEpisodeFiles({
+      "manifest.json": strToU8(JSON.stringify(manifest)), "scene.yaml": strToU8("{}"), "plan.yaml": strToU8("id: p\nsteps: []\n"),
+      "events.jsonl": strToU8(""), "frames/sim-1.jpg": strToU8("j"), "frames/sim-2.png": strToU8("p"), "frames/notes.txt": strToU8("t"),
+    });
+    expect([...ep.frames.keys()].sort()).toEqual(["sim-1", "sim-2"]);
+    expect(ep.frames.get("sim-1")!.type).toBe("image/jpeg");
   });
 });

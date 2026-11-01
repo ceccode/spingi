@@ -29,6 +29,7 @@ from spingi.skills import default_registry
 AdapterKind = Literal["fake", "sim"]
 PerceptionKind = Literal["truth", "markers"]
 LocomotionKind = Literal["kinematic", "physics"]
+OdometryKind = Literal["truth", "drift"]
 
 MONITOR_PERIOD_S = 0.1  # robot time between safety checks (fast simulation yields every 0.2 s)
 ESTOP_TIMEOUT_S = 2.0  # wall-clock limit for a stop or e-stop command to return
@@ -46,6 +47,10 @@ class SessionConfig:
     # kinematic: the base glides along the path (fast, exactly repeatable); physics: the robot walks with a learned
     # controller on the scene's ground and can be blocked or fall (sim adapter only, ADR-0015).
     locomotion: LocomotionKind = "kinematic"
+    # truth: the robot knows exactly where it is; drift: its pose estimate drifts like a real robot's odometry and
+    # only landmarks correct it (physics locomotion only, ADR-0016).
+    odometry: OdometryKind = "truth"
+    camera_noise: bool = False  # blurred, noisy, JPEG-compressed head-camera frames (sim adapter, ADR-0016)
     runs_dir: Path = Path("runs")
     perception_noise: float = 0.0  # false-negative rate of the perceiver
     position_sigma_m: float = 0.0  # gaussian noise on perceived positions
@@ -104,6 +109,9 @@ async def run_session(cfg: SessionConfig, human: HumanGateway, log: EventLog | N
             locomotion=cfg.locomotion,
             start=state.robot.pose,
             seed=cfg.seed,
+            odometry=cfg.odometry,
+            camera_noise=cfg.camera_noise,
+            log=log,
         )
         if cfg.perception == "markers":
             from spingi.perception.markers import MarkerPerceiver
@@ -118,6 +126,8 @@ async def run_session(cfg: SessionConfig, human: HumanGateway, log: EventLog | N
             raise ValueError("perception 'markers' reads camera images: it needs the sim adapter")
         if cfg.locomotion == "physics":
             raise ValueError("locomotion 'physics' needs the sim adapter")
+        if cfg.odometry == "drift" or cfg.camera_noise:
+            raise ValueError("odometry drift and camera noise are simulated sensors: they need the sim adapter")
         robot = FakeAdapter(start=state.robot.pose, watchdog_ms=cfg.watchdog_ms, capabilities=profile.capabilities)
         perceiver = FakePerceiver(
             objects=list(state.objects.values()), false_negative_rate=cfg.perception_noise, seed=cfg.seed
@@ -207,6 +217,8 @@ async def run_session(cfg: SessionConfig, human: HumanGateway, log: EventLog | N
                 seed=cfg.seed,
                 perception=cfg.perception,
                 locomotion=cfg.locomotion,
+                odometry=cfg.odometry,
+                camera_noise=cfg.camera_noise,
             ),
         )
         archive = zip_episode(run_dir) if cfg.zip_episode else None

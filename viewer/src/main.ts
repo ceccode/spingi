@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import {
-  DEFAULT_ROBOT_MODEL, describeEvent, episodeDuration, eventTime, jointsAt, loadEpisodeFromZip, manifestRows,
+  DEFAULT_ROBOT_MODEL, describeEvent, episodeDuration, estimateAt, eventTime, jointsAt, loadEpisodeFromZip, manifestRows,
   MAX_ZIP_BYTES, objectsAt, poseAt, readCapped, robotJointsUrl, robotModelUrl, safeEpisodeUrl, type Episode,
 } from "./episode";
 import { Player } from "./player";
@@ -93,13 +93,16 @@ player.onTick((t) => {
 function render(episode: Episode, t: number): void {
   const pose = poseAt(episode.trajectory, t);
   world.setRobotPose(pose);
+  const belief = estimateAt(episode.trajectory, t);
+  world.setEstimate(belief, pose);
   world.setJoints(jointsAt(episode.trajectory, t));
   world.setObjectPositions(objectsAt(episode.trajectory, t));
   ui.scrub.value = String(t / player.duration);
   ui.clock.textContent = `${t.toFixed(1)} s`;
   ui.play.textContent = player.playing ? "❚❚" : "▶";
   const height = pose.z !== undefined ? `  z ${pose.z.toFixed(2)}` : "";
-  ui.hud.textContent = `t ${t.toFixed(2)} s\nx ${pose.x.toFixed(2)}  y ${pose.y.toFixed(2)}${height}  yaw ${pose.yaw.toFixed(2)}\n${pose.mode}`;
+  const off = belief ? `\nbelieves it is ${Math.hypot(belief.x - pose.x, belief.y - pose.y).toFixed(2)} m away (orange)` : "";
+  ui.hud.textContent = `t ${t.toFixed(2)} s\nx ${pose.x.toFixed(2)}  y ${pose.y.toFixed(2)}${height}  yaw ${pose.yaw.toFixed(2)}\n${pose.mode}${off}`;
   let current = -1;
   const items = ui.events.children;
   for (let i = 0; i < items.length; i++) {
@@ -191,7 +194,7 @@ async function show(ep: Episode): Promise<void> {
   world.setRobotPose(start);
   world.robotWorldPosition(lastTarget);
   controls.target.copy(lastTarget);
-  camera.position.set(lastTarget.x - 3.5, lastTarget.y + 2.5, lastTarget.z + 4);
+  camera.position.set(lastTarget.x - 3.5, lastTarget.y + 6, lastTarget.z + 4); // looking down over containers and racks
 }
 
 async function loadZip(buf: ArrayBuffer): Promise<void> {

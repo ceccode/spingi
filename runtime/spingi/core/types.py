@@ -53,6 +53,16 @@ class ObjectRef(Strict):
     marker_id: int | None = None
 
 
+class Landmark(Strict):
+    """An AprilTag fixed at a known place, on a post or a wall: seeing it tells the robot where it really is. Its
+    pose is the tag's centre on the ground plane and the direction its face looks (yaw)."""
+
+    marker_id: int = Field(ge=0)
+    pose: Pose2D
+    height_m: float = Field(default=0.6, gt=0, le=3, description="height of the tag's centre above the ground")
+    size_m: float = Field(default=0.2, gt=0, le=0.6, description="side of the tag's black square")
+
+
 class RobotState(Strict):
     pose: Pose2D
     battery_pct: float = 100.0
@@ -65,6 +75,7 @@ class WorldState(BaseModel):
 
     locations: dict[str, Location] = Field(default_factory=dict)
     objects: dict[str, ObjectRef] = Field(default_factory=dict)
+    landmarks: list[Landmark] = Field(default_factory=list)  # part of the map, like the locations: never changed
     robot: RobotState
     ts: float = 0.0
 

@@ -55,6 +55,9 @@ async def bench(
         adapter=base.adapter,
         robot=get_profile(base.robot).name,
         locomotion=base.locomotion,
+        perception=base.perception,
+        odometry=base.odometry,
+        camera_noise=base.camera_noise,
         perception_noise=base.perception_noise,
         position_sigma_m=base.position_sigma_m,
         gate=gate,
@@ -74,9 +77,20 @@ def format_report(report: BenchReport) -> str:
 
     g = report.gate
     c = report.checks
+    realism = [
+        name
+        for name, on in (
+            ("physics", report.locomotion == "physics"),
+            ("odometry drift", report.odometry == "drift"),
+            ("camera noise", report.camera_noise),
+            ("markers", report.perception == "markers"),
+        )
+        if on
+    ]
+    setting = " (" + ", ".join(realism) + ")" if realism else ""
     lines = [
-        f"plan {report.plan_id} · scene {report.scene} · {report.robot} on {report.adapter}"
-        f"{' (physics)' if report.locomotion == 'physics' else ''} · {report.runs} runs",
+        f"plan {report.plan_id} · scene {report.scene} · {report.robot} on {report.adapter}{setting}"
+        f" · {report.runs} runs",
         f"perception noise: false negatives {report.perception_noise:.0%}, position sigma {report.position_sigma_m} m",
         "",
         f"  {mark(c['success_rate'])}  success rate        {report.success_rate:.1%}"
@@ -96,6 +110,18 @@ def format_report(report: BenchReport) -> str:
             f"{status}  simulated time       p50 {report.sim_time_p50_s:.1f} s · p95 {report.sim_time_p95_s:.1f} s"
             f"{budget}"
         )
+    if report.pose_error_p95_m:  # nothing to say when the robot always knew where it was
+        lines.append(
+            f"        pose error           worst of each run p50 {report.pose_error_p50_m:.2f} m · "
+            f"p95 {report.pose_error_p95_m:.2f} m   (where it was against where it believed it was)"
+        )
+    if report.relocalizations_per_run or report.landmarks_missed_per_run:
+        lines.append(
+            f"        landmark fixes       {report.relocalizations_per_run:.1f} per run · "
+            f"{report.landmarks_missed_per_run:.1f} expected and not seen"
+        )
+    if report.anomalies_per_run:
+        lines.append(f"        anomalies reported   {report.anomalies_per_run:.2f} per run   (by inspections)")
     if report.failures:
         lines.append(f"        failures             {json.dumps(report.failures)}")
     lines += ["", "GATE PASSED" if report.passed else "GATE FAILED"]

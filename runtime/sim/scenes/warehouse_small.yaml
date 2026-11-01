@@ -16,6 +16,15 @@ obstacles:
   - { x: 1.5, y: 5.0, w: 1.0, d: 1.0, h: 1.0 }   # pallet left in the way of the straight line dock -> workstation
 objects:
   red_box_01: { cls: red_box, marker_id: 7, pose: { x: 4.75, y: 3.0, z: 0.95 } }
+# AprilTags at known places, for the robot to correct its drifting pose estimate (ADR-0016). `facing` is where the
+# tag looks; `post: false` is a tag flat on a surface (a rack).
+landmarks:
+  - { marker_id: 30, x: 2.6, y: -0.9, facing: 2.808, size_m: 0.3 }                                  # seen from the dock
+  - { marker_id: 31, x: 4.84, y: 2.5, facing: 3.1416, height_m: 1.1, size_m: 0.16, post: false }  # rack A, either
+  - { marker_id: 35, x: 4.84, y: 3.5, facing: 3.1416, height_m: 1.1, size_m: 0.16, post: false }  # side of the box
+  - { marker_id: 32, x: 6.4, y: 7.6, facing: -2.554, size_m: 0.3 }                                  # aisle out, to the workstation
+  - { marker_id: 33, x: 9.6, y: 6.2, facing: 2.678, size_m: 0.3, height_m: 1.2 }                    # behind the workstation table
+  - { marker_id: 34, x: 1.6, y: -0.9, facing: 0.359, size_m: 0.3 }                                  # aisle in, on the way back
 safety:
   geofence: { x_min: -1.0, x_max: 10.0, y_min: -1.0, y_max: 9.0 }
   max_speed: 0.8

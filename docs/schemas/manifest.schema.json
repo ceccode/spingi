@@ -51,6 +51,18 @@
           "description": "kinematic (the base glides) or physics (the robot walks)",
           "title": "Locomotion",
           "type": "string"
+        },
+        "odometry": {
+          "default": "truth",
+          "description": "truth (exact pose) or drift (the estimate drifts, ADR-0016)",
+          "title": "Odometry",
+          "type": "string"
+        },
+        "camera_noise": {
+          "default": false,
+          "description": "blurred, noisy, JPEG-compressed head-camera frames",
+          "title": "Camera Noise",
+          "type": "boolean"
         }
       },
       "title": "RunConfig",

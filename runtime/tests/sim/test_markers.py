@@ -15,6 +15,7 @@ from spingi.perception.markers import MarkerPerceiver
 from spingi.scenes import load_world
 from spingi.session import SessionConfig, run_session
 from spingi.skills import default_registry
+from spingi.skills.navigate import FIX_FRAMES
 
 cv2 = pytest.importorskip("cv2")
 
@@ -75,7 +76,10 @@ async def test_inspection_round_with_markers_sees_the_box_only_where_it_is(tmp_p
     assert result.ok and result.steps_completed == 9
     assert [r.data["anomalies"] for r in log.find("perception.result")] == [[], ["present:red_box"]]
     assert "red_box_01" in result.final_state.objects
-    assert len(list((tmp_path / "frames").glob("*.png"))) == 3  # the probe and the two inspections
+    # The probe, the two inspections, and the frames navigate took to look at the lab's landmarks (ADR-0016).
+    looks = log.count("robot.relocalized") + log.count("localization.missed")
+    assert looks >= 4 and log.count("localization.missed") == 0
+    assert len(list((tmp_path / "frames").glob("*.png"))) == 3 + looks * FIX_FRAMES
 
 
 async def test_a_session_records_which_perception_it_used(tmp_path):

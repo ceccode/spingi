@@ -25,7 +25,7 @@ demo-sim-view:
 	uv run mjpython -m spingi.cli run plans/demo_inspection_round.yaml --adapter sim --view --quiet
 
 demo-yard:
-	uv run spingi run plans/yard_patrol.yaml --scene sim/scenes/yard_outdoor.yaml --adapter sim --robot go2 --physics --zip --quiet
+	uv run spingi run plans/yard_patrol.yaml --scene sim/scenes/yard_outdoor.yaml --robot go2 --realistic --zip --quiet
 
 demo-track:
 	uv run spingi run plans/test_track.yaml --scene sim/scenes/test_track.yaml --adapter sim --robot go2 --physics --zip --quiet

@@ -115,6 +115,18 @@ def test_the_manoeuvring_policy_turns_and_creeps_the_walking_one_walks():
     assert gait.active is walk
 
 
+def test_stepping_back_or_aside_is_a_manoeuvre_even_when_fast():
+    walk, slow = FakeController("walk"), FakeController("slow")
+    gait = GaitSwitch(walk, slow)
+    for wanted in ([-0.3, 0.2, 0.0], [0.1, 0.4, 0.0], [0.25, 0.3, 0.0]):  # back at an angle, aside, wide of ahead
+        gait.wanted = np.array(wanted)
+        gait.step(None, np.zeros(3))
+        assert gait.active is slow, wanted
+    gait.wanted = np.array([0.5, 0.2, 0.0])  # mostly forward
+    gait.step(None, np.zeros(3))
+    assert gait.active is walk
+
+
 def test_policy_json_files_are_complete():
     for folder in (f for f in POLICIES_DIR.iterdir() if f.is_dir()):
         raw = json.loads((folder / "policy.json").read_text())

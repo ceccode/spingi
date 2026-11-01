@@ -34,6 +34,8 @@ class RunConfig(BaseModel):
     seed: int = 0
     perception: str = Field(default="truth", description="truth (scene ground truth) or markers (AprilTags in frames)")
     locomotion: str = Field(default="kinematic", description="kinematic (the base glides) or physics (the robot walks)")
+    odometry: str = Field(default="truth", description="truth (exact pose) or drift (the estimate drifts, ADR-0016)")
+    camera_noise: bool = Field(default=False, description="blurred, noisy, JPEG-compressed head-camera frames")
 
 
 class Manifest(BaseModel):
@@ -62,6 +64,12 @@ class RobotSample(BaseModel):
     pitch: float | None = None
 
 
+class EstimateSample(BaseModel):
+    x: float
+    y: float
+    yaw: float
+
+
 class ObjectSample(BaseModel):
     x: float
     y: float
@@ -71,6 +79,9 @@ class ObjectSample(BaseModel):
 class TrajectorySample(BaseModel):
     t: float = Field(description="simulated seconds since the start of the run; same axis as `sim_t` in the events")
     robot: RobotSample
+    estimate: EstimateSample | None = Field(
+        default=None, description="where the robot believes it is, when that differs from `robot` (ADR-0016)"
+    )
     battery_pct: float | None = None
     objects: dict[str, ObjectSample] | None = Field(default=None, description="only when they change")
     joints: dict[str, float] | None = Field(default=None, description="joint angles in radians (physics locomotion)")

@@ -66,3 +66,38 @@ def test_marker_ids_must_be_unique_and_have_a_tag_image():
         build_scene_xml({"objects": {"a": {"cls": "x", "marker_id": 99}}})
     with pytest.raises(SceneError, match="0 to 63"):
         build_scene_xml({"objects": {"a": {"cls": "x", "marker_id": True}}})
+
+
+def test_landmarks_are_tags_on_massless_posts_or_flat_on_a_wall():
+    xml = build_scene_xml(
+        scene(
+            landmarks=[
+                {"marker_id": 40, "x": 3, "y": 0, "facing": 3.14},
+                {"marker_id": 41, "x": 1.24, "y": 1, "facing": 3.14, "post": False},
+            ]
+        )
+    )
+    assert 'name="lmb_40"' in xml and 'name="lm_40_tag"' in xml and 'name="lm_40_post"' in xml
+    assert 'name="lm_41_tag"' in xml and 'name="lm_41_post"' not in xml
+    assert 'material="tag_40"' in xml
+    for line in xml.splitlines():  # no collision, no mass: the robot walks as if they were not there
+        if 'name="lm_' in line:
+            assert 'contype="0" conaffinity="0" density="0"' in line
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        [{"marker_id": 7, "x": 3, "y": 0}],  # the object's tag
+        [{"marker_id": 40, "x": 3, "y": 0}, {"marker_id": 40, "x": 4, "y": 0}],
+        [{"marker_id": 99, "x": 3, "y": 0}],  # no tag image
+        [{"marker_id": 40, "x": 3, "y": 0, "size_m": 2.0}],
+        [{"marker_id": 40, "x": 3, "y": 0, "post": "yes"}],
+        [{"x": 3, "y": 0}],
+    ],
+)
+def test_invalid_landmarks_are_refused(bad):
+    with pytest.raises(SceneError):
+        build_scene_xml(
+            scene(objects={"box_1": {"cls": "box", "marker_id": 7, "pose": {"x": 2, "y": 2}}}, landmarks=bad)
+        )

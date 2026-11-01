@@ -2,7 +2,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
-import { MAX_JOINTS, type BaseLift, type Pose2D, type Scene } from "./episode";
+import { landmarksOf, MAX_JOINTS, type BaseLift, type Landmark, type Pose2D, type Scene } from "./episode";
 import { heightAt, terrainGeometry, type Terrain } from "./terrain";
 
 const OBSTACLE_COLOR = 0x8a8f9c;
@@ -29,6 +29,30 @@ function grainTexture(): THREE.DataTexture {
   return tex;
 }
 
+/** An AprilTag-like face for a landmark: the black square, its border and 6x6 cells from the id, in a white margin.
+ *  Not the real code of the tag, only its look; the runtime reads the real ones. */
+function tagTexture(markerId: number): THREE.CanvasTexture {
+  const cells = 12, px = 8;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = cells * px;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#000000";
+  ctx.fillRect(px, px, 10 * px, 10 * px);
+  let h = (markerId + 1) * 2654435761;
+  for (let r = 0; r < 6; r++) {
+    for (let c = 0; c < 6; c++) {
+      h = Math.imul(h ^ (h >>> 15), 2246822519) >>> 0;
+      if (h & 1) { ctx.fillStyle = "#ffffff"; ctx.fillRect((3 + c) * px, (3 + r) * px, px, px); }
+    }
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.magFilter = THREE.NearestFilter;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 interface JointNode { node: THREE.Object3D; axis: THREE.Vector3; rest: THREE.Quaternion; stand: number }
 
 export class World {
@@ -40,15 +64,29 @@ export class World {
   private base: THREE.Object3D | null = null; // the robot's root body: carries height and tilt
   private baseZ = 0;
   private terrain: Terrain | null = null;
+  // Where the robot believed it was (ADR-0016): an orange outline on the ground, tied to the robot by a line.
+  private readonly belief = new THREE.Group();
+  private readonly beliefLine: THREE.Line;
 
   constructor(readonly three: THREE.Scene) {
     this.root.rotation.x = -Math.PI / 2;
     three.add(this.root);
     this.root.add(this.robot);
+    const orange = 0xff9f1c;
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.26, 0.32, 48), new THREE.MeshBasicMaterial({ color: orange, transparent: true, opacity: 0.85, depthTest: false }));
+    const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.3, 16), new THREE.MeshBasicMaterial({ color: orange, depthTest: false }));
+    arrow.rotation.z = -Math.PI / 2; // the cone points along +x, the heading
+    arrow.position.x = 0.38;
+    this.belief.add(ring, arrow);
+    this.belief.renderOrder = 2;
+    this.beliefLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), new THREE.LineDashedMaterial({ color: orange, dashSize: 0.08, gapSize: 0.05, depthTest: false }));
+    this.belief.visible = this.beliefLine.visible = false;
   }
 
   build(scene: Scene, terrain: Terrain | null = null): void {
     for (const child of [...this.root.children]) if (child !== this.robot) this.root.remove(child);
+    this.root.add(this.belief, this.beliefLine);
+    this.belief.visible = this.beliefLine.visible = false;
     this.labels.length = 0;
     this.objects.clear();
     this.terrain = terrain;
@@ -101,6 +139,8 @@ export class World {
       box.receiveShadow = true;
       this.root.add(box);
     });
+
+    for (const lm of landmarksOf(scene)) this.root.add(this.landmark(lm, ground(lm.x, lm.y)));
 
     for (const [id, obj] of Object.entries(scene.objects ?? {})) {
       const size = obj.size ?? [0.15, 0.1, 0.1];
@@ -183,6 +223,19 @@ export class World {
     }
   }
 
+  /** Shows where the robot believed it was, or hides it when its belief matched the truth. */
+  setEstimate(estimate: Pose2D | null, truth: Pose2D): void {
+    this.belief.visible = this.beliefLine.visible = estimate !== null;
+    if (!estimate) return;
+    const z = (x: number, y: number): number => (this.terrain ? heightAt(this.terrain, x, y) : 0) + 0.03;
+    this.belief.position.set(estimate.x, estimate.y, z(estimate.x, estimate.y));
+    this.belief.rotation.set(0, 0, estimate.yaw);
+    this.beliefLine.geometry.setFromPoints([
+      new THREE.Vector3(truth.x, truth.y, z(truth.x, truth.y)), new THREE.Vector3(estimate.x, estimate.y, z(estimate.x, estimate.y)),
+    ]);
+    this.beliefLine.computeLineDistances();
+  }
+
   /** Robot position in Three scene space (Y up), for the camera. */
   robotWorldPosition(target: THREE.Vector3): THREE.Vector3 {
     return this.robot.getWorldPosition(target);
@@ -190,6 +243,29 @@ export class World {
 
   faceCamera(camera: THREE.Camera): void {
     for (const s of this.labels) s.quaternion.copy(camera.quaternion);
+  }
+
+  /** A tag on a white plate, facing where the scene says, on a grey post down to the ground unless it is on a wall. */
+  private landmark(lm: Landmark, groundZ: number): THREE.Group {
+    const half = (lm.size * 12) / 10 / 2; // the tag with its white margin, as in the simulator
+    const g = new THREE.Group();
+    g.position.set(lm.x, lm.y, groundZ + lm.height);
+    g.rotation.z = lm.facing;
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(0.02, 2 * half + 0.04, 2 * half + 0.04), new THREE.MeshStandardMaterial({ color: 0xedede8, roughness: 0.8 }));
+    plate.position.x = -0.011;
+    plate.castShadow = true;
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(2 * half, 2 * half), new THREE.MeshBasicMaterial({ map: tagTexture(lm.markerId) }));
+    face.rotation.set(Math.PI / 2, Math.PI / 2, 0); // the plane's face looks along +x, upright
+    face.position.x = 0.001;
+    g.add(plate, face);
+    const pole = lm.height - half - 0.02;
+    if (lm.post && pole > 0) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, pole), new THREE.MeshStandardMaterial({ color: 0x6b7078, roughness: 0.7 }));
+      post.position.set(-0.045, 0, -(half + 0.02) - pole / 2);
+      post.castShadow = true;
+      g.add(post);
+    }
+    return g;
   }
 
   private label(text: string, x: number, y: number, z: number): THREE.Sprite {

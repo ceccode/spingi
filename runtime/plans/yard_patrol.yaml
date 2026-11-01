@@ -7,17 +7,20 @@ steps:
   - skill: say
     params: { text: "Starting the yard patrol" }
   - skill: navigate
-    params: { to: pump_A, via: [yard_gate], max_speed: 0.8 }
+    params: { to: pump_A, via: [yard_gate, track_mid], max_speed: 0.8 }
+    deadline_s: 120
     on_failure: { retry: 1, then: needs_human }
   - skill: inspect
     params: { target: pump_A, checks: ["present:gauge"] }
   - skill: navigate
-    params: { to: dock_B, via: [yard_gate, ramp_foot, ramp_top], max_speed: 0.8 }
+    params: { to: dock_B, via: [track_mid, yard_gate, ramp_foot, ramp_top], max_speed: 0.8 }
+    deadline_s: 150
     on_failure: { retry: 1, then: needs_human }
   - skill: inspect
     params: { target: dock_B, checks: ["present:extinguisher"] }
   - skill: navigate
     params: { to: door_C, via: [ramp_top, ramp_foot, kerb_front], max_speed: 0.6 }
+    deadline_s: 120
     on_failure: { retry: 1, then: needs_human }
   - skill: inspect
     params: { target: door_C, checks: ["present:door_sign"] }

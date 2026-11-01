@@ -7,8 +7,25 @@ from pathlib import Path
 
 import yaml
 
-from spingi.core.types import NAME_PATTERN, Location, ObjectRef, Pose2D, Pose3D, RobotState, WorldState
+from spingi.core.types import NAME_PATTERN, Landmark, Location, ObjectRef, Pose2D, Pose3D, RobotState, WorldState
 from spingi.safety.limits import SafetyLimits
+
+
+def parse_landmarks(raw: dict) -> list[Landmark]:
+    """The optional `landmarks:` section: tags at known places, `{marker_id, x, y, facing, height_m, size_m}`, with
+    `facing` the direction the tag's face looks, in radians. A marker id names one landmark."""
+    out: list[Landmark] = []
+    for i, lm in enumerate(raw.get("landmarks") or []):
+        if not isinstance(lm, dict) or "marker_id" not in lm:
+            raise ValueError(f"landmark {i}: expected a mapping with marker_id, x, y, facing")
+        sizes = {k: lm[k] for k in ("height_m", "size_m") if k in lm}
+        out.append(
+            Landmark(marker_id=lm["marker_id"], pose=Pose2D(x=lm["x"], y=lm["y"], yaw=lm.get("facing", 0.0)), **sizes)
+        )
+    ids = [lm.marker_id for lm in out]
+    if len(ids) != len(set(ids)):
+        raise ValueError(f"landmarks: a marker id is used twice in {ids}")
+    return out
 
 
 def load_world(path: Path | str) -> WorldState:
@@ -32,6 +49,7 @@ def load_world(path: Path | str) -> WorldState:
     return WorldState(
         locations=locations,
         objects=objects,
+        landmarks=parse_landmarks(raw),
         robot=RobotState(
             pose=Pose2D(**robot.get("pose", {"x": 0, "y": 0, "yaw": 0})), battery_pct=robot.get("battery_pct", 100.0)
         ),

@@ -25,6 +25,13 @@ class RunMetrics(BaseModel):
     fatal: bool
     operator_stop: bool
     fell: bool = False
+    # What the robot believed (ADR-0016): landmark corrections, landmarks expected and not seen, anomalies reported
+    # by inspections (in a scene where everything is in place, false alarms), and the worst gap, at the end of a
+    # walk, between where the robot was and where it believed it was (simulator only: `sim.arrival`).
+    relocalizations: int = 0
+    landmarks_missed: int = 0
+    anomalies: int = 0
+    pose_error_max_m: float | None = None
 
     @property
     def ok(self) -> bool:
@@ -36,6 +43,7 @@ def run_metrics(events: list[Event], steps_total: int) -> RunMetrics:
         raise ValueError("no events")
     end = next((e for e in reversed(events) if e.kind == "run.end"), None)
     sim_times = [e.data["sim_t"] for e in events if "sim_t" in e.data]
+    pose_errors = [float(e.data["error_m"]) for e in events if e.kind == "sim.arrival" and "error_m" in e.data]
     return RunMetrics(
         run_id=events[0].run_id,
         status=end.data.get("status", "unknown") if end else "unknown",
@@ -49,6 +57,10 @@ def run_metrics(events: list[Event], steps_total: int) -> RunMetrics:
         fatal=any(e.kind in ("safety.estop", "safety.monitor_error", "robot.fell") for e in events),
         operator_stop=any(e.kind == "operator.stop" for e in events),
         fell=any(e.kind == "robot.fell" for e in events),
+        relocalizations=sum(1 for e in events if e.kind == "robot.relocalized"),
+        landmarks_missed=sum(1 for e in events if e.kind == "localization.missed"),
+        anomalies=sum(len(e.data.get("anomalies") or []) for e in events if e.kind == "perception.result"),
+        pose_error_max_m=max(pose_errors) if pose_errors else None,
     )
 
 
@@ -68,6 +80,9 @@ class BenchReport(BaseModel):
     adapter: str
     robot: str = "unitree_g1"  # profile name; reports written before robot profiles existed were all on the G1
     locomotion: str = "kinematic"
+    perception: str = "truth"
+    odometry: str = "truth"
+    camera_noise: bool = False
     runs: int
     perception_noise: float
     position_sigma_m: float
@@ -79,6 +94,11 @@ class BenchReport(BaseModel):
     safety_violations: int
     sim_time_p50_s: float | None
     sim_time_p95_s: float | None
+    relocalizations_per_run: float = 0.0
+    landmarks_missed_per_run: float = 0.0
+    anomalies_per_run: float = 0.0
+    pose_error_p50_m: float | None = Field(default=None, description="the worst pose error of a run: median")
+    pose_error_p95_m: float | None = None
     failures: dict[str, int] = Field(default_factory=dict, description="status -> count, for runs that did not succeed")
     gate: Gate
     checks: dict[str, bool]
@@ -96,6 +116,9 @@ def summarize(
     gate: Gate | None = None,
     robot: str = "unitree_g1",
     locomotion: str = "kinematic",
+    perception: str = "truth",
+    odometry: str = "truth",
+    camera_noise: bool = False,
 ) -> BenchReport:
     runs = list(metrics)
     if not runs:
@@ -104,6 +127,7 @@ def summarize(
     n = len(runs)
     successes = sum(r.ok for r in runs)
     times = sorted(r.sim_time_s for r in runs if r.ok and r.sim_time_s is not None)
+    pose_errors = sorted(r.pose_error_max_m for r in runs if r.pose_error_max_m is not None)
     failures: dict[str, int] = {}
     for r in runs:
         if not r.ok:
@@ -114,6 +138,9 @@ def summarize(
         adapter=adapter,
         robot=robot,
         locomotion=locomotion,
+        perception=perception,
+        odometry=odometry,
+        camera_noise=camera_noise,
         runs=n,
         perception_noise=perception_noise,
         position_sigma_m=position_sigma_m,
@@ -125,6 +152,11 @@ def summarize(
         safety_violations=sum(r.safety_violations for r in runs),
         sim_time_p50_s=round(statistics.median(times), 2) if times else None,
         sim_time_p95_s=round(_percentile(times, 0.95), 2) if times else None,
+        relocalizations_per_run=round(sum(r.relocalizations for r in runs) / n, 2),
+        landmarks_missed_per_run=round(sum(r.landmarks_missed for r in runs) / n, 2),
+        anomalies_per_run=round(sum(r.anomalies for r in runs) / n, 3),
+        pose_error_p50_m=round(statistics.median(pose_errors), 3) if pose_errors else None,
+        pose_error_p95_m=round(_percentile(pose_errors, 0.95), 3) if pose_errors else None,
         failures=failures,
         gate=gate,
     )

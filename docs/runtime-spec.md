@@ -145,7 +145,13 @@ class ObjectRef(Strict):
     cls: str            # "red_box"; matches NAME_PATTERN
     pose: Pose3D | None = None
     confidence: float = 0.0             # 0..1
-    marker_id: int | None = None   # fiducial marker; AprilTag detection is not implemented yet
+    marker_id: int | None = None   # its AprilTag, read by MarkerPerceiver
+
+class Landmark(Strict):                 # an AprilTag at a known place, to correct the robot's pose (ADR-0016)
+    marker_id: int
+    pose: Pose2D        # the tag's centre on the ground plane; yaw: the direction its face looks
+    height_m: float = 0.6               # of the tag's centre above the ground, 0 < h <= 3
+    size_m: float = 0.2                 # side of the black square, 0 < s <= 0.6
 ```
 
 Names travel into the simulator's XML, the planner's prompt and the terminal, so they share one conservative alphabet. Geometry never accepts NaN or infinity: a NaN setpoint is rejected by validation instead of reaching a motor.
@@ -162,6 +168,7 @@ class RobotState(Strict):
 class WorldState(BaseModel):
     locations: dict[str, Location] = {}
     objects: dict[str, ObjectRef] = {}
+    landmarks: list[Landmark] = []      # part of the map, like the locations: never changed by a skill
     robot: RobotState
     ts: float = 0.0
 
@@ -231,7 +238,7 @@ Rules:
 
 | Skill | Parameters | Precondition | Postcondition |
 |-------|------------|--------------|---------------|
-| `navigate` | `to: str` (location), `via: list[str] = []` (waypoints, in order), `max_speed: float = 0.5` (m/s, 0 < v ≤ 2) | `to` and every `via` location exist, battery ≥ 10 %, robot not in `estop` | robot within `tolerance_m` of `to`. Each leg is a straight line; evidence `reached`, `path`, `distance_m` |
+| `navigate` | `to: str` (location), `via: list[str] = []` (waypoints, in order), `max_speed: float = 0.5` (m/s, 0 < v ≤ 2) | `to` and every `via` location exist, battery ≥ 10 %, robot not in `estop` | robot within `tolerance_m` of `to`. Each leg is a straight line; evidence `reached`, `path`, `distance_m`. Before leaving and at every waypoint it looks for the landmarks in view and corrects its pose with the first one seen (`robot.relocalized`; `localization.missed` when one was expected and not seen), walking the difference when the correction moves it off the waypoint; a retry resumes from the waypoint the robot stands at (ADR-0016) |
 | `detect` | `cls: str`, `expect: int = 1` | robot mode `idle` | at least `expect` objects of class `cls` seen (checked in `execute`, `RECOVERABLE` otherwise); they enter `objects` with their pose; evidence `objects`, `frame_id` |
 | `inspect` | `target: str`, `checks: list[str] = []` | `target` is a known location, robot within its tolerance, not in `estop` | evidence contains `frame_id`, a result per check and the list of `anomalies`. `present:<cls>` and `absent:<cls>` are evaluated with the Perceiver; any other check is recorded as not evaluated. An anomaly does not fail the skill |
 | `pick` | `object_id: str`, `arm: "left" \| "right" = "right"` | hand empty, object with known pose within 0.9 m of the base | `robot.holding.id == object_id`; the object leaves `objects` |
@@ -295,7 +302,8 @@ class RobotAdapter(Protocol):
     # Locomotion (high-level: the locomotion controller belongs to the vendor)
     async def walk_to(self, pose: Pose2D, max_speed: float) -> None: ...
     async def stop(self) -> None: ...
-    async def get_pose(self) -> Pose2D: ...
+    async def get_pose(self) -> Pose2D: ...             # the robot's own estimate: it drifts (ADR-0016)
+    async def relocalize(self, pose: Pose2D) -> None: ...  # correct the estimate with a pose measured from outside
 
     # Manipulation (v0: target positions, no torque)
     async def move_arm(self, arm: Literal["left","right"], target: Pose3D, duration_s: float) -> None: ...
@@ -347,6 +355,7 @@ Rules:
 - On hardware the robot's own command timeout (the SDK's or the controller's) is configured by the adapter at connection time, shorter than the session watchdog, and the adapter refuses to start if it cannot set it: the in-process watchdog protects against a stuck control loop, the hardware timeout against a frozen or dead process. The contract suite checks that the adapter reports the timeout it set.
 - `capabilities` says which parts the robot really has. Each skill declares what it `requires` (`navigate`: `locomotion`; `detect`, `inspect`: `camera`; `pick`, `place`: `arm`); `validate_plan` rejects a plan that needs more than the robot has, so it ends as `invalid_plan` before anything moves, and the LLM planner is built from `registry.subset(capabilities)`. The robot's name, model and capabilities come from a `RobotProfile` in `spingi/robots.py` (ADR-0012), never from code paths per robot.
 - Three implementations: `FakeAdapter` (in-memory, instantaneous, for unit tests), `SimAdapter` (MuJoCo; loads the G1 or the Go2 from the profile; a kinematic base by default, ADR-0006, or walking with learned policies on the scene's ground, `locomotion="physics"`, ADR-0015), `UnitreeG1Adapter` *(not implemented yet, M4; the Go2 shares the SDK, so one adapter parametrized by profile is the plan)*.
+- `get_pose` is the robot's estimate, not the truth: odometry drifts by a few per cent of the distance walked. `relocalize(pose)` corrects it with a pose measured from outside (a landmark); from then on `get_pose`, the targets of `walk_to` and the camera pose written in a `Frame` are in the corrected frame. `SimAdapter` keeps the estimate as an offset from the true pose: exact by default; with `odometry="drift"` (physics only) the offset changes at every tick with per-run scale errors, a gyroscope bias and random error that grows with the distance walked and the turns, worse on gravel and dirt, and the start jitter is unknown to the robot. The hardware adapter keeps the same offset over the robot's odometry (ADR-0016). With `camera_noise` the head camera's frames are blurred, noisy, JPEG-compressed and written as `.jpg`, and the camera model's focal length is about 1 % off. `SimAdapter` records the end of every walk as `sim.arrival` in the event log (target, true and believed pose, the gap): ground truth for the gate, never read by the runtime.
 - In physics mode `walk_to` is a closed loop on the measured pose that streams velocity commands to the walking controller (`follow` in `adapters/sim_mujoco/locomotion.py`): turn towards the waypoint if it is behind, walk while steering, sidestep the last centimetres, turn to the final heading; commands ramp at 1 m/s² and 2.5 rad/s². It arrives within about 6 cm and 0.08 rad, then stands for 0.3 s. The hardware adapter will run the same loop above the vendor's controller.
 
 ### 3.6 Perceiver
@@ -357,7 +366,9 @@ class Perceiver(Protocol):
     async def localize(self, frame: Frame, marker_id: int) -> Pose3D | None: ...
 ```
 
-Implemented: `FakePerceiver` (configured objects, optional false-negative rate) and `SimPerceiver`, which reads the ground truth from the scene with configurable noise to test the logic without models (section 6). Planned: AprilTags on objects and locations and a fixed-class detector (YOLO on known classes) *(not implemented yet)*; v1: VLM as another `Perceiver` behind the same interface.
+Positions come out in the frame the camera's pose was given in, the robot's estimate: if the estimate has drifted, so has what it sees. `localize` returns a marker's centre and, as a rotation about the vertical, the direction its face looks: what `navigate` needs to correct the robot's pose with a landmark (ADR-0016).
+
+Implemented: `FakePerceiver` (configured objects, optional false-negative rate), `SimPerceiver`, which reads the ground truth from the scene with configurable noise to test the logic without models (section 6), and `MarkerPerceiver`, which reads AprilTags on objects and landmarks from the images. Planned: a fixed-class detector (YOLO on known classes) *(not implemented yet)*; v1: VLM as another `Perceiver` behind the same interface.
 
 ### 3.7 Human gateway
 
@@ -491,7 +502,9 @@ The decisions behind robot time, the terminal e-stop and the latched geofence st
 
 Deliberate choice: a **lightly prepared environment** rather than general perception.
 
-- AprilTags on locations (floor/wall) and on standard containers. Reliable localization, zero training. `MarkerPerceiver` (M4.0) reads them from the image a `Frame` refers to, with the camera intrinsics and the camera's world pose that the adapter writes in the frame, and answers `detect` (markers mapped to the scene's objects by `marker_id`) and `localize`. In MuJoCo the objects carry their tag as a texture, so the same code is exercised on rendered frames in CI (`--perception markers`), while `SimPerceiver` (ground truth) stays the default for fast benches.
+- AprilTags at known places (landmarks: on posts and walls) and on standard containers. Reliable localization, zero training. `MarkerPerceiver` (M4.0) reads them from the image a `Frame` refers to, with the camera intrinsics and the camera's world pose that the adapter writes in the frame, and answers `detect` (markers mapped to the scene's objects by `marker_id`) and `localize` (a marker's centre and the direction its face looks). In MuJoCo the objects and the landmarks carry their tag as a texture, so the same code is exercised on rendered frames in CI (`--perception markers`), while `SimPerceiver` (ground truth) stays the default for fast benches.
+- Landmarks correct the drifting pose (ADR-0016). A tag is used up to 10 times its side away: farther, its position is still good but the direction its face looks is off by a few degrees, measured on the noisy camera, and that moves the corrected pose by as much again at that distance. A scene is also a tag plan: a tag 2–3 m ahead of every stop, seen at an angle rather than head on from far, two tags either side of a close inspection target, one every 8–10 m on long legs, off the routes. `navigate` averages three frames per look and refuses corrections over 2 m or 0.6 rad as misreads.
+- With `camera_noise` the frames carry a real camera's defects: a 0.7 px blur, exposure that changes from frame to frame, sensor noise that grows with brightness, JPEG at quality 80 (how the Go2 streams its camera), and a calibration about 1 % off.
 - Fixed-class detector for the site's objects (10–20 classes), trained on photos of the site. *(Not implemented yet; after M4.1, when there are photos of a site.)*
 - VLM (v1) for `inspect`: "does the display show an error?", "is there a leak?" with a structured answer and confidence. Until then `inspect` evaluates only `present:<cls>` and `absent:<cls>` and records other checks as not evaluated.
 - In sim: `SimPerceiver` reads the ground truth from the MuJoCo scene. An object is seen when it is within 3 m and within ±40° of the robot's heading. Noise: a false-negative rate and Gaussian noise on positions (`--noise`, `--sigma`, seeded with `--seed`). It is there to test the retry and escalation logic without depending on a model.
@@ -535,7 +548,7 @@ This section is the heart of the spec. Every level must exist before the milesto
 | **Golden episode** (`tests/golden`) | That a change does not alter behavior on recorded runs | Four recorded episodes run again with their plan, scene, noise, seed and operator answers; steps, outcomes, retries, operator requests, safety events, final status and final position are compared (`spingi replay`) | CI, every commit | < 1 min |
 | **Architecture** (`tests/test_architecture.py`) | Import rules of section 11 | AST scan of `spingi/core` | CI, every commit | < 1 s |
 | **Licensing** (`tests/test_licensing.py`) | That the package's `LICENSE` and `NOTICE` copies equal the repository's, and that the viewer serves the G1 license | file comparison | CI, every commit | < 1 s |
-| **Robustness** | Retry and escalation under noise; walking: drift, blocked paths, falls | `spingi bench` with `SimPerceiver` at 20–40 % false negatives and position noise, and `spingi bench --physics` with the robots walking. Injected adapter latency *(not implemented yet in bench)* | on demand (`make bench`); CI nightly *(not set up yet)* | < 20 min |
+| **Robustness** | Retry and escalation under noise; walking: drift, blocked paths, falls | `spingi bench` with `SimPerceiver` at 20–40 % false negatives and position noise, `spingi bench --physics` with the robots walking, and `spingi bench --realistic` with drifting odometry corrected by landmarks, a noisy camera and markers read from the frames (the report adds the worst pose error of each run, the landmark corrections and the anomalies reported). Injected adapter latency *(not implemented yet in bench)* | on demand (`make bench`); CI nightly *(not set up yet)* | < 20 min |
 | **Sim2real gate** | That a skill may move to the robot | Numerical metrics (see 8.4), `spingi bench --gate` | manual, per skill | – |
 | **Lab** | Skills on the robot in a fenced area | The checklist of `docs/lab-checklist.md` signed per session, mandatory recording of every run | lab (M4.1 on the Go2, M4.2 on the G1) | – |
 
@@ -638,6 +651,9 @@ terrain:
     - { x: [12.5, 16.0], y: [3.5, 5.5], from_m: 0.0, to_m: 0.45, along: x }
   raised:
     - { x: [-3, 14], y: [5.5, 9], height_m: 0.10 }      # a kerb and the pavement behind it
+landmarks:                          # AprilTags at known places, to correct the drifting pose (ADR-0016)
+  - { marker_id: 41, x: 13.2, y: 0.7, facing: -2.642, size_m: 0.3 }          # on a post; facing in radians
+  - { marker_id: 48, x: 6.55, y: 7.49, facing: -1.5708, height_m: 0.45, size_m: 0.3, post: false }  # on a wall
 ```
 
 Each surface has a grip (sliding friction 0.5 to 0.9) and a roughness (standard deviation 0 to 2 cm, overridable per region up to 10 cm) that fades into its neighbours' over a quarter of a metre. Roughness is carried by height fields; ramps and raised areas are solid boxes, flat on top with vertical sides. Ramps are at most 45 degrees, heights 0 to 3 m (no pits). In kinematic mode the base follows the ground's height; in physics mode the robot walks on it. Episodes of a scene with ground carry `terrain.json` for the viewer.
@@ -660,7 +676,7 @@ A skill moves from sim to the robot only if, over the last 100 runs in sim with 
 
 And, on the robot, before leaving the lab: the same metrics over ≥ 50 runs in a fenced area.
 
-The gate is implemented in `spingi.metrics.Gate` and checked by `spingi bench` (`--gate` sets the exit code). Today it is applied to a whole plan, which exercises several skills at once; `--runs` defaults to 50, `make bench` uses 100. With `--physics` the robot walks: drift, blocked paths and falls appear as retries, operator requests and fatal runs, and the report counts the falls among the fatal runs. Each run's seed changes the start pose by up to 3 cm and 3 degrees, as real runs differ.
+The gate is implemented in `spingi.metrics.Gate` and checked by `spingi bench` (`--gate` sets the exit code). Today it is applied to a whole plan, which exercises several skills at once; `--runs` defaults to 50, `make bench` uses 100. With `--physics` the robot walks: drift, blocked paths and falls appear as retries, operator requests and fatal runs, and the report counts the falls among the fatal runs. Each run's seed changes the start pose by up to 3 cm and 3 degrees, as real runs differ. With `--realistic` the robot does not know where it is exactly either (ADR-0016): the report adds, from the simulator's `sim.arrival` events, the worst gap of each run between where the robot was and where it believed it was (p50 and p95), the landmark corrections and the tags expected and not seen per run, and the anomalies the inspections reported, which in a scene where everything is in place are false alarms. The gate itself is unchanged: a run that reports success at the wrong place is visible in those numbers, not in the success rate.
 
 ### 8.5 Product metrics
 
@@ -750,7 +766,7 @@ Rule: `spingi/core` imports nothing from `adapters`, `skills`, `planner`, `perce
 | **M1** | Sim navigation + inspection | `SimAdapter` MuJoCo with the G1, `warehouse_small` scene, `SimPerceiver`, `inspect` skill, Safety Monitor (watchdog, geofence, speed cap) | "4-point inspection round" scenario: 20/20 runs green in CI; safety tests that prove every layer | Done (2026-10-02). Kinematic base (ADR-0006); the inspection round runs in `lab_small` (`warehouse_small` arrived with M2). Measured by the scenario tests (inspection round, geofence, wall, speed cap), run on every commit; a run without noise is deterministic |
 | **M2** | Sim transport | `detect`, `pick`, `place` with markers, `wait_for_human`, console v0, robustness tests with noise | `move_red_box` scenario: ≥ 95 % over 100 runs with noise; correct escalation on failures | Done (2026-10-04). `detect`, `pick`, `place` with a kinematic grasp (ADR-0007, ground-truth perception, no markers yet), `navigate` with `via`, `wait_for_human`, terminal console (ADR-0008), `spingi bench` with the gate, LeRobot export (ADR-0009). Measured with `make bench`: `demo_material_runner` in `warehouse_small`, 100 runs, 20 % false negatives, 0.02 m position noise: 100 % success, 0 operator requests, 0 fatal runs, 0 safety violations. Escalation covered by unit tests and the `blocked_wall_operator` golden episode |
 | **M3** | Planner | `StaticPlanner`, `LLMPlanner`, golden plans, replay | 10 natural-language requests → plans equivalent to the golden ones; validation rejects malformed plans | Done (2026-10-04). `LLMPlanner` with structured output (ADR-0010), ten golden cases, `spingi eval-planner`, `spingi replay` with three golden episodes in CI. Measured with `spingi eval-planner` and `claude-opus-5-5`: 10 of 10 equivalent, 9 at the first attempt and 1 after the validation round, 3 to 7 seconds per plan |
-| **M4.0** | Ready for a robot (no robot needed) | Perception on real images: AprilTag localization and detection (`MarkerPerceiver`), exercised in MuJoCo on rendered frames with tags on the objects, so the same code that will read the real camera is tested in CI; the lab safety checklist (`docs/lab-checklist.md`); ADRs for Q10 (locomotion) and Q11 (where the runtime runs); the hardware command timeout as a rule of the adapter contract (§3.5); the p95 duration check of the gate (§8.4); contract tests runnable against a connected robot behind an environment flag | The inspection round passes in simulation with `--perception markers` (tags read from the rendered images, not from the ground truth); the checklist exists and is referenced by M4.1; the two ADRs are written; `spingi bench --gate` checks p95 against the plan budget | In progress (2026-11-01). Done: markers, checklist, ADR-0013 and ADR-0014 (proposed), timeout rule, p95 check; physics locomotion and outdoor ground (ADR-0015) added on 2026-11-01, so that the runtime meets drift, blocked paths and falls before the robot. Left: contract tests against a connected robot |
+| **M4.0** | Ready for a robot (no robot needed) | Perception on real images: AprilTag localization and detection (`MarkerPerceiver`), exercised in MuJoCo on rendered frames with tags on the objects, so the same code that will read the real camera is tested in CI; the lab safety checklist (`docs/lab-checklist.md`); ADRs for Q10 (locomotion) and Q11 (where the runtime runs); the hardware command timeout as a rule of the adapter contract (§3.5); the p95 duration check of the gate (§8.4); contract tests runnable against a connected robot behind an environment flag | The inspection round passes in simulation with `--perception markers` (tags read from the rendered images, not from the ground truth); the checklist exists and is referenced by M4.1; the two ADRs are written; `spingi bench --gate` checks p95 against the plan budget | In progress (2026-11-01). Done: markers, checklist, ADR-0013 and ADR-0014 (proposed), timeout rule, p95 check; physics locomotion and outdoor ground (ADR-0015) added on 2026-11-01, so that the runtime meets drift, blocked paths and falls before the robot; drifting odometry, landmarks and a noisy camera (ADR-0016) on the same day, so that it meets a robot that does not know exactly where it is. Left: contract tests against a connected robot |
 | **M4.1** | First robot in the lab: the Go2 | One Unitree adapter on `unitree_sdk2_python`, parametrized by the robot profile (ADR-0012); the Go2 first because it is cheap, its locomotion API is mature and the two gate skills need no arm; contract tests with the robot connected; sim2real gate on `navigate` and `inspect` | Gate of §8.4 passed for 2 skills over ≥ 50 fenced runs; complete recording of every run; the lab safety checklist signed for every session | Not started (needs a Go2 and a fenced area) |
 | **M4.2** | The G1 in the lab | The same adapter and gate on the G1; the arm and hand methods of the port on real hardware | Gate passed for `navigate` and `inspect` on the G1; `gripper` and `move_arm` exercised in the contract tests | Not started (needs a G1) |
 | **M5** | Pilot-ready | `pick`/`place` on the G1 with standard containers (after M4.2), metrics dashboard, operating procedures | Gate passed for 4 skills; 1 day of continuous operation in the lab without `FATAL` | Not started |
@@ -778,7 +794,7 @@ M0–M3 and M4.0 do not require a robot. The M3 planner evaluation calls the Cla
 | Q11 | Where the runtime runs ("ADR-006" in the first draft): on-board (Orin) or laptop + network? | Open. Preferred: laptop in the lab; on-board for the pilot | written in M4.0 | M4.0 |
 | Q12 | Which clock do the safety layers use in a simulation faster than real time? What does an e-stop do to a run? | Decided: the robot's clock (simulated time in MuJoCo) for monitor, watchdog and deadlines; an e-stop ends the run with status `estop`, no retries | [0011](../adr/0011-robot-time-and-terminal-estop.md) | M3+ |
 | Q13 | One robot or several per run? Which robot first on hardware? | Decided: one robot per run, chosen by a profile with capabilities; the Go2 opens M4 because the gate skills need no arm | [0012](../adr/0012-robot-profiles-and-capabilities.md) | M3+ |
-| Q14 | Perception on the real robot: what does `navigate` localize with, what does `inspect` detect with, before any learned model? | Open. Preferred: AprilTags on locations and containers read by a `MarkerPerceiver` that also runs on MuJoCo frames (M4.0); a fixed-class detector later | – | M4.0 |
+| Q14 | Perception on the real robot: what does `navigate` localize with, what does `inspect` detect with, before any learned model? | `navigate`: AprilTag landmarks read by `MarkerPerceiver` correct the drifting odometry, decided and measured in simulation (ADR-0016), to be checked on the robot. `inspect`: AprilTags on containers; a fixed-class detector later | [0016](../adr/0016-drifting-odometry-landmarks-and-camera-noise.md) | M4.0 |
 
 ADR format: title, context (5 lines), decision (3 lines), consequences (5 lines). One file per ADR in `adr/`, starting from `adr/template.md`.
 

@@ -22,7 +22,7 @@ An **episode** is the result of a runtime run, packaged so that anyone can repla
 ├── trajectory.jsonl     # robot and object poses sampled over time; joint angles when the robot walked in physics
 ├── terrain.json         # the ground, for scenes that have one (optional)
 ├── frames/              # camera images, named after the frame_id field of the events (optional)
-│   └── sim-1.png
+│   └── sim-1.png        # or sim-1.jpg, from a camera with noise (ADR-0016)
 └── run.mp4              # third-person video, only with `spingi run --record` (optional; the viewer ignores it)
 ```
 
@@ -58,7 +58,7 @@ The zip produced by `--zip` (`runs/<run_id>.zip`) contains the `<run_id>/` folde
 | `duration_s` | Wall-clock seconds between the first and the last event. In fast simulation it is much shorter than `sim_time_s`. |
 | `sim_time_s` | Total simulated time, when the adapter has a simulated clock (optional). |
 | `sample_rate_hz` | Nominal rate of `trajectory.jsonl`, when the adapter samples at a fixed rate (optional). |
-| `config` | Optional. The run settings needed to run the episode again with `spingi replay`: `perception_noise` (false-negative rate of the perceiver), `position_sigma_m` (Gaussian noise on perceived positions, metres), `seed`, `perception` (`truth`: the simulator's ground truth; `markers`: AprilTags read from the rendered frames) and `locomotion` (`kinematic`: the base glides; `physics`: the robot walks with learned controllers, ADR-0015). Episodes written before it existed do not have it; replay then uses no noise, seed 0, ground truth and the kinematic base. |
+| `config` | Optional. The run settings needed to run the episode again with `spingi replay`: `perception_noise` (false-negative rate of the perceiver), `position_sigma_m` (Gaussian noise on perceived positions, metres), `seed`, `perception` (`truth`: the simulator's ground truth; `markers`: AprilTags read from the rendered frames), `locomotion` (`kinematic`: the base glides; `physics`: the robot walks with learned controllers, ADR-0015), `odometry` (`truth`: the robot knows its pose; `drift`: its estimate drifts, ADR-0016) and `camera_noise` (true: blurred, noisy, JPEG-compressed frames). Episodes written before it existed do not have it; replay then uses no noise, seed 0, ground truth and the kinematic base. |
 | `files` | Sorted list of the other entries in the folder; directories end with `/`. |
 
 ## trajectory.jsonl
@@ -80,6 +80,7 @@ Optional fields per line:
 - `robot.z`, `robot.roll`, `robot.pitch`: the base's height in metres and its tilt in radians, when the robot is not on a flat floor at its standing height: always in physics, and in kinematic runs on a scene with ground.
 - `joints`: joint angles in radians, by joint name as in the robot's model, written when the robot walks in physics (one value per joint, at most 64).
 - `battery_pct`: written by both adapters.
+- `estimate`: `{x, y, yaw}`, where the robot believed it was, written while that differs from `robot` (drifting odometry or a landmark correction, ADR-0016). `robot` is always the truth.
 
 ## terrain.json
 
@@ -124,6 +125,10 @@ Runtime events carry `ts` in wall-clock time. To align them with the trajectory,
 | `safety.speed_capped` | `limit` (the scene's `max_speed`), `applied` (the cap now in force on the adapter) |
 | `safety.estop`, `safety.monitor_error` | the robot was e-stopped after a `FATAL` outcome (`skill`, `reason`) or after a safety check raised (`error`) |
 | `robot.fell` | `skill`, `reason` (where the robot fell); the run ends as `estop` |
+| `robot.relocalized` | `navigate` corrected the robot's pose with a landmark (ADR-0016): `at` (the waypoint, or `here`), `marker_id`, `frame_id`, `frame_ref` (the first of the frames it looked with), `correction_m`, `correction_rad`, `pose` (the corrected pose) |
+| `localization.missed` | `at`, `frame_id`, `frame_ref`, `markers`: landmarks that should have been in view and were not seen |
+| `localization.rejected` | `at`, `marker_id`, `frame_id`, `jump_m`, `turn_rad`: a reading so far from the estimate that it is taken for a misread |
+| `sim.arrival` | written by the simulator, never by the runtime: the end of a walk, with `target`, `truth` and `estimate` (`{x, y, yaw}`), `error_m` (truth against estimate), `miss_m` (truth against target) and `blocked_by` when the walk was stopped. Ground truth for the gate; a real robot has none |
 | `run.end` | `status`, `steps_completed`, `reason` |
 
 ## Implementation status
@@ -133,13 +138,14 @@ Runtime events carry `ts` in wall-clock time. To align them with the trajectory,
 - The JSON schemas in [schemas/](schemas/) are generated from the pydantic models in `runtime/spingi/episode.py` (`make schemas` in `runtime/`); a test fails if they diverge.
 - The first reader is the viewer in `viewer/` (`src/episode.ts` reads zip, YAML and JSONL and interpolates the trajectory). It refuses archives over 200 MB or expanding beyond 500 MB, and trajectories with a missing or non-finite `t`, `x`, `y` or `yaw`.
 - `SimAdapter` streams `run.mp4` to disk while recording instead of keeping the frames in memory.
+- The viewer draws the scene's landmarks as tags on posts or walls, and the `estimate` of each trajectory line as an orange outline tied to the robot by a dashed line, with the gap in the overlay.
 - The viewer draws `terrain.json` as a coloured mesh and stands the obstacles on it; it moves the robot's legs from `joints` with the joint table next to each robot model (`models/<robot>.joints.json`: which node each joint turns, about which axis, and the standing angles shown when an episode has no joint angles).
 - `spingi export lerobot` refuses folders without a `manifest.json` and trajectories that end outside 0 to 24 hours.
 
 ## Frames
 
-A frame is written by the adapter as `frames/<frame_id>.png` and referenced by the event that produced it: `perception.result` carries `frame_id` and `frame_ref`, the path relative to the episode folder (`frames/<frame_id>.png`; never an absolute path of the machine that ran it). A reader places frames on the timeline through those events. The viewer ignores frames that no event references, except when no event references any frame: then it shows all of them at t = 0. Only `detect` and `inspect` take frames, so most episodes have few of them, and none when the adapter cannot render (headless machines without OpenGL, `FakeAdapter`).
+A frame is written by the adapter as `frames/<frame_id>.png`, or `frames/<frame_id>.jpg` from a camera with noise (the JPEG the robot sent, ADR-0016), and referenced by the event that produced it: `perception.result` and `robot.relocalized` carry `frame_id` and `frame_ref`, the path relative to the episode folder (never an absolute path of the machine that ran it). A reader places frames on the timeline through those events. The viewer ignores frames that no event references, except when no event references any frame: then it shows all of them at t = 0. `detect` and `inspect` take a frame each; `navigate` takes three at every stop where a landmark should be in view and references the first. No frames are written when the adapter cannot render (headless machines without OpenGL, `FakeAdapter`).
 
 ## Compatibility
 
-A viewer that reads `0.1` must tolerate: extra fields in the manifest and in trajectory lines; `objects` missing in lines after the first; `frames/` missing; `sim_t` missing in events (use `ts`); a `status` it does not know (`estop` and `error` were added on 2026-10-04 without a version change); `terrain.json`, `joints` and the base's `z`, `roll`, `pitch` missing (added on 2026-11-01: a flat floor, a standing robot). Episodes written before that date may carry an absolute `frame_ref`; readers should locate frames by `frame_id`. A change that breaks any of these points increments `format_version`.
+A viewer that reads `0.1` must tolerate: extra fields in the manifest and in trajectory lines; `objects` missing in lines after the first; `frames/` missing; `sim_t` missing in events (use `ts`); a `status` it does not know (`estop` and `error` were added on 2026-10-04 without a version change); `terrain.json`, `joints` and the base's `z`, `roll`, `pitch` missing (added on 2026-11-01: a flat floor, a standing robot); `estimate` missing in trajectory lines, `landmarks` missing in the scene and frames in JPEG (added on 2026-11-01 too: the robot knew its pose, no tags, a clean camera). Episodes written before that date may carry an absolute `frame_ref`; readers should locate frames by `frame_id`. A change that breaks any of these points increments `format_version`.

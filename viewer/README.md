@@ -1,6 +1,6 @@
 # Spingi Viewer
 
-Web replayer for episodes produced by the Spingi runtime (format in [../docs/episode-format.md](../docs/episode-format.md)). Load an episode `.zip` and watch the robot and the objects move in the 3D scene, with the event timeline, the head-camera frames, safety and operator events. When the robot walked in physics its legs move, its body rises and tilts, and outdoor episodes show their ground (asphalt, gravel, dirt, grass, kerbs, ramps). A static site: no server, no physics in the browser.
+Web replayer for episodes produced by the Spingi runtime (format in [../docs/episode-format.md](../docs/episode-format.md)). Load an episode `.zip` and watch the robot and the objects move in the 3D scene, with the event timeline, the head-camera frames, safety and operator events. When the robot walked in physics its legs move, its body rises and tilts, and outdoor episodes show their ground (asphalt, gravel, dirt, grass, kerbs, ramps). When its odometry drifted, an orange outline shows where it believed it was, tied to where it was by a dashed line, and the scene's AprilTag landmarks stand on their posts and walls. A static site: no server, no physics in the browser.
 
 Live at **https://spingi-viewer.netlify.app**. Episodes are read in the browser; nothing is uploaded.
 
@@ -17,10 +17,10 @@ npm run dev
 Open http://localhost:5173. Three ways to load an episode:
 
 - drop a `.zip` produced by `spingi run --zip` onto the page, or use **Load .zip**;
-- pick a bundled sample from the **Sample episodes** menu (inspection round on both robots, warehouse material runner, and three physics runs: the Go2's yard patrol outdoors, the G1 on the test track until it falls, the G1's inspection round);
+- pick a bundled sample from the **Sample episodes** menu (inspection round on both robots, warehouse material runner, physics runs: the Go2's yard patrol outdoors with realistic sensors, the G1 on the test track until it falls, the G1's inspection round);
 - open `?url=https://…/episode.zip` to load a published episode (during development use `#url=…`, because the Vite dev server rejects queries that look like file paths). Any https URL is accepted; http only from the viewer's own origin. An episode loaded from another host shows "loaded from <host>" next to its title, so a shared link cannot pass as one of ours.
 
-Episodes may come from strangers, so the viewer treats them as data: archives over 200 MB, or expanding beyond 500 MB (a zip bomb), are refused, and a download is stopped as soon as it passes the limit even when the server does not declare its size; a trajectory with a missing or non-finite value, or more than 64 joints, is refused at load time; `terrain.json` is checked before it reaches the GPU (at most a million samples, sizes that match, colours in range, surface ids that exist); episode text reaches the page only as text, never through `innerHTML` (a test scans every source file); an error during replay stops the player with a message. The images of the previous episode are released when a new one is loaded.
+Episodes may come from strangers, so the viewer treats them as data: archives over 200 MB, or expanding beyond 500 MB (a zip bomb), are refused, and a download is stopped as soon as it passes the limit even when the server does not declare its size; a trajectory with a missing or non-finite value, or more than 64 joints, is refused at load time; at most 256 landmarks are drawn, and a malformed one is skipped; frames are shown only when they are PNG or JPEG; `terrain.json` is checked before it reaches the GPU (at most a million samples, sizes that match, colours in range, surface ids that exist); episode text reaches the page only as text, never through `innerHTML` (a test scans every source file); an error during replay stops the player with a message. The images of the previous episode are released when a new one is loaded.
 
 Controls: Space plays and pauses, the arrow keys move one second, the speed menu goes from 0.5× to 4×, clicking an event or a frame jumps to that instant, "follow robot" keeps the camera on the robot, drag to orbit.
 

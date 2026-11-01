@@ -1,3 +1,5 @@
+import pytest
+
 from spingi.core.events import EventLog
 from spingi.metrics import Gate, run_metrics, summarize
 
@@ -67,3 +69,27 @@ def test_p95_is_checked_against_the_plan_budget_when_one_is_declared():
     failed = [run_metrics(fake_run(f"x{i}", "aborted"), 3) for i in range(3)]
     r = summarize(failed, gate=Gate(max_p95_s=60.0), **base)
     assert not r.checks["p95_within_budget"]  # no successful run: the budget cannot be shown to hold
+
+
+def test_run_metrics_count_what_the_robot_believed():
+    log = EventLog(run_id="r-loc")
+    log.emit("robot.relocalized", at="dock", marker_id=40, correction_m=0.2, correction_rad=0.01)
+    log.emit("localization.missed", at="pump_A", markers=[43])
+    log.emit("perception.result", target="pump_A", anomalies=["present:gauge"])
+    for error in (0.05, 0.31, 0.12):
+        log.emit("sim.arrival", error_m=error, miss_m=error)
+    log.emit("run.end", status="success", steps_completed=3)
+    m = run_metrics(log.events, steps_total=3)
+    assert (m.relocalizations, m.landmarks_missed, m.anomalies, m.pose_error_max_m) == (1, 1, 1, 0.31)
+    report = summarize(
+        [m, m.model_copy(update={"pose_error_max_m": 0.11})],
+        plan_id="p",
+        scene="s",
+        adapter="sim",
+        perception_noise=0,
+        position_sigma_m=0,
+        odometry="drift",
+        camera_noise=True,
+    )
+    assert report.pose_error_p50_m == pytest.approx(0.21) and report.anomalies_per_run == 1.0
+    assert report.odometry == "drift" and report.camera_noise

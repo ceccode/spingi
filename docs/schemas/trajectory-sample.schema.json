@@ -1,5 +1,28 @@
 {
   "$defs": {
+    "EstimateSample": {
+      "properties": {
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        },
+        "yaw": {
+          "title": "Yaw",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "yaw"
+      ],
+      "title": "EstimateSample",
+      "type": "object"
+    },
     "ObjectSample": {
       "properties": {
         "x": {
@@ -97,6 +120,18 @@
     },
     "robot": {
       "$ref": "#/$defs/RobotSample"
+    },
+    "estimate": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/EstimateSample"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "where the robot believes it is, when that differs from `robot` (ADR-0016)"
     },
     "battery_pct": {
       "anyOf": [

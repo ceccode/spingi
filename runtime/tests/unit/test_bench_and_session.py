@@ -1,9 +1,12 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from spingi.bench import bench, format_report
 from spingi.cli import main
 from spingi.core.human import ScriptedHuman
+from spingi.scenes import load_world
 from spingi.session import SessionConfig, run_session
 
 PLAN = Path("plans/demo_material_runner.yaml")
@@ -49,3 +52,21 @@ def test_cli_bench_gate_sets_the_exit_code(tmp_path, capsys):
     assert main(base) == 0
     assert main([*base, "--noise", "0.95"]) == 1
     assert "GATE FAILED" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("sensors", [{"odometry": "drift"}, {"camera_noise": True}])
+async def test_simulated_sensors_need_the_simulator(tmp_path, sensors):
+    with pytest.raises(ValueError, match="sim adapter"):
+        await run_session(SessionConfig(plan=PLAN, scene=SCENE, runs_dir=tmp_path, **sensors), ScriptedHuman())
+
+
+def test_cli_realistic_is_the_simulator_with_every_realistic_sensor(tmp_path):
+    with pytest.raises(SystemExit, match="needs --adapter sim"):
+        main(["run", str(PLAN), "--scene", str(SCENE), "--realistic", "--adapter", "fake", "--runs-dir", str(tmp_path)])
+
+
+def test_the_scene_landmarks_are_part_of_the_world():
+    world = load_world(SCENE)
+    assert {lm.marker_id for lm in world.landmarks} == {30, 31, 32, 33, 34, 35}
+    rack = next(lm for lm in world.landmarks if lm.marker_id == 31)
+    assert (rack.height_m, rack.size_m) == (1.1, 0.16) and abs(rack.pose.yaw - 3.1416) < 1e-9

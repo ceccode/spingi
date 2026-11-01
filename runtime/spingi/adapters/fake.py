@@ -93,6 +93,11 @@ class FakeAdapter:
     async def get_pose(self) -> Pose2D:
         return self.pose
 
+    async def relocalize(self, pose: Pose2D) -> None:
+        """The fake's odometry never drifts: a correction simply becomes its pose."""
+        self._record("relocalize", pose=pose.model_dump())
+        self.pose = pose
+
     # --- manipulation ------------------------------------------------------
     async def move_arm(self, arm: Arm, target: Pose3D, duration_s: float) -> None:
         self._record("move_arm", arm=arm, target=target.model_dump(), duration_s=duration_s)
