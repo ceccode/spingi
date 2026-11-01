@@ -136,6 +136,12 @@ def _session_args(p: argparse.ArgumentParser) -> None:
         help="truth: ground truth from the scene (with --noise/--sigma); markers: AprilTags read from the rendered "
         "frames, as from a real camera (sim adapter, perception extra)",
     )
+    p.add_argument(
+        "--physics",
+        action="store_true",
+        help="the robot walks with a learned controller on the scene's ground, and can be blocked or fall "
+        "(sim adapter; default: the base glides along the path)",
+    )
     p.add_argument("--runs-dir", type=Path, default=Path("runs"))
     p.add_argument("--noise", type=float, default=0.0, help="perception false-negative rate, 0..1")
     p.add_argument("--sigma", type=float, default=0.0, help="perception position noise, metres")
@@ -149,6 +155,7 @@ def _config(args) -> SessionConfig:
         adapter=args.adapter,
         robot=args.robot,
         perception=args.perception,
+        locomotion="physics" if args.physics else "kinematic",
         runs_dir=args.runs_dir,
         perception_noise=args.noise,
         position_sigma_m=args.sigma,

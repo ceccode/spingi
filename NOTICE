@@ -17,5 +17,16 @@ Third-party material:
   was added to go2.xml and the meshes were converted from OBJ to binary STL
   (see runtime/sim/models/NOTES.md).
 - viewer/public/models/g1.glb and go2.glb are derived from the same meshes
-  (merged in the standing pose and compressed) and are redistributed under the
-  same BSD 3-Clause License; the viewer serves the license texts at /NOTICE.txt.
+  (grouped by body, with the joint table in g1.joints.json and go2.joints.json,
+  and compressed) and are redistributed under the same BSD 3-Clause License;
+  the viewer serves the license texts at /NOTICE.txt.
+- Walking policy for the Unitree G1 (runtime/sim/policies/g1_mjlab_velocity),
+  from unitreerobotics/unitree_rl_mjlab. Licensed under the Apache License 2.0;
+  see runtime/sim/policies/g1_mjlab_velocity/LICENSE. Modified: the ONNX network
+  was converted to plain arrays and its metadata to policy.json.
+- Walking policies for the Unitree Go2 (runtime/sim/policies/go2_himloco and
+  runtime/sim/policies/go2_robot_lab), from fan-ziqi/rl_sar. Copyright
+  2024-2025 Ziqi Fan. Licensed under the Apache License 2.0; see the LICENSE file
+  in each folder. go2_himloco is a HIMLoco policy (OpenRobotLab). Modified: the
+  TorchScript tensors were extracted to plain arrays and the configuration
+  written as policy.json.

@@ -29,6 +29,8 @@ class SimModel(BaseModel):
     base_z: float  # height of the root body in the standing keyframe
     hand_forward_m: float | None = None  # where a held object sits, relative to the base (None: no arm)
     hand_height_m: float | None = None
+    policy: str | None = None  # walking policy under sim/policies, for physics locomotion (ADR-0015)
+    maneuver_policy: str | None = None  # a second policy for turning on the spot and slow moves, if the first cannot
 
     @property
     def path(self) -> Path:
@@ -62,6 +64,7 @@ G1 = RobotProfile(
         base_z=0.79,  # pelvis height in the "stand" keyframe of the menagerie model
         hand_forward_m=0.35,
         hand_height_m=0.95,
+        policy="g1_mjlab_velocity",
     ),
 )
 
@@ -76,6 +79,8 @@ GO2 = RobotProfile(
         file="go2.xml",
         root_body="base",
         base_z=0.27,  # base height in the "home" keyframe of the menagerie model
+        policy="go2_himloco",
+        maneuver_policy="go2_robot_lab",
     ),
 )
 

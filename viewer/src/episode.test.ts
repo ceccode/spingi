@@ -1,8 +1,8 @@
 import { strToU8 } from "fflate";
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_ROBOT_MODEL, describeEvent, eventTime, normalizePaths, objectsAt, parseEpisodeFiles, parseJsonl, poseAt,
-  robotModelUrl, wrapAngle, type Sample,
+  checkTrajectory, DEFAULT_ROBOT_MODEL, describeEvent, eventTime, jointsAt, normalizePaths, objectsAt, parseEpisodeFiles,
+  parseJsonl, poseAt, robotJointsUrl, robotModelUrl, wrapAngle, type Sample,
 } from "./episode";
 
 describe("robotModelUrl", () => {
@@ -92,5 +92,35 @@ describe("objectsAt", () => {
   });
   it("is empty before the first sample", () => {
     expect(objectsAt(traj, -1)).toEqual({});
+  });
+});
+
+describe("physics episodes", () => {
+  const walk: Sample[] = [
+    { t: 0, robot: { x: 0, y: 0, yaw: 0, mode: "walking", z: 0.3, roll: 0, pitch: 0.1 }, joints: { knee: 0.2, hip: 1.0 } },
+    { t: 1, robot: { x: 1, y: 0, yaw: 0, mode: "walking", z: 0.5, roll: 0.2, pitch: 0.3 }, joints: { knee: 0.6, hip: 1.0 } },
+  ];
+  it("interpolates the base height and tilt with the pose", () => {
+    const p = poseAt(walk, 0.5);
+    expect(p.z).toBeCloseTo(0.4);
+    expect(p.roll).toBeCloseTo(0.1);
+    expect(p.pitch).toBeCloseTo(0.2);
+    expect(poseAt(traj, 1).z).toBeUndefined(); // kinematic episodes on a flat floor have none
+  });
+  it("interpolates joint angles, and has none for kinematic episodes", () => {
+    expect(jointsAt(walk, 0.25)!.knee).toBeCloseTo(0.3);
+    expect(jointsAt(walk, 5)!.knee).toBeCloseTo(0.6);
+    expect(jointsAt(traj, 1)).toBeNull();
+  });
+  it("refuses non-finite heights and joint angles, and too many joints", () => {
+    const bad = (s: Partial<Sample>): Sample[] => [{ ...walk[0]!, ...s } as Sample];
+    expect(() => checkTrajectory(bad({ robot: { ...walk[0]!.robot, z: NaN } }))).toThrow(/malformed/);
+    expect(() => checkTrajectory(bad({ joints: { knee: Infinity } }))).toThrow(/malformed/);
+    const many = Object.fromEntries(Array.from({ length: 65 }, (_, i) => [`j${i}`, 0]));
+    expect(() => checkTrajectory(bad({ joints: many }))).toThrow(/malformed/);
+    expect(checkTrajectory(walk)).toHaveLength(2);
+  });
+  it("finds the joint table next to the model", () => {
+    expect(robotJointsUrl(robotModelUrl("unitree_go2"))).toBe("/models/go2.joints.json");
   });
 });

@@ -40,6 +40,43 @@
         "mode": {
           "title": "Mode",
           "type": "string"
+        },
+        "z": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "base height, when it leaves the flat floor (terrain, physics)",
+          "title": "Z"
+        },
+        "roll": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Roll"
+        },
+        "pitch": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pitch"
         }
       },
       "required": [
@@ -102,6 +139,7 @@
         }
       ],
       "default": null,
+      "description": "joint angles in radians (physics locomotion)",
       "title": "Joints"
     }
   },

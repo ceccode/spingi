@@ -1,8 +1,8 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import {
-  DEFAULT_ROBOT_MODEL, describeEvent, episodeDuration, eventTime, loadEpisodeFromZip, manifestRows, MAX_ZIP_BYTES,
-  objectsAt, poseAt, readCapped, robotModelUrl, safeEpisodeUrl, type Episode,
+  DEFAULT_ROBOT_MODEL, describeEvent, episodeDuration, eventTime, jointsAt, loadEpisodeFromZip, manifestRows,
+  MAX_ZIP_BYTES, objectsAt, poseAt, readCapped, robotJointsUrl, robotModelUrl, safeEpisodeUrl, type Episode,
 } from "./episode";
 import { Player } from "./player";
 import { World } from "./world";
@@ -93,11 +93,13 @@ player.onTick((t) => {
 function render(episode: Episode, t: number): void {
   const pose = poseAt(episode.trajectory, t);
   world.setRobotPose(pose);
+  world.setJoints(jointsAt(episode.trajectory, t));
   world.setObjectPositions(objectsAt(episode.trajectory, t));
   ui.scrub.value = String(t / player.duration);
   ui.clock.textContent = `${t.toFixed(1)} s`;
   ui.play.textContent = player.playing ? "❚❚" : "▶";
-  ui.hud.textContent = `t ${t.toFixed(2)} s\nx ${pose.x.toFixed(2)}  y ${pose.y.toFixed(2)}  yaw ${pose.yaw.toFixed(2)}\n${pose.mode}`;
+  const height = pose.z !== undefined ? `  z ${pose.z.toFixed(2)}` : "";
+  ui.hud.textContent = `t ${t.toFixed(2)} s\nx ${pose.x.toFixed(2)}  y ${pose.y.toFixed(2)}${height}  yaw ${pose.yaw.toFixed(2)}\n${pose.mode}`;
   let current = -1;
   const items = ui.events.children;
   for (let i = 0; i < items.length; i++) {
@@ -130,13 +132,13 @@ let robotModel = "";  // the GLB currently loaded, so that episodes of the same 
 /** Draws the robot the episode was recorded on (manifest.robot.model); a failed load keeps the previous model. */
 async function showRobot(url: string): Promise<void> {
   if (url === robotModel) return;
-  await world.loadRobot(url);
+  await world.loadRobot(url, robotJointsUrl(url));
   robotModel = url;
 }
 
 async function show(ep: Episode): Promise<void> {
   episode = ep;
-  world.build(ep.scene);
+  world.build(ep.scene, ep.terrain);
   const m = ep.manifest;
   ui.title.textContent = `${m.plan_id} · ${m.run_id}`;
   try {

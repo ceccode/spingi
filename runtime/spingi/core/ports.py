@@ -66,6 +66,11 @@ class RobotEstopped(RuntimeError):
     """Raised by an adapter for any motion command while its e-stop is engaged (until a manual reset)."""
 
 
+class RobotFell(RobotEstopped):
+    """The robot is on the ground. Like an e-stop it accepts no motion command until people pick it up; the
+    message says where it fell. Only a simulator with physics, or a real robot, can raise it."""
+
+
 @runtime_checkable
 class Clock(Protocol):
     """The robot's time. Wall-clock time on a real robot, simulated time in a simulator run as fast as possible.

@@ -33,6 +33,7 @@ class RunConfig(BaseModel):
     position_sigma_m: float = Field(default=0.0, description="perceiver position noise, metres")
     seed: int = 0
     perception: str = Field(default="truth", description="truth (scene ground truth) or markers (AprilTags in frames)")
+    locomotion: str = Field(default="kinematic", description="kinematic (the base glides) or physics (the robot walks)")
 
 
 class Manifest(BaseModel):
@@ -56,6 +57,9 @@ class RobotSample(BaseModel):
     y: float
     yaw: float
     mode: str
+    z: float | None = Field(default=None, description="base height, when it leaves the flat floor (terrain, physics)")
+    roll: float | None = None
+    pitch: float | None = None
 
 
 class ObjectSample(BaseModel):
@@ -69,7 +73,7 @@ class TrajectorySample(BaseModel):
     robot: RobotSample
     battery_pct: float | None = None
     objects: dict[str, ObjectSample] | None = Field(default=None, description="only when they change")
-    joints: dict[str, float] | None = None
+    joints: dict[str, float] | None = Field(default=None, description="joint angles in radians (physics locomotion)")
 
 
 def write_episode(
@@ -90,6 +94,10 @@ def write_episode(
     run_dir.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(plan_path, run_dir / "plan.yaml")
     shutil.copyfile(scene_path, run_dir / "scene.yaml")
+
+    terrain = adapter.terrain_for_viewer() if hasattr(adapter, "terrain_for_viewer") else None
+    if terrain is not None:
+        (run_dir / "terrain.json").write_text(json.dumps(terrain, separators=(",", ":")) + "\n", encoding="utf-8")
 
     samples = [TrajectorySample.model_validate(r) for r in getattr(adapter, "trajectory", [])]
     with (run_dir / "trajectory.jsonl").open("w", encoding="utf-8") as fh:

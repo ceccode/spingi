@@ -1,0 +1,32 @@
+# Test track: walk the course of sim/scenes/test_track.yaml stretch by stretch, stopping at the first failure, so
+# that the episode says how far the robot got. Run it with --physics, on both robots, and compare.
+id: test_track
+description: "Walk the test track from concrete to a 15 cm step, one stretch per step"
+deadline_s: 600
+steps:
+  - skill: navigate
+    params: { to: end_asphalt, max_speed: 0.6 }
+    on_failure: { then: abort }
+  - skill: navigate
+    params: { to: end_gravel, max_speed: 0.6 }
+    on_failure: { then: abort }
+  - skill: navigate
+    params: { to: end_grass, max_speed: 0.6 }
+    on_failure: { then: abort }
+  - skill: navigate
+    params: { to: end_dirt, max_speed: 0.6 }
+    on_failure: { then: abort }
+  - skill: navigate
+    params: { to: end_rough, max_speed: 0.6 }
+    on_failure: { then: abort }
+  - skill: navigate
+    params: { to: end_ramps, max_speed: 0.6 }
+    on_failure: { then: abort }
+  - skill: navigate
+    params: { to: end_step_10, max_speed: 0.6 }
+    on_failure: { then: abort }
+  - skill: navigate
+    params: { to: end_step_15, max_speed: 0.6 }
+    on_failure: { then: abort }
+  - skill: say
+    params: { text: "Track completed" }

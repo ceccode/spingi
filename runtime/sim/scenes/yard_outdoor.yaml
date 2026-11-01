@@ -1,0 +1,55 @@
+# Industrial yard, outdoors: an asphalt yard with a concrete pad for the dock, a gravel car park with containers,
+# a dirt track to a pump station, a pavement along the building behind a 12 cm kerb, and a loading dock reached by a
+# ramp. Made for patrols with the Go2; the G1's walking controller is trained on flat floors and falls at the kerb.
+# Physics locomotion (`--physics`) is what makes the ground matter; in kinematic mode the base follows its height.
+robot:
+  pose: { x: 0.0, y: 0.0, yaw: 0.0 }
+  battery_pct: 100
+terrain:
+  extent: { x_min: -3, x_max: 25, y_min: -8, y_max: 9 }
+  cell_m: 0.1
+  seed: 11
+  surface: asphalt
+  regions:
+    - { surface: concrete, x: [-3, 2], y: [-2, 2] }      # dock pad
+    - { surface: gravel, x: [3, 12], y: [-8, -2] }       # car park
+    - { surface: dirt, x: [12, 25], y: [-3, 1] }         # track to the pump station
+    - { surface: grass, x: [12, 25], y: [-8, -3] }
+    - { surface: grass, x: [-3, 3], y: [-8, -2] }
+    - { surface: concrete, x: [-3, 14], y: [5.5, 9] }    # pavement along the building
+    - { surface: concrete, x: [12.5, 23], y: [3, 6.5] }  # ramp and loading dock
+  ramps:
+    - { x: [12.5, 16.0], y: [3.5, 5.5], from_m: 0.0, to_m: 0.45, along: x }   # about 7 degrees
+  raised:
+    - { x: [-3, 14], y: [5.5, 9], height_m: 0.10 }      # the kerb
+    - { x: [16.0, 23], y: [3, 6.5], height_m: 0.45 }    # loading dock
+locations:
+  dock:      { pose: { x: 0.0, y: 0.0, yaw: 0.0 } }
+  yard_gate: { pose: { x: 11.0, y: -0.5, yaw: 0.0 } }
+  pump_A:    { pose: { x: 20.6, y: -1.0, yaw: 0.0 } }
+  ramp_foot: { pose: { x: 11.0, y: 4.5, yaw: 0.0 } }
+  ramp_top:  { pose: { x: 16.6, y: 4.5, yaw: 0.0 } }
+  dock_B:    { pose: { x: 18.6, y: 4.5, yaw: 0.0 } }
+  door_C:    { pose: { x: 6.0, y: 6.6, yaw: 1.57 }, tolerance_m: 0.25 }
+  kerb_front: { pose: { x: 6.0, y: 4.0, yaw: 1.57 } }   # square to the kerb: a robot steps up a kerb head on
+obstacles:
+  - { x: 6.0, y: 8.2, w: 16.0, d: 1.4, h: 3.5, color: "#b9b4aa" }    # building
+  - { x: 7.0, y: -6.6, w: 6.0, d: 2.4, h: 2.6, color: "#a33a2a" }    # container
+  - { x: 7.0, y: -3.8, w: 6.0, d: 2.4, h: 2.6, color: "#2f5f8a" }    # container
+  - { x: 22.1, y: -1.0, w: 1.0, d: 1.0, h: 1.5, color: "#2f6db5" }   # pump station cabinet
+  - { x: 0.6, y: 3.7, w: 0.8, d: 0.5, h: 1.8, color: "#7a8a99" }     # electrical cabinet
+  - { x: 15.0, y: 1.9, w: 2.0, d: 0.4, h: 0.8, color: "#d8d2c4" }    # concrete barrier
+  - { x: 21.0, y: 5.6, w: 1.2, d: 1.0, h: 1.2, color: "#b08b57" }    # pallets on the dock
+objects:
+  gauge_01:        { cls: gauge, marker_id: 21, size: [0.06, 0.24, 0.24], pose: { x: 21.57, y: -1.0, z: 0.55 }, color: "#e8e8e8" }
+  extinguisher_03: { cls: extinguisher, marker_id: 23, size: [0.24, 0.24, 0.5], pose: { x: 19.7, y: 4.5, z: 0.70 }, color: "#c62828" }
+  sign_05:         { cls: door_sign, marker_id: 25, size: [0.3, 0.04, 0.3], pose: { x: 6.0, y: 7.47, z: 0.95 }, color: "#f2c230" }
+safety:
+  geofence: { x_min: -2.5, x_max: 24.5, y_min: -7.5, y_max: 7.4 }
+  max_speed: 1.0
+  min_battery_pct: 5
+routes:
+  dock->pump_A: [yard_gate]
+  pump_A->dock_B: [yard_gate, ramp_foot, ramp_top]
+  dock_B->door_C: [ramp_top, ramp_foot, kerb_front]
+  door_C->dock: [kerb_front]

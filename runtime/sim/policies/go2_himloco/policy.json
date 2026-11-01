@@ -1,0 +1,112 @@
+{
+  "robot": "unitree_go2",
+  "action_scale": [
+    0.125,
+    0.25,
+    0.25,
+    0.125,
+    0.25,
+    0.25,
+    0.125,
+    0.25,
+    0.25,
+    0.125,
+    0.25,
+    0.25
+  ],
+  "actuation": "torque",
+  "obs_scale": {
+    "ang_vel": 0.25,
+    "joint_vel": 0.05
+  },
+  "joint_damping": 0.1,
+  "stand_height_m": 0.33,
+  "fall_height_m": 0.12,
+  "name": "go2_himloco",
+  "source": "rl_sar policy/go2/himloco/himloco.pt (HIMLoco)",
+  "joint_names": [
+    "FL_hip_joint",
+    "FL_thigh_joint",
+    "FL_calf_joint",
+    "FR_hip_joint",
+    "FR_thigh_joint",
+    "FR_calf_joint",
+    "RL_hip_joint",
+    "RL_thigh_joint",
+    "RL_calf_joint",
+    "RR_hip_joint",
+    "RR_thigh_joint",
+    "RR_calf_joint"
+  ],
+  "default_q": [
+    0.1,
+    0.8,
+    -1.5,
+    -0.1,
+    0.8,
+    -1.5,
+    0.1,
+    1.0,
+    -1.5,
+    -0.1,
+    1.0,
+    -1.5
+  ],
+  "kp": [
+    40.0,
+    40.0,
+    40.0,
+    40.0,
+    40.0,
+    40.0,
+    40.0,
+    40.0,
+    40.0,
+    40.0,
+    40.0,
+    40.0
+  ],
+  "kd": [
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0
+  ],
+  "observation": [
+    "command",
+    "ang_vel",
+    "gravity",
+    "joint_pos",
+    "joint_vel",
+    "last_action"
+  ],
+  "command_scale": [
+    2.0,
+    2.0,
+    0.25
+  ],
+  "command_limits": {
+    "vx": [
+      -0.6,
+      1.0
+    ],
+    "vy": [
+      -0.5,
+      0.5
+    ],
+    "wz": [
+      -1.0,
+      1.0
+    ]
+  },
+  "history": 6,
+  "obs_clip": 100.0
+}

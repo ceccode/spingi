@@ -1,6 +1,6 @@
 # Spingi Viewer
 
-Web replayer for episodes produced by the Spingi runtime (format in [../docs/episode-format.md](../docs/episode-format.md)). Load an episode `.zip` and watch the robot and the objects move in the 3D scene, with the event timeline, the head-camera frames, safety and operator events. A static site: no server, no physics in the browser.
+Web replayer for episodes produced by the Spingi runtime (format in [../docs/episode-format.md](../docs/episode-format.md)). Load an episode `.zip` and watch the robot and the objects move in the 3D scene, with the event timeline, the head-camera frames, safety and operator events. When the robot walked in physics its legs move, its body rises and tilts, and outdoor episodes show their ground (asphalt, gravel, dirt, grass, kerbs, ramps). A static site: no server, no physics in the browser.
 
 Live at **https://spingi-viewer.netlify.app**. Episodes are read in the browser; nothing is uploaded.
 
@@ -17,10 +17,10 @@ npm run dev
 Open http://localhost:5173. Three ways to load an episode:
 
 - drop a `.zip` produced by `spingi run --zip` onto the page, or use **Load .zip**;
-- pick a bundled sample from the **Sample episodes** menu (inspection round, warehouse material runner);
+- pick a bundled sample from the **Sample episodes** menu (inspection round on both robots, warehouse material runner, and three physics runs: the Go2's yard patrol outdoors, the G1 on the test track until it falls, the G1's inspection round);
 - open `?url=https://…/episode.zip` to load a published episode (during development use `#url=…`, because the Vite dev server rejects queries that look like file paths). Any https URL is accepted; http only from the viewer's own origin. An episode loaded from another host shows "loaded from <host>" next to its title, so a shared link cannot pass as one of ours.
 
-Episodes may come from strangers, so the viewer treats them as data: archives over 200 MB, or expanding beyond 500 MB (a zip bomb), are refused, and a download is stopped as soon as it passes the limit even when the server does not declare its size; a trajectory with a missing or non-finite value is refused at load time; episode text reaches the page only as text, never through `innerHTML` (a test scans every source file); an error during replay stops the player with a message. The images of the previous episode are released when a new one is loaded.
+Episodes may come from strangers, so the viewer treats them as data: archives over 200 MB, or expanding beyond 500 MB (a zip bomb), are refused, and a download is stopped as soon as it passes the limit even when the server does not declare its size; a trajectory with a missing or non-finite value, or more than 64 joints, is refused at load time; `terrain.json` is checked before it reaches the GPU (at most a million samples, sizes that match, colours in range, surface ids that exist); episode text reaches the page only as text, never through `innerHTML` (a test scans every source file); an error during replay stops the player with a message. The images of the previous episode are released when a new one is loaded.
 
 Controls: Space plays and pauses, the arrow keys move one second, the speed menu goes from 0.5× to 4×, clicking an event or a frame jumps to that instant, "follow robot" keeps the camera on the robot, drag to orbit.
 
@@ -28,7 +28,7 @@ Controls: Space plays and pauses, the arrow keys move one second, the speed menu
 npm test
 ```
 
-runs the 21 unit tests (episode reading, the replay clock, loading limits and handling of untrusted episodes) with Vitest.
+runs the unit tests (episode reading, joint angles and the base's height, the ground, the replay clock, loading limits and handling of untrusted episodes) with Vitest.
 
 ```bash
 npm run build
@@ -38,15 +38,14 @@ npm run build
 
 | File | Role |
 |------|------|
-| `src/episode.ts` | Reads the zip (fflate), YAML and JSONL; interpolates the robot pose and merges object positions over time; aligns events with the trajectory. No rendering dependency: this is the reading SDK in embryo. |
-| `src/world.ts` | Three.js scene from `scene.yaml`: floor, locations, obstacles, objects, robot. MuJoCo coordinates (Z up) inside a rotated group. |
+| `src/episode.ts` | Reads the zip (fflate), YAML and JSONL; interpolates the robot pose, the base's height and tilt and the joint angles, and merges object positions over time; aligns events with the trajectory. No rendering dependency: this is the reading SDK in embryo. |
+| `src/terrain.ts` | Reads and checks `terrain.json`; ground height at a point; the ground as vertices, colours and triangles. No rendering dependency. |
+| `src/world.ts` | Three.js scene from `scene.yaml` and `terrain.json`: floor or ground, locations, obstacles (with their colours, standing on the ground), objects, the robot and its joints. MuJoCo coordinates (Z up) inside a rotated group. |
 | `src/player.ts` | Replay clock: play, pause, speed, seek. |
 | `src/main.ts` | Interface: loading, timeline, event list, frames, camera. |
-| `public/models/g1.glb`, `go2.glb` | The Unitree G1 and Go2 in their standing pose, about 1.2 MB each, exported by `runtime/scripts/export_glb.py --robot g1|go2` and compressed with `npm run model:compress` (meshopt, no simplification). The viewer picks the model from `manifest.robot.model` through a fixed table (`robotModelUrl`); an unknown name is drawn as the G1. |
+| `public/models/g1.glb`, `go2.glb` | The Unitree G1 and Go2, one node per body (1.4 MB and 0.7 MB), exported by `runtime/scripts/export_glb.py --robot g1|go2` and compressed with `npm run model:compress` (meshopt, no simplification, nodes kept). Next to each, `<robot>.joints.json` says which node each joint turns, about which axis, and the standing angles. The viewer picks the model from `manifest.robot.model` through a fixed table (`robotModelUrl`); an unknown name is drawn as the G1. Episodes without joint angles (kinematic runs) show the robot standing. |
 | `public/samples/` | Episodes generated by the runtime. |
 | `public/NOTICE.txt` | The repository's NOTICE and the Unitree BSD 3-Clause licenses that cover the models, served at `/NOTICE.txt`. |
-
-The models are rigid: the base moves, the limbs do not, matching the simulator. When the runtime records joints in the trajectory the GLBs will be exported with the link hierarchy.
 
 ## Deploy
 

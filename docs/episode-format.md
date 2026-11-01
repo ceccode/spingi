@@ -1,6 +1,6 @@
 # Episode format v0.1
 
-Status: v0.1 implemented in the runtime and the viewer · Date: 2026-10-02, updated 2026-10-04
+Status: v0.1 implemented in the runtime and the viewer · Date: 2026-10-02, updated 2026-11-01
 
 An **episode** is the result of a runtime run, packaged so that anyone can replay it without the runtime and without the simulator. It is the contract between the `runtime/` project (which writes it) and the `viewer/` project (which reads it), and it is the form in which episodes are shared and archived as datasets (ADR-0005).
 
@@ -19,7 +19,8 @@ An **episode** is the result of a runtime run, packaged so that anyone can repla
 ├── scene.yaml           # copy of the scene used (locations, obstacles, objects, safety limits)
 ├── plan.yaml            # copy of the executed plan
 ├── events.jsonl         # runtime event log, unchanged (ADR-0005)
-├── trajectory.jsonl     # robot and object poses sampled over time
+├── trajectory.jsonl     # robot and object poses sampled over time; joint angles when the robot walked in physics
+├── terrain.json         # the ground, for scenes that have one (optional)
 ├── frames/              # camera images, named after the frame_id field of the events (optional)
 │   └── sim-1.png
 └── run.mp4              # third-person video, only with `spingi run --record` (optional; the viewer ignores it)
@@ -42,7 +43,7 @@ The zip produced by `--zip` (`runs/<run_id>.zip`) contains the `<run_id>/` folde
   "duration_s": 0.504,
   "sim_time_s": 39.36,
   "sample_rate_hz": 10.0,
-  "config": { "perception_noise": 0.0, "position_sigma_m": 0.0, "seed": 0, "perception": "truth" },
+  "config": { "perception_noise": 0.0, "position_sigma_m": 0.0, "seed": 0, "perception": "truth", "locomotion": "kinematic" },
   "files": ["events.jsonl", "frames/", "plan.yaml", "scene.yaml", "trajectory.jsonl"]
 }
 ```
@@ -57,12 +58,12 @@ The zip produced by `--zip` (`runs/<run_id>.zip`) contains the `<run_id>/` folde
 | `duration_s` | Wall-clock seconds between the first and the last event. In fast simulation it is much shorter than `sim_time_s`. |
 | `sim_time_s` | Total simulated time, when the adapter has a simulated clock (optional). |
 | `sample_rate_hz` | Nominal rate of `trajectory.jsonl`, when the adapter samples at a fixed rate (optional). |
-| `config` | Optional. The run settings needed to run the episode again with `spingi replay`: `perception_noise` (false-negative rate of the perceiver), `position_sigma_m` (Gaussian noise on perceived positions, metres), `seed`, and `perception` (`truth`: the simulator's ground truth; `markers`: AprilTags read from the rendered frames). Episodes written before it existed do not have it; replay then uses no noise, seed 0 and ground truth. |
+| `config` | Optional. The run settings needed to run the episode again with `spingi replay`: `perception_noise` (false-negative rate of the perceiver), `position_sigma_m` (Gaussian noise on perceived positions, metres), `seed`, `perception` (`truth`: the simulator's ground truth; `markers`: AprilTags read from the rendered frames) and `locomotion` (`kinematic`: the base glides; `physics`: the robot walks with learned controllers, ADR-0015). Episodes written before it existed do not have it; replay then uses no noise, seed 0, ground truth and the kinematic base. |
 | `files` | Sorted list of the other entries in the folder; directories end with `/`. |
 
 ## trajectory.jsonl
 
-One line per sample, at the rate declared in the manifest's `sample_rate_hz` (10 Hz of simulated time with `SimAdapter`; `FakeAdapter` has no fixed rate, see below). The time `t` is simulated time in seconds since the start of the run, on the same axis as the events.
+One line per sample, at the rate declared in the manifest's `sample_rate_hz` (10 Hz of simulated time with `SimAdapter`, 25 Hz when the robot walks in physics, enough to replay its legs; `FakeAdapter` has no fixed rate, see below). The time `t` is simulated time in seconds since the start of the run, on the same axis as the events.
 
 ```json
 {"t": 0.0, "robot": {"x": 0.0, "y": 0.0, "yaw": 0.0, "mode": "idle"}}
@@ -70,7 +71,36 @@ One line per sample, at the rate declared in the manifest's `sample_rate_hz` (10
 {"t": 12.2, "robot": {"x": 6.0, "y": 0.5, "yaw": 0.0, "mode": "idle"}, "objects": {"red_box_01": {"x": 0.0, "y": 2.9, "z": 0.9}}}
 ```
 
-Optional fields per line: `objects` (object positions; `SimAdapter` writes them in the first sample and then only when they change, for example while an object is carried), `joints` (joint positions, once locomotion is real, not written yet), `battery_pct` (written by both adapters today).
+```json
+{"t": 3.04, "robot": {"x": 0.81, "y": 0.05, "yaw": 0.02, "mode": "walking", "z": 0.305, "roll": 0.01, "pitch": -0.03}, "battery_pct": 99.6, "joints": {"FL_hip_joint": 0.08, "FL_thigh_joint": 0.91, "FL_calf_joint": -1.62}}
+```
+
+Optional fields per line:
+- `objects`: object positions; `SimAdapter` writes them in the first sample and then only when they change, for example while an object is carried.
+- `robot.z`, `robot.roll`, `robot.pitch`: the base's height in metres and its tilt in radians, when the robot is not on a flat floor at its standing height: always in physics, and in kinematic runs on a scene with ground.
+- `joints`: joint angles in radians, by joint name as in the robot's model, written when the robot walks in physics (one value per joint, at most 64).
+- `battery_pct`: written by both adapters.
+
+## terrain.json
+
+Written when the scene has a `terrain` section (runtime-spec §8.3), so that a reader can draw the ground without the simulator. Heights are on a grid; a reader interpolates between samples.
+
+```json
+{"format": 1, "x0": -3.0, "y0": -8.0, "cell_m": 0.1, "rows": 171, "cols": 281,
+ "heights_mm": "<base64>", "surface_ids": "<base64>",
+ "surfaces": [{"name": "asphalt", "rgb": [0.19, 0.19, 0.21], "speck": [0.34, 0.34, 0.35]}, "..."],
+ "obstacles_z": [0.0, 0.1, 0.45]}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `x0`, `y0`, `cell_m`, `rows`, `cols` | The grid: sample `(row, col)` is at x = `x0` + col × `cell_m`, y = `y0` + row × `cell_m`. |
+| `heights_mm` | `rows` × `cols` little-endian signed 16-bit integers, row by row: the ground's height in millimetres, built structures (kerbs, ramps, docks) included. |
+| `surface_ids` | `rows` × `cols` bytes: the index in `surfaces` of each sample's surface. |
+| `surfaces` | Name and colours (base colour and grain, RGB between 0 and 1) of each surface, so the reader needs no table of its own. |
+| `obstacles_z` | Where each obstacle of `scene.yaml` stands, in the same order: its base height. |
+
+The viewer refuses grids larger than a million samples, sizes that do not match, colours out of range and surface ids without a surface.
 
 ## Aligning events and trajectory
 
@@ -93,6 +123,7 @@ Runtime events carry `ts` in wall-clock time. To align them with the trajectory,
 | `safety.geofence`, `safety.battery_low` | the Safety Monitor stopped the robot (leaving the geofence e-stops it unless the scene sets `estop_on_geofence: false`); `pose` or `battery_pct`, `min_pct`. Recorded once per occurrence |
 | `safety.speed_capped` | `limit` (the scene's `max_speed`), `applied` (the cap now in force on the adapter) |
 | `safety.estop`, `safety.monitor_error` | the robot was e-stopped after a `FATAL` outcome (`skill`, `reason`) or after a safety check raised (`error`) |
+| `robot.fell` | `skill`, `reason` (where the robot fell); the run ends as `estop` |
 | `run.end` | `status`, `steps_completed`, `reason` |
 
 ## Implementation status
@@ -102,6 +133,7 @@ Runtime events carry `ts` in wall-clock time. To align them with the trajectory,
 - The JSON schemas in [schemas/](schemas/) are generated from the pydantic models in `runtime/spingi/episode.py` (`make schemas` in `runtime/`); a test fails if they diverge.
 - The first reader is the viewer in `viewer/` (`src/episode.ts` reads zip, YAML and JSONL and interpolates the trajectory). It refuses archives over 200 MB or expanding beyond 500 MB, and trajectories with a missing or non-finite `t`, `x`, `y` or `yaw`.
 - `SimAdapter` streams `run.mp4` to disk while recording instead of keeping the frames in memory.
+- The viewer draws `terrain.json` as a coloured mesh and stands the obstacles on it; it moves the robot's legs from `joints` with the joint table next to each robot model (`models/<robot>.joints.json`: which node each joint turns, about which axis, and the standing angles shown when an episode has no joint angles).
 - `spingi export lerobot` refuses folders without a `manifest.json` and trajectories that end outside 0 to 24 hours.
 
 ## Frames
@@ -110,4 +142,4 @@ A frame is written by the adapter as `frames/<frame_id>.png` and referenced by t
 
 ## Compatibility
 
-A viewer that reads `0.1` must tolerate: extra fields in the manifest and in trajectory lines; `objects` missing in lines after the first; `frames/` missing; `sim_t` missing in events (use `ts`); a `status` it does not know (`estop` and `error` were added on 2026-10-04 without a version change). Episodes written before that date may carry an absolute `frame_ref`; readers should locate frames by `frame_id`. A change that breaks any of these points increments `format_version`.
+A viewer that reads `0.1` must tolerate: extra fields in the manifest and in trajectory lines; `objects` missing in lines after the first; `frames/` missing; `sim_t` missing in events (use `ts`); a `status` it does not know (`estop` and `error` were added on 2026-10-04 without a version change); `terrain.json`, `joints` and the base's `z`, `roll`, `pitch` missing (added on 2026-11-01: a flat floor, a standing robot). Episodes written before that date may carry an absolute `frame_ref`; readers should locate frames by `frame_id`. A change that breaks any of these points increments `format_version`.

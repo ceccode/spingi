@@ -1,4 +1,4 @@
-.PHONY: setup test lint demo demo-sim demo-sim-go2 demo-sim-view demo-sim-record schemas bench
+.PHONY: setup test lint demo demo-sim demo-sim-go2 demo-sim-view demo-sim-record demo-yard demo-track schemas bench
 
 setup:
 	uv sync --extra dev --extra sim --extra export --extra llm --extra perception
@@ -23,6 +23,12 @@ demo-sim-record:
 
 demo-sim-view:
 	uv run mjpython -m spingi.cli run plans/demo_inspection_round.yaml --adapter sim --view --quiet
+
+demo-yard:
+	uv run spingi run plans/yard_patrol.yaml --scene sim/scenes/yard_outdoor.yaml --adapter sim --robot go2 --physics --zip --quiet
+
+demo-track:
+	uv run spingi run plans/test_track.yaml --scene sim/scenes/test_track.yaml --adapter sim --robot go2 --physics --zip --quiet
 
 schemas:
 	uv run python scripts/gen_schemas.py

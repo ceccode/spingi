@@ -1,6 +1,7 @@
 /** Reading an episode (docs/episode-format.md). No dependency on rendering. */
 import { strFromU8, unzipSync } from "fflate";
 import YAML from "yaml";
+import { parseTerrain, type Terrain } from "./terrain";
 
 export interface Pose2D { x: number; y: number; yaw: number }
 export interface Manifest {
@@ -9,21 +10,25 @@ export interface Manifest {
   plan_id: string; status: string; steps_completed: number; steps_total: number;
   duration_s: number; sim_time_s?: number | null; sample_rate_hz?: number | null; files: string[];
 }
+/** Base height and tilt: present when the robot left the flat floor (outdoor ground, physics walking). */
+export interface BaseLift { z?: number; roll?: number; pitch?: number }
 export interface Sample {
-  t: number; robot: Pose2D & { mode: string }; battery_pct?: number;
+  t: number; robot: Pose2D & BaseLift & { mode: string }; battery_pct?: number;
   objects?: Record<string, { x: number; y: number; z: number }>;
+  joints?: Record<string, number>; // joint angles in radians (physics walking)
 }
 export interface Event { ts: number; run_id: string; kind: string; sim_t?: number; [k: string]: unknown }
 export interface Scene {
   robot?: { pose?: Pose2D; battery_pct?: number };
   locations?: Record<string, { pose: Pose2D; tolerance_m?: number }>;
-  obstacles?: { x: number; y: number; w?: number; d?: number; h?: number }[];
+  obstacles?: { x: number; y: number; w?: number; d?: number; h?: number; color?: string }[];
   objects?: Record<string, { cls: string; pose?: { x: number; y: number; z: number }; size?: number[] }>;
 }
 export interface Plan { id: string; description?: string; steps: { skill: string; params: Record<string, unknown> }[] }
 export interface Episode {
   manifest: Manifest; scene: Scene; plan: Plan; events: Event[]; trajectory: Sample[];
   frames: Map<string, Blob>;
+  terrain: Terrain | null; // outdoor ground; null on a flat floor
 }
 
 export const SUPPORTED_FORMAT = "0.1";
@@ -34,6 +39,11 @@ export const DEFAULT_ROBOT_MODEL = ROBOT_MODELS.unitree_g1!;
 export function robotModelUrl(model: unknown): string {
   return (typeof model === "string" && Object.hasOwn(ROBOT_MODELS, model) ? ROBOT_MODELS[model] : undefined) ?? DEFAULT_ROBOT_MODEL;
 }
+/** The joint table next to each GLB (which node each joint turns, about which axis, the standing angles). */
+export function robotJointsUrl(modelUrl: string): string {
+  return modelUrl.replace(/\.glb$/, ".joints.json");
+}
+export const MAX_JOINTS = 64;
 /** Episodes come from strangers too: refuse archives that would exhaust the browser's memory (zip bombs). */
 export const MAX_ZIP_BYTES = 200 * 1024 * 1024;
 export const MAX_UNZIPPED_BYTES = 500 * 1024 * 1024;
@@ -78,6 +88,7 @@ export function parseEpisodeFiles(raw: Record<string, Uint8Array>): Episode {
     events: parseJsonl<Event>(text("events.jsonl")),
     trajectory: files["trajectory.jsonl"] ? checkTrajectory(parseJsonl<Sample>(text("trajectory.jsonl"))) : [],
     frames,
+    terrain: files["terrain.json"] ? parseTerrain(JSON.parse(text("terrain.json"))) : null,
   };
 }
 
@@ -85,7 +96,13 @@ export function parseEpisodeFiles(raw: Record<string, Uint8Array>): Episode {
 export function checkTrajectory(samples: Sample[]): Sample[] {
   samples.forEach((s, i) => {
     const r = s?.robot;
-    const ok = Number.isFinite(s?.t) && r && [r.x, r.y, r.yaw].every((v) => Number.isFinite(v));
+    const optional = (v: unknown): boolean => v === undefined || Number.isFinite(v);
+    let ok = Number.isFinite(s?.t) && r && [r.x, r.y, r.yaw].every((v) => Number.isFinite(v));
+    ok = ok && optional(r.z) && optional(r.roll) && optional(r.pitch);
+    if (ok && s.joints !== undefined) {
+      const values = typeof s.joints === "object" && s.joints !== null ? Object.values(s.joints) : null;
+      ok = values !== null && values.length <= MAX_JOINTS && values.every((v) => Number.isFinite(v));
+    }
     if (!ok) throw new Error(`malformed trajectory line ${i + 1}`);
   });
   return samples;
@@ -154,13 +171,13 @@ export function wrapAngle(a: number): number {
   return ((((a + Math.PI) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)) - Math.PI;
 }
 
-/** Pose linearly interpolated at time t; outside the range it holds the first or last sample. */
-export function poseAt(trajectory: Sample[], t: number): Pose2D & { mode: string } {
+/** The two samples around time t and how far between them t is (0..1); outside the range, the end sample twice. */
+function bracket(trajectory: Sample[], t: number): [Sample, Sample, number] | null {
   const first = trajectory[0];
-  if (!first) return { x: 0, y: 0, yaw: 0, mode: "idle" };
-  if (t <= first.t) return { ...first.robot };
+  if (!first) return null;
+  if (t <= first.t) return [first, first, 0];
   const last = trajectory[trajectory.length - 1]!;
-  if (t >= last.t) return { ...last.robot };
+  if (t >= last.t) return [last, last, 0];
   let lo = 0;
   let hi = trajectory.length - 1;
   while (hi - lo > 1) {
@@ -170,13 +187,42 @@ export function poseAt(trajectory: Sample[], t: number): Pose2D & { mode: string
   }
   const a = trajectory[lo]!;
   const b = trajectory[hi]!;
-  const u = b.t === a.t ? 0 : (t - a.t) / (b.t - a.t);
-  return {
+  return [a, b, b.t === a.t ? 0 : (t - a.t) / (b.t - a.t)];
+}
+
+const lerp = (a: number | undefined, b: number | undefined, u: number): number | undefined =>
+  a === undefined || b === undefined ? a : a + (b - a) * u;
+
+/** Pose linearly interpolated at time t; outside the range it holds the first or last sample. */
+export function poseAt(trajectory: Sample[], t: number): Pose2D & BaseLift & { mode: string } {
+  const br = bracket(trajectory, t);
+  if (!br) return { x: 0, y: 0, yaw: 0, mode: "idle" };
+  const [a, b, u] = br;
+  if (a === b) return { ...a.robot };
+  const pose: Pose2D & BaseLift & { mode: string } = {
     x: a.robot.x + (b.robot.x - a.robot.x) * u,
     y: a.robot.y + (b.robot.y - a.robot.y) * u,
     yaw: a.robot.yaw + wrapAngle(b.robot.yaw - a.robot.yaw) * u,
     mode: u < 1 ? a.robot.mode : b.robot.mode,
   };
+  const z = lerp(a.robot.z, b.robot.z, u), roll = lerp(a.robot.roll, b.robot.roll, u), pitch = lerp(a.robot.pitch, b.robot.pitch, u);
+  if (z !== undefined) Object.assign(pose, { z, roll: roll ?? 0, pitch: pitch ?? 0 });
+  return pose;
+}
+
+/** Joint angles at time t, interpolated; null when the episode has none (kinematic runs: the robot stands). */
+export function jointsAt(trajectory: Sample[], t: number): Record<string, number> | null {
+  const br = bracket(trajectory, t);
+  if (!br) return null;
+  const [a, b, u] = br;
+  if (!a.joints) return null;
+  if (!b.joints || a === b) return a.joints;
+  const out: Record<string, number> = {};
+  for (const [name, qa] of Object.entries(a.joints)) {
+    const qb = b.joints[name];
+    out[name] = qb === undefined ? qa : qa + (qb - qa) * u;
+  }
+  return out;
 }
 
 /** The rows of the episode card, as plain strings. */

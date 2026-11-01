@@ -54,6 +54,7 @@ async def bench(
         scene=str(base.scene),
         adapter=base.adapter,
         robot=get_profile(base.robot).name,
+        locomotion=base.locomotion,
         perception_noise=base.perception_noise,
         position_sigma_m=base.position_sigma_m,
         gate=gate,
@@ -74,14 +75,16 @@ def format_report(report: BenchReport) -> str:
     g = report.gate
     c = report.checks
     lines = [
-        f"plan {report.plan_id} · scene {report.scene} · {report.robot} on {report.adapter} · {report.runs} runs",
+        f"plan {report.plan_id} · scene {report.scene} · {report.robot} on {report.adapter}"
+        f"{' (physics)' if report.locomotion == 'physics' else ''} · {report.runs} runs",
         f"perception noise: false negatives {report.perception_noise:.0%}, position sigma {report.position_sigma_m} m",
         "",
         f"  {mark(c['success_rate'])}  success rate        {report.success_rate:.1%}"
         f"   (gate >= {g.min_success_rate:.0%})",
         f"  {mark(c['needs_human_per_100'])}  operator requests   {report.needs_human_per_100:.1f} per 100 runs"
         f"   (gate <= {g.max_needs_human_per_100:g})",
-        f"  {mark(c['fatal_runs'])}  fatal runs          {report.fatal_runs}   (gate <= {g.max_fatal_runs})",
+        f"  {mark(c['fatal_runs'])}  fatal runs          {report.fatal_runs}   (gate <= {g.max_fatal_runs})"
+        f"{f', of which {report.falls} falls' if report.falls else ''}",
         f"  {mark(c['safety_violations'])}  safety violations   {report.safety_violations}"
         f"   (gate <= {g.max_safety_violations})",
         f"        retries per run     {report.retries_per_run:.2f}",

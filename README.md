@@ -6,14 +6,14 @@ Spingi is a **Physical Agent Runtime** for legged robots, humanoids and quadrupe
 
 This repository is a neutral open-source toolkit. Applications built on top of it live elsewhere; this repo keeps sample plans and scenes that show how to use the system.
 
-Status: **runtime M3 complete, two robots in simulation · viewer v0.2** · 2026-10-09
+Status: **runtime M4.0 in progress, two robots that walk in simulation, indoors and outdoors · viewer v0.3** · 2026-11-01
 
 ## What is in the box
 
 | Folder | Project | What it does |
 |--------|---------|--------------|
-| [runtime/](runtime/README.md) | **Spingi runtime** (Python) | Executes a declarative *plan* made of *skills* on a *robot adapter*. Ships with a fake adapter for unit tests and a MuJoCo adapter that drives the Unitree G1 or the Unitree Go2. Writes an episode for every run. |
-| [viewer/](viewer/README.md) | **Spingi Viewer** (web, Three.js) | Loads an episode `.zip` and replays it: robot and objects moving in the 3D scene, event timeline, head-camera frames, safety and operator events. Live at **[spingi-viewer.netlify.app](https://spingi-viewer.netlify.app)**. |
+| [runtime/](runtime/README.md) | **Spingi runtime** (Python) | Executes a declarative *plan* made of *skills* on a *robot adapter*. Ships with a fake adapter for unit tests and a MuJoCo adapter that drives the Unitree G1 or the Unitree Go2, either gliding along the path (fast, exactly repeatable) or walking with learned controllers on indoor floors and outdoor ground, where it can drift, get stuck and fall. Writes an episode for every run. |
+| [viewer/](viewer/README.md) | **Spingi Viewer** (web, Three.js) | Loads an episode `.zip` and replays it: robot and objects moving in the 3D scene, legs included when the robot walked, outdoor ground, event timeline, head-camera frames, safety and operator events. Live at **[spingi-viewer.netlify.app](https://spingi-viewer.netlify.app)**. |
 | [docs/episode-format.md](docs/episode-format.md) | **Episode format** | The contract between the two: a folder with `manifest.json`, `scene.yaml`, `plan.yaml`, `events.jsonl`, `trajectory.jsonl`, `frames/`. JSON schemas in [docs/schemas/](docs/schemas/). |
 
 ## Quick start
@@ -43,6 +43,14 @@ uv run spingi run plans/demo_material_runner.yaml --scene sim/scenes/warehouse_s
 ```
 
 `--record` adds a third-person video, `--zip` packs the episode for sharing.
+
+By default the robot's base glides along the path with its legs still: fast and exactly repeatable. With `--physics` the robot walks, with learned walking controllers standing in for the vendor's ([ADR-0015](adr/0015-physics-locomotion-and-outdoor-ground.md)): it drifts, an obstacle in the way is a real contact, a kerb it cannot climb stops it, and it can fall. The Go2 patrolling an industrial yard over asphalt, gravel and dirt, up a ramp onto a loading dock and up a kerb:
+
+```bash
+uv run spingi run plans/yard_patrol.yaml --scene sim/scenes/yard_outdoor.yaml --adapter sim --robot go2 --physics --zip
+```
+
+`plans/test_track.yaml` on `sim/scenes/test_track.yaml` walks a robot over concrete, asphalt, gravel, grass, dirt, rough dirt, a 15 degree ramp and two steps, and stops where it fails: the Go2 usually finishes, the G1, whose controller was trained on flat floors only, falls early.
 
 ### 2. Replay the episode in the browser
 
@@ -105,7 +113,7 @@ steps:
     params: { at: workstation_B }
 ```
 
-Skills available today: `navigate`, `detect`, `pick`, `place`, `inspect`, `wait_for_human`, `say`. `uv run spingi skills` prints their parameters. Each run stands for one robot profile (`--robot g1`, the default, or `--robot go2`): a skill the robot cannot run, `pick` or `place` on a Go2 without an arm, makes the plan invalid before anything moves, and the LLM planner never sees it ([ADR-0012](adr/0012-robot-profiles-and-capabilities.md)). A scene is a YAML file too: named locations, obstacles, objects and safety limits (geofence, speed cap, battery minimum). See [runtime/sim/scenes/](runtime/sim/scenes/).
+Skills available today: `navigate`, `detect`, `pick`, `place`, `inspect`, `wait_for_human`, `say`. `uv run spingi skills` prints their parameters. Each run stands for one robot profile (`--robot g1`, the default, or `--robot go2`): a skill the robot cannot run, `pick` or `place` on a Go2 without an arm, makes the plan invalid before anything moves, and the LLM planner never sees it ([ADR-0012](adr/0012-robot-profiles-and-capabilities.md)). A scene is a YAML file too: named locations, obstacles, objects, safety limits (geofence, speed cap, battery minimum) and, outdoors, the ground: surfaces with their grip and roughness, ramps, kerbs and raised areas. See [runtime/sim/scenes/](runtime/sim/scenes/).
 
 ## How it works
 
@@ -127,7 +135,7 @@ Safety layers run on the robot's own clock (simulated time in MuJoCo), so a simu
 |----------|---------|
 | [docs/runtime-spec.md](docs/runtime-spec.md) | Principles, architecture, contracts, execution model, safety layers, testing strategy, milestones |
 | [docs/episode-format.md](docs/episode-format.md) | The episode folder, manifest, trajectory, frames, compatibility rules |
-| [adr/](adr/README.md) | Architecture decisions 0001–0012 and the ones still open |
+| [adr/](adr/README.md) | Architecture decisions 0001–0015 and the ones still open |
 | [runtime/README.md](runtime/README.md) | CLI reference, scenes, plans, skills, episodes, tests, how to add a skill or an adapter |
 | [viewer/README.md](viewer/README.md) | Running, loading episodes, deploying |
 | [SECURITY.md](SECURITY.md) | Threat model and how to report a security or safety problem |
@@ -138,7 +146,7 @@ Safety layers run on the robot's own clock (simulated time in MuJoCo), so a simu
 make test
 ```
 
-runs the runtime suite (unit, adapter contract on every adapter and robot, MuJoCo scenarios, golden episodes, architecture and licensing rules): 233 tests in about 25 seconds. The viewer has `npm test` (23 tests) and `npm run build`. CI is GitHub Actions ([.github/workflows/ci.yml](.github/workflows/ci.yml)), on every push to `main` and every pull request, without a GPU: runtime lint, format check and tests (with offscreen MuJoCo rendering through EGL), viewer install, audit of the production dependencies, tests and build.
+runs the runtime suite (unit, adapter contract on every adapter and robot, MuJoCo scenarios kinematic and walking, golden episodes, architecture and licensing rules): 278 tests in about 25 seconds. The viewer has `npm test` (31 tests) and `npm run build`. CI is GitHub Actions ([.github/workflows/ci.yml](.github/workflows/ci.yml)), on every push to `main` and every pull request, without a GPU: runtime lint, format check and tests (with offscreen MuJoCo rendering through EGL), viewer install, audit of the production dependencies, tests and build.
 
 Conventions: every architectural decision is an ADR, changed by writing a new one; the runtime never imports the viewer and the viewer never imports the runtime, they only share the episode format; `spingi.core` imports nothing from adapters, skills, planner or perception, and a test enforces it.
 
@@ -146,10 +154,10 @@ Conventions: every architectural decision is an ADR, changed by writing a new on
 
 - **M2** (done): operator console, `spingi bench` with the sim-to-real gate, LeRobot v3.0 export, `wait_for_human`.
 - **M3** (done): LLM planner with structured output, golden episodes replayed on every commit. On the ten golden requests `claude-opus-5-5` scored 10/10, nine at the first attempt.
-- **M4.0** (in progress, no robot needed): perception on real images (AprilTag markers, exercised on MuJoCo frames), the lab safety checklist, the remaining decisions as ADRs, the p95 check of the gate.
+- **M4.0** (in progress, no robot needed): perception on real images (AprilTag markers, exercised on MuJoCo frames), the lab safety checklist, the remaining decisions as ADRs, the p95 check of the gate, and a simulator where the robots walk with learned controllers on indoor floors and outdoor ground, so that plans meet drift, blocked paths and falls before a robot does.
 - **M4.1** (needs a Go2 and a fenced area): one Unitree adapter on `unitree_sdk2_python`, parametrized by the robot profile, contract tests with the robot connected, sim-to-real gate on `navigate` and `inspect`.
 - **M4.2** (needs a G1): the same adapter and gate on the humanoid, then `pick` and `place` in M5.
 
 ## License
 
-Apache License 2.0, see [LICENSE](LICENSE). The Unitree G1 and Go2 models in `runtime/sim/models/`, and the viewer's `g1.glb` and `go2.glb` derived from them, are redistributed under their own BSD 3-Clause license, see [NOTICE](NOTICE); the viewer serves the license text at `/NOTICE.txt`, and the Python package ships copies of `LICENSE` and `NOTICE`.
+Apache License 2.0, see [LICENSE](LICENSE). The Unitree G1 and Go2 models in `runtime/sim/models/`, and the viewer's `g1.glb` and `go2.glb` derived from them, are redistributed under their own BSD 3-Clause license; the walking policies in `runtime/sim/policies/` come from unitree_rl_mjlab and rl_sar under the Apache License 2.0; see [NOTICE](NOTICE). The viewer serves the license texts at `/NOTICE.txt`, and the Python package ships copies of `LICENSE` and `NOTICE`.

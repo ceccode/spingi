@@ -1,0 +1,27 @@
+# Yard patrol (level L1, outdoors): the pump gauge on the dirt track, the extinguisher on the loading dock (up the
+# ramp), the sign at the building door (up the kerb), back to the dock. For the Go2 on sim/scenes/yard_outdoor.yaml.
+id: yard_patrol
+description: "Outdoor patrol: pump gauge, extinguisher on the loading dock, door sign, back to the dock"
+deadline_s: 420
+steps:
+  - skill: say
+    params: { text: "Starting the yard patrol" }
+  - skill: navigate
+    params: { to: pump_A, via: [yard_gate], max_speed: 0.8 }
+    on_failure: { retry: 1, then: needs_human }
+  - skill: inspect
+    params: { target: pump_A, checks: ["present:gauge"] }
+  - skill: navigate
+    params: { to: dock_B, via: [yard_gate, ramp_foot, ramp_top], max_speed: 0.8 }
+    on_failure: { retry: 1, then: needs_human }
+  - skill: inspect
+    params: { target: dock_B, checks: ["present:extinguisher"] }
+  - skill: navigate
+    params: { to: door_C, via: [ramp_top, ramp_foot, kerb_front], max_speed: 0.6 }
+    on_failure: { retry: 1, then: needs_human }
+  - skill: inspect
+    params: { target: door_C, checks: ["present:door_sign"] }
+  - skill: navigate
+    params: { to: dock, via: [kerb_front], max_speed: 0.8 }
+  - skill: say
+    params: { text: "Patrol completed" }

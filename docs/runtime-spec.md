@@ -30,7 +30,7 @@ Parts that are specified but not built yet are marked *(not implemented yet)*.
 - One robot at a time, described by a **robot profile** (`unitree_g1` humanoid, `unitree_go2` quadruped; ADR-0012). A plan may only use the skills the robot's capabilities allow.
 - **Sequential** tasks, composed of whitelisted skills.
 - **Known and mapped** environment: named locations, known objects (markers or predefined classes).
-- Two targets: `SimAdapter` (MuJoCo) and `UnitreeG1Adapter` *(not implemented yet, M4)*. A third adapter, `FakeAdapter`, is in-memory and serves unit tests.
+- Two targets: `SimAdapter` (MuJoCo; kinematic or walking with learned policies, indoors or on outdoor ground) and `UnitreeG1Adapter` *(not implemented yet, M4)*. A third adapter, `FakeAdapter`, is in-memory and serves unit tests.
 - v0 skills: `navigate`, `detect`, `inspect`, `pick`, `place`, `wait_for_human`, `say`.
 - Optional LLM Planner: recurring tasks use static YAML plans.
 - Minimal operator console: live status, stop, answers to operator requests (`retry`, `skip`, `abort`, `continue`).
@@ -316,6 +316,7 @@ class RobotAdapter(Protocol):
     capabilities: frozenset[Capability]       # what the robot has: locomotion, camera, arm (ADR-0012)
 
 class RobotEstopped(RuntimeError): ...        # raised by any motion command while the e-stop is engaged
+class RobotFell(RobotEstopped): ...           # the robot is down: an e-stop that also says where it fell
 class CapabilityMissing(RuntimeError): ...    # raised by a command for a part the robot does not have (an arm on a Go2)
 
 class GripResult(BaseModel):                  # what the gripper reports; skills check it instead of trusting the command
@@ -340,11 +341,13 @@ Rules:
 - `walk_to` accepts `max_speed` and **cannot** exceed the limit set by the Safety Monitor through `set_speed_limit`, which can only lower it. The adapter clamps to its `speed_cap`, always, and records `last_applied_speed`.
 - Every motion command (`walk_to`, `move_arm`, `gripper`) checks the e-stop and the watchdog before it acts: an engaged e-stop raises `RobotEstopped`, a stale heartbeat raises `WatchdogExpired`. During a walk and its final turn `SimAdapter` keeps checking the watchdog at every tick and stops the robot when it lapses; its `move_arm` checks both at every tick.
 - After `estop`, `estopped` is `True` and every motion command raises `RobotEstopped` until a manual reset (`reset_estop()`, not reachable from the runtime).
-- A collision stops the robot where it is, while walking and while turning in place (`SimAdapter` records `blocked_by`).
+- A collision stops the robot where it is, while walking and while turning in place (`SimAdapter` records `blocked_by`). With physics locomotion (ADR-0015) a collision is a real contact: pushing an obstacle with more than 40 N for 0.1 s stops the walk, a brush does not; a walk that makes no progress for 4 s stops with `blocked_by: stuck`.
+- A robot that falls is e-stopped by its adapter, which raises `RobotFell` with where it happened, from that command and every later one, until people pick it up and reset it. The Executor records `robot.fell` and ends the run as `estop`. `SimAdapter` detects it in physics mode (the base tilted more than 60 degrees, or lower than the walking policy's fall height); the hardware adapter will take it from the vendor's state.
 - `estop` has no preconditions and cannot fail silently. If the SDK does not respond, the adapter logs it as `FATAL` *(applies to the hardware adapter, M4.1)*.
 - On hardware the robot's own command timeout (the SDK's or the controller's) is configured by the adapter at connection time, shorter than the session watchdog, and the adapter refuses to start if it cannot set it: the in-process watchdog protects against a stuck control loop, the hardware timeout against a frozen or dead process. The contract suite checks that the adapter reports the timeout it set.
 - `capabilities` says which parts the robot really has. Each skill declares what it `requires` (`navigate`: `locomotion`; `detect`, `inspect`: `camera`; `pick`, `place`: `arm`); `validate_plan` rejects a plan that needs more than the robot has, so it ends as `invalid_plan` before anything moves, and the LLM planner is built from `registry.subset(capabilities)`. The robot's name, model and capabilities come from a `RobotProfile` in `spingi/robots.py` (ADR-0012), never from code paths per robot.
-- Three implementations: `FakeAdapter` (in-memory, instantaneous, for unit tests), `SimAdapter` (MuJoCo, kinematic base, ADR-0006; loads the G1 or the Go2 from the profile), `UnitreeG1Adapter` *(not implemented yet, M4; the Go2 shares the SDK, so one adapter parametrized by profile is the plan)*.
+- Three implementations: `FakeAdapter` (in-memory, instantaneous, for unit tests), `SimAdapter` (MuJoCo; loads the G1 or the Go2 from the profile; a kinematic base by default, ADR-0006, or walking with learned policies on the scene's ground, `locomotion="physics"`, ADR-0015), `UnitreeG1Adapter` *(not implemented yet, M4; the Go2 shares the SDK, so one adapter parametrized by profile is the plan)*.
+- In physics mode `walk_to` is a closed loop on the measured pose that streams velocity commands to the walking controller (`follow` in `adapters/sim_mujoco/locomotion.py`): turn towards the waypoint if it is behind, walk while steering, sidestep the last centimetres, turn to the final heading; commands ramp at 1 m/s² and 2.5 rad/s². It arrives within about 6 cm and 0.08 rad, then stands for 0.3 s. The hardware adapter will run the same loop above the vendor's controller.
 
 ### 3.6 Perceiver
 
@@ -396,6 +399,7 @@ Event kinds (v0):
 - steps: `step.start`, `step.end`, `step.retry`, `step.skip`, `step.abort`;
 - skills: `skill.start`, `skill.end`, `skill.precondition_failed`, `skill.postcondition_failed`, `skill.deadline`, `skill.exception`, `state.delta`, `perception.result`, `say`, `adapter.call`;
 - safety: `safety.armed`, `safety.disarmed`, `safety.speed_capped` (`limit` from the scene, `applied` the cap now in force on the adapter), `safety.geofence`, `safety.battery_low`, `safety.estop` (a `FATAL` outcome), `safety.monitor_error` (a check raised; the robot was e-stopped);
+- robot: `robot.fell` (`skill`, `reason` with where it fell; the run ends as `estop`);
 - operator: `human.request`, `human.response`, `human.timeout`, `operator.stop`.
 
 `adapter.error` *(not implemented yet)*.
@@ -473,6 +477,8 @@ Rules:
 | S4 | Planner | Skill whitelist, parameter schema, no access to low-level primitives | – |
 | S5 | Operator | Terminal console, Ctrl+C e-stops the robot (`--operator console`). `spingi run` defaults to `--operator auto`, which answers every request with a fixed policy; `spingi plan --run` asks for confirmation, then defaults to the console | – |
 
+A fall is outside the layers above: the adapter e-stops a robot that is down (§3.5), and the gate counts the run as fatal.
+
 Two operating rules:
 1. **The LLM is not a safety layer.** It is never asked "is this safe?". The limits are in the runtime.
 2. **Every layer has a test that proves it works when the others are broken.** E.g.: a `FakeAdapter` with `watchdog_ms=200` that receives no heartbeat refuses to walk or move the arm (`tests/unit/test_fake_adapter.py`); the watchdog counts simulated time and the monitor's heartbeats keep a long walk alive (`tests/sim/test_robot_time.py`); leaving the geofence e-stops the robot within one check and ends the run with status `estop` even though the plan asks for a target outside it (`tests/sim/test_scenarios.py`); a check that raises e-stops the robot (`tests/unit/test_safety_monitor.py`).
@@ -525,15 +531,15 @@ This section is the heart of the spec. Every level must exist before the milesto
 |-------|---------------|-----------|---------------|-----------------|
 | **Unit** (`tests/unit`) | Skills (pre/post), Executor, plan validation, Safety Monitor, metrics and bench, console, episode and schemas, LeRobot export, Planner (with a fake LLM client) | `FakeAdapter`, `FakePerceiver`, `ScriptedHuman`, hand-built `WorldState` | CI, every commit | < 30 s total |
 | **Contract** (`tests/contract`) | That every `RobotAdapter` honors the same contract, as every robot profile | The same suite parametrized over `FakeAdapter` and `SimAdapter`, each as the G1 and as the Go2; the hardware adapter at M4.1, selected by an environment flag and run only with the robot connected in the fenced area | CI (Fake, Sim); lab (hardware) | < 2 min (sim) |
-| **Scenario** (`tests/sim`) | A whole plan in a scene; every golden planner plan runs; Ctrl+C operator stop; robot time (watchdog, monitor, plan deadline) | Headless MuJoCo, YAML scenes, assertions on the final `WorldState` and on the events | CI, every commit | < 5 min |
+| **Scenario** (`tests/sim`) | A whole plan in a scene; every golden planner plan runs; Ctrl+C operator stop; robot time (watchdog, monitor, plan deadline); physics locomotion: both robots walk to a pose, the Go2 climbs a ramp and a kerb, an obstacle blocks, a shove makes the G1 fall, a physics episode replays the same | Headless MuJoCo, YAML scenes, assertions on the final `WorldState` and on the events. Physics tests assert only outcomes measured robust (8 of 8 trials), since physics differs slightly between machines | CI, every commit | < 5 min |
 | **Golden episode** (`tests/golden`) | That a change does not alter behavior on recorded runs | Four recorded episodes run again with their plan, scene, noise, seed and operator answers; steps, outcomes, retries, operator requests, safety events, final status and final position are compared (`spingi replay`) | CI, every commit | < 1 min |
 | **Architecture** (`tests/test_architecture.py`) | Import rules of section 11 | AST scan of `spingi/core` | CI, every commit | < 1 s |
 | **Licensing** (`tests/test_licensing.py`) | That the package's `LICENSE` and `NOTICE` copies equal the repository's, and that the viewer serves the G1 license | file comparison | CI, every commit | < 1 s |
-| **Robustness** | Retry and escalation under noise | `spingi bench` with `SimPerceiver` at 20–40 % false negatives and position noise. Injected adapter latency *(not implemented yet in bench)* | on demand (`make bench`); CI nightly *(not set up yet)* | < 20 min |
+| **Robustness** | Retry and escalation under noise; walking: drift, blocked paths, falls | `spingi bench` with `SimPerceiver` at 20–40 % false negatives and position noise, and `spingi bench --physics` with the robots walking. Injected adapter latency *(not implemented yet in bench)* | on demand (`make bench`); CI nightly *(not set up yet)* | < 20 min |
 | **Sim2real gate** | That a skill may move to the robot | Numerical metrics (see 8.4), `spingi bench --gate` | manual, per skill | – |
 | **Lab** | Skills on the robot in a fenced area | The checklist of `docs/lab-checklist.md` signed per session, mandatory recording of every run | lab (M4.1 on the Go2, M4.2 on the G1) | – |
 
-As of 2026-10-04 the runtime suite has 176 tests and runs in about 12 seconds; rendering tests skip themselves without an OpenGL context. No test calls the network. CI is GitHub Actions (`.github/workflows/ci.yml`), on every push to `main` and every pull request: for the runtime `ruff check`, `ruff format --check` and the tests, with MuJoCo rendering through EGL; for the viewer `npm ci`, an audit of the production dependencies, the tests and the build. Actions are pinned by commit SHA and the workflow has read-only permissions.
+As of 2026-11-01 the runtime suite has 278 tests and runs in about 25 seconds; rendering tests skip themselves without an OpenGL context. No test calls the network. CI is GitHub Actions (`.github/workflows/ci.yml`), on every push to `main` and every pull request: for the runtime `ruff check`, `ruff format --check` and the tests, with MuJoCo rendering through EGL; for the viewer `npm ci`, an audit of the production dependencies, the tests and the build. Actions are pinned by commit SHA and the workflow has read-only permissions.
 
 ### 8.2 Concrete examples
 
@@ -614,9 +620,29 @@ routes:
   dock->shelf_A: [aisle_in]
 ```
 
-Perception noise is not part of the scene: it is a run setting (`--noise`, `--sigma`, `--seed`) recorded in the episode manifest so that `spingi replay` can repeat the run.
+Perception noise is not part of the scene: it is a run setting (`--noise`, `--sigma`, `--seed`) recorded in the episode manifest so that `spingi replay` can repeat the run. Obstacles and objects may carry a `color` (`"#rrggbb"`) for the simulator and the viewer; an object without a `z` rests on whatever is under it.
 
-Rules: one scene per use case (`lab_small`, `lab_blocked`, `lab_geofence`, `warehouse_small` today), several noise settings per scene. Scenes are test data, versioned with the tests.
+**Ground** (ADR-0015). Without a `terrain` section the floor is flat indoor concrete. With one, the scene has ground:
+
+```yaml
+# sim/scenes/yard_outdoor.yaml (abridged)
+terrain:
+  extent: { x_min: -3, x_max: 25, y_min: -8, y_max: 9 }   # must cover the geofence
+  cell_m: 0.1                       # height-field spacing, 0.08 to 0.25 m
+  seed: 11                          # roughness noise: the same ground on every run
+  surface: asphalt                  # floor, concrete, asphalt, gravel, dirt, grass
+  regions:                          # later regions win where they overlap
+    - { surface: gravel, x: [3, 12], y: [-8, -2] }
+    - { surface: dirt, x: [12, 25], y: [-3, 1], roughness_m: 0.02 }
+  ramps:
+    - { x: [12.5, 16.0], y: [3.5, 5.5], from_m: 0.0, to_m: 0.45, along: x }
+  raised:
+    - { x: [-3, 14], y: [5.5, 9], height_m: 0.10 }      # a kerb and the pavement behind it
+```
+
+Each surface has a grip (sliding friction 0.5 to 0.9) and a roughness (standard deviation 0 to 2 cm, overridable per region up to 10 cm) that fades into its neighbours' over a quarter of a metre. Roughness is carried by height fields; ramps and raised areas are solid boxes, flat on top with vertical sides. Ramps are at most 45 degrees, heights 0 to 3 m (no pits). In kinematic mode the base follows the ground's height; in physics mode the robot walks on it. Episodes of a scene with ground carry `terrain.json` for the viewer.
+
+Rules: one scene per use case (`lab_small`, `lab_blocked`, `lab_geofence`, `warehouse_small` indoors; `yard_outdoor`, a patrol for the Go2 over asphalt, gravel, dirt, a ramp to a loading dock and a kerb, and `test_track`, a straight course from concrete to a 15 cm step, outdoors), several noise settings per scene. Scenes are test data, versioned with the tests. Scenes meant for physics runs are written for walking robots: kerbs approached square on, about 0.6 m of clearance from obstacles along a route.
 
 Validation: names of locations, objects, classes and routes (both ends and every waypoint) match `^[A-Za-z0-9_-]{1,64}$`, and every number is finite (no NaN or infinity in poses, the geofence or the limits). Names and numbers are checked when the world is loaded and again when `SimAdapter` generates the MJCF (location and object names, positions, obstacle and object sizes, which must also be positive), so nothing unchecked reaches the simulator's XML. The robot model directory (G1 or Go2, from the profile) is resolved from the location of the `spingi` package, never from the working directory; the generated MJCF goes next to it under a unique name (concurrent runs do not collide) and is deleted once MuJoCo has loaded it.
 
@@ -634,7 +660,7 @@ A skill moves from sim to the robot only if, over the last 100 runs in sim with 
 
 And, on the robot, before leaving the lab: the same metrics over ≥ 50 runs in a fenced area.
 
-The gate is implemented in `spingi.metrics.Gate` and checked by `spingi bench` (`--gate` sets the exit code). Today it is applied to a whole plan, which exercises several skills at once; `--runs` defaults to 50, `make bench` uses 100.
+The gate is implemented in `spingi.metrics.Gate` and checked by `spingi bench` (`--gate` sets the exit code). Today it is applied to a whole plan, which exercises several skills at once; `--runs` defaults to 50, `make bench` uses 100. With `--physics` the robot walks: drift, blocked paths and falls appear as retries, operator requests and fatal runs, and the report counts the falls among the fatal runs. Each run's seed changes the start pose by up to 3 cm and 3 degrees, as real runs differ.
 
 ### 8.5 Product metrics
 
@@ -703,7 +729,8 @@ Core dependencies: `pydantic`, `pyyaml`. Everything else is in the adapters and 
 │   ├── plans/                 # TaskPlan YAML; plans/golden/ holds the planner cases
 │   ├── sim/scenes/            # YAML scenes
 │   ├── sim/models/            # G1 and Go2 models (mujoco_menagerie), one folder each with its license
-│   ├── scripts/               # gen_schemas, record_golden, export_glb
+│   ├── sim/policies/          # walking policies for physics locomotion (numpy weights + settings + license)
+│   ├── scripts/               # gen_schemas, record_golden, record_samples, export_glb, import_policies
 │   ├── runs/                  # output (gitignored)
 │   ├── tests/                 # unit · contract · sim · golden · test_architecture.py · test_licensing.py
 │   ├── LICENSE, NOTICE        # copies of the root files shipped in the wheel, kept equal by a test
@@ -723,14 +750,14 @@ Rule: `spingi/core` imports nothing from `adapters`, `skills`, `planner`, `perce
 | **M1** | Sim navigation + inspection | `SimAdapter` MuJoCo with the G1, `warehouse_small` scene, `SimPerceiver`, `inspect` skill, Safety Monitor (watchdog, geofence, speed cap) | "4-point inspection round" scenario: 20/20 runs green in CI; safety tests that prove every layer | Done (2026-10-02). Kinematic base (ADR-0006); the inspection round runs in `lab_small` (`warehouse_small` arrived with M2). Measured by the scenario tests (inspection round, geofence, wall, speed cap), run on every commit; a run without noise is deterministic |
 | **M2** | Sim transport | `detect`, `pick`, `place` with markers, `wait_for_human`, console v0, robustness tests with noise | `move_red_box` scenario: ≥ 95 % over 100 runs with noise; correct escalation on failures | Done (2026-10-04). `detect`, `pick`, `place` with a kinematic grasp (ADR-0007, ground-truth perception, no markers yet), `navigate` with `via`, `wait_for_human`, terminal console (ADR-0008), `spingi bench` with the gate, LeRobot export (ADR-0009). Measured with `make bench`: `demo_material_runner` in `warehouse_small`, 100 runs, 20 % false negatives, 0.02 m position noise: 100 % success, 0 operator requests, 0 fatal runs, 0 safety violations. Escalation covered by unit tests and the `blocked_wall_operator` golden episode |
 | **M3** | Planner | `StaticPlanner`, `LLMPlanner`, golden plans, replay | 10 natural-language requests → plans equivalent to the golden ones; validation rejects malformed plans | Done (2026-10-04). `LLMPlanner` with structured output (ADR-0010), ten golden cases, `spingi eval-planner`, `spingi replay` with three golden episodes in CI. Measured with `spingi eval-planner` and `claude-opus-5-5`: 10 of 10 equivalent, 9 at the first attempt and 1 after the validation round, 3 to 7 seconds per plan |
-| **M4.0** | Ready for a robot (no robot needed) | Perception on real images: AprilTag localization and detection (`MarkerPerceiver`), exercised in MuJoCo on rendered frames with tags on the objects, so the same code that will read the real camera is tested in CI; the lab safety checklist (`docs/lab-checklist.md`); ADRs for Q10 (locomotion) and Q11 (where the runtime runs); the hardware command timeout as a rule of the adapter contract (§3.5); the p95 duration check of the gate (§8.4); contract tests runnable against a connected robot behind an environment flag | The inspection round passes in simulation with `--perception markers` (tags read from the rendered images, not from the ground truth); the checklist exists and is referenced by M4.1; the two ADRs are written; `spingi bench --gate` checks p95 against the plan budget | In progress (2026-10-09) |
+| **M4.0** | Ready for a robot (no robot needed) | Perception on real images: AprilTag localization and detection (`MarkerPerceiver`), exercised in MuJoCo on rendered frames with tags on the objects, so the same code that will read the real camera is tested in CI; the lab safety checklist (`docs/lab-checklist.md`); ADRs for Q10 (locomotion) and Q11 (where the runtime runs); the hardware command timeout as a rule of the adapter contract (§3.5); the p95 duration check of the gate (§8.4); contract tests runnable against a connected robot behind an environment flag | The inspection round passes in simulation with `--perception markers` (tags read from the rendered images, not from the ground truth); the checklist exists and is referenced by M4.1; the two ADRs are written; `spingi bench --gate` checks p95 against the plan budget | In progress (2026-11-01). Done: markers, checklist, ADR-0013 and ADR-0014 (proposed), timeout rule, p95 check; physics locomotion and outdoor ground (ADR-0015) added on 2026-11-01, so that the runtime meets drift, blocked paths and falls before the robot. Left: contract tests against a connected robot |
 | **M4.1** | First robot in the lab: the Go2 | One Unitree adapter on `unitree_sdk2_python`, parametrized by the robot profile (ADR-0012); the Go2 first because it is cheap, its locomotion API is mature and the two gate skills need no arm; contract tests with the robot connected; sim2real gate on `navigate` and `inspect` | Gate of §8.4 passed for 2 skills over ≥ 50 fenced runs; complete recording of every run; the lab safety checklist signed for every session | Not started (needs a Go2 and a fenced area) |
 | **M4.2** | The G1 in the lab | The same adapter and gate on the G1; the arm and hand methods of the port on real hardware | Gate passed for `navigate` and `inspect` on the G1; `gripper` and `move_arm` exercised in the contract tests | Not started (needs a G1) |
 | **M5** | Pilot-ready | `pick`/`place` on the G1 with standard containers (after M4.2), metrics dashboard, operating procedures | Gate passed for 4 skills; 1 day of continuous operation in the lab without `FATAL` | Not started |
 
 M0–M3 and M4.0 do not require a robot. The M3 planner evaluation calls the Claude API and is run on demand, not in CI. M4.1 and M4.2 need the hardware, a fenced area and the signed checklist; their contract tests run only with the robot connected, never in CI.
 
-**Status as of 2026-10-04: M0 to M3 complete.** 176 runtime tests green in about 12 seconds. Clarifications that emerged during implementation are normative and now part of the contracts: a `$step.field` reference is always the whole value of a parameter (§3.4); `on_failure.then: needs_human` stops the robot before asking, and the operator's `retry` answer resets the step's retry budget, at most three times per step (§4). A review before M4 added robot time, the terminal e-stop and latched safety stops (ADR-0011, §3.5, §4, §5). Robot profiles and capabilities, with the Go2 quadruped as a second robot in simulation, followed on 2026-10-09 (ADR-0012, §1.1, §3.5): 219 runtime tests. M4 was then split into M4.0 (prerequisites without a robot), M4.1 (the Go2 in the lab) and M4.2 (the G1), because neither a robot nor a fenced area is available yet and the perception and procedure work can be done first. M4.0 landed the same day: `MarkerPerceiver` on rendered frames, the lab checklist, ADR-0013 and ADR-0014 (proposed), the hardware timeout rule, the p95 check; 233 runtime tests.
+**Status as of 2026-10-04: M0 to M3 complete.** 176 runtime tests green in about 12 seconds. Clarifications that emerged during implementation are normative and now part of the contracts: a `$step.field` reference is always the whole value of a parameter (§3.4); `on_failure.then: needs_human` stops the robot before asking, and the operator's `retry` answer resets the step's retry budget, at most three times per step (§4). A review before M4 added robot time, the terminal e-stop and latched safety stops (ADR-0011, §3.5, §4, §5). Robot profiles and capabilities, with the Go2 quadruped as a second robot in simulation, followed on 2026-10-09 (ADR-0012, §1.1, §3.5): 219 runtime tests. M4 was then split into M4.0 (prerequisites without a robot), M4.1 (the Go2 in the lab) and M4.2 (the G1), because neither a robot nor a fenced area is available yet and the perception and procedure work can be done first. M4.0 landed the same day: `MarkerPerceiver` on rendered frames, the lab checklist, ADR-0013 and ADR-0014 (proposed), the hardware timeout rule, the p95 check; 233 runtime tests. On 2026-11-01 the simulator learned to walk (ADR-0015): learned walking policies for both robots in physics mode, falls and stuck walks reported to the runtime, ground with surfaces, ramps and kerbs, two outdoor scenes, and episodes the viewer replays with moving legs; 278 runtime tests.
 
 ---
 
@@ -747,7 +774,7 @@ M0–M3 and M4.0 do not require a robot. The M3 planner evaluation calls the Cla
 | Q7 | Grasp in v0: predefined positions for a standard container or a learned policy? | Decided: predefined, kinematic in simulation | [0007](../adr/0007-predefined-kinematic-grasp.md) | M2 |
 | Q8 | Console: CLI/TUI or web? | Decided: terminal console in v0 | [0008](../adr/0008-terminal-operator-console.md) | M2 |
 | Q9 | Planner output: tool use or structured output? | Decided: structured output, validated like any plan | [0010](../adr/0010-llm-planner-structured-output.md) | M3 |
-| Q10 | Locomotion: vendor controller or our own policy? In simulation, a pre-trained policy or the kinematic base? ("ADR-002" in the first draft of this spec, cited by ADR-0006) | Open. Preferred: vendor controller on the robot; RL policy only if the vendor's is not enough. The simulator moves the base kinematically meanwhile (0006) | written in M4.0 | M4.0 |
+| Q10 | Locomotion: vendor controller or our own policy? In simulation, a pre-trained policy or the kinematic base? ("ADR-002" in the first draft of this spec, cited by ADR-0006) | Robot: the vendor's controller (proposed). Simulator: decided, both: the kinematic base by default, published pre-trained policies in physics mode | [0013](../adr/0013-locomotion-vendor-controller.md), [0015](../adr/0015-physics-locomotion-and-outdoor-ground.md) | M4.0 |
 | Q11 | Where the runtime runs ("ADR-006" in the first draft): on-board (Orin) or laptop + network? | Open. Preferred: laptop in the lab; on-board for the pilot | written in M4.0 | M4.0 |
 | Q12 | Which clock do the safety layers use in a simulation faster than real time? What does an e-stop do to a run? | Decided: the robot's clock (simulated time in MuJoCo) for monitor, watchdog and deadlines; an e-stop ends the run with status `estop`, no retries | [0011](../adr/0011-robot-time-and-terminal-estop.md) | M3+ |
 | Q13 | One robot or several per run? Which robot first on hardware? | Decided: one robot per run, chosen by a profile with capabilities; the Go2 opens M4 because the gate skills need no arm | [0012](../adr/0012-robot-profiles-and-capabilities.md) | M3+ |

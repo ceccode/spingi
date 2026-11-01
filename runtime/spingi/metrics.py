@@ -24,6 +24,7 @@ class RunMetrics(BaseModel):
     safety_violations: int
     fatal: bool
     operator_stop: bool
+    fell: bool = False
 
     @property
     def ok(self) -> bool:
@@ -45,8 +46,9 @@ def run_metrics(events: list[Event], steps_total: int) -> RunMetrics:
         human_requests=sum(1 for e in events if e.kind == "human.request"),
         retries=sum(1 for e in events if e.kind == "step.retry"),
         safety_violations=sum(1 for e in events if e.kind in SAFETY_VIOLATIONS),
-        fatal=any(e.kind in ("safety.estop", "safety.monitor_error") for e in events),
+        fatal=any(e.kind in ("safety.estop", "safety.monitor_error", "robot.fell") for e in events),
         operator_stop=any(e.kind == "operator.stop" for e in events),
+        fell=any(e.kind == "robot.fell" for e in events),
     )
 
 
@@ -65,6 +67,7 @@ class BenchReport(BaseModel):
     scene: str
     adapter: str
     robot: str = "unitree_g1"  # profile name; reports written before robot profiles existed were all on the G1
+    locomotion: str = "kinematic"
     runs: int
     perception_noise: float
     position_sigma_m: float
@@ -72,6 +75,7 @@ class BenchReport(BaseModel):
     needs_human_per_100: float
     retries_per_run: float
     fatal_runs: int
+    falls: int = 0
     safety_violations: int
     sim_time_p50_s: float | None
     sim_time_p95_s: float | None
@@ -91,6 +95,7 @@ def summarize(
     position_sigma_m: float,
     gate: Gate | None = None,
     robot: str = "unitree_g1",
+    locomotion: str = "kinematic",
 ) -> BenchReport:
     runs = list(metrics)
     if not runs:
@@ -108,6 +113,7 @@ def summarize(
         scene=scene,
         adapter=adapter,
         robot=robot,
+        locomotion=locomotion,
         runs=n,
         perception_noise=perception_noise,
         position_sigma_m=position_sigma_m,
@@ -115,6 +121,7 @@ def summarize(
         needs_human_per_100=round(100 * sum(r.human_requests for r in runs) / n, 2),
         retries_per_run=round(sum(r.retries for r in runs) / n, 3),
         fatal_runs=sum(r.fatal for r in runs),
+        falls=sum(r.fell for r in runs),
         safety_violations=sum(r.safety_violations for r in runs),
         sim_time_p50_s=round(statistics.median(times), 2) if times else None,
         sim_time_p95_s=round(_percentile(times, 0.95), 2) if times else None,

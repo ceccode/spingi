@@ -1,6 +1,6 @@
 # 0006: Kinematic SimAdapter in MuJoCo with the G1 model from mujoco_menagerie
 
-Status: Accepted · Date: 2026-10-02 · Milestone: M1
+Status: Accepted, amended by [0015](0015-physics-locomotion-and-outdoor-ground.md) (physics locomotion as a second mode) · Date: 2026-10-02 · Milestone: M1
 
 ## Context
 To watch the runtime drive a robot in 3D, measure realistic timings and produce images for perception, we need a simulator and a G1 model. MuJoCo runs on CPU, including on macOS, and in CI; Isaac Sim does not. Making the G1 actually walk requires a locomotion controller: Unitree's is not available in simulation, and the public ones (unitree_rl_gym) bring in PyTorch and third-party weights. That decision is still open (ADR-002 in the spec).

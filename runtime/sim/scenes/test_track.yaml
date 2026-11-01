@@ -1,0 +1,40 @@
+# Test track: a straight course of 5 m stretches, from easy to hard, to see how far a robot's walking gets.
+# Concrete, asphalt, gravel, grass, dirt, rough dirt, a 15 degree ramp up and down, then a 10 cm and a 15 cm step.
+# Run `plans/test_track.yaml` with `--physics`: every stretch is a step of the plan, so the episode shows where the
+# robot stopped or fell.
+robot:
+  pose: { x: 0.0, y: 0.0, yaw: 0.0 }
+  battery_pct: 100
+terrain:
+  extent: { x_min: -2, x_max: 52, y_min: -3, y_max: 3 }
+  cell_m: 0.1
+  seed: 5
+  surface: concrete
+  regions:
+    - { surface: asphalt, x: [4, 9], y: [-3, 3] }
+    - { surface: gravel, x: [9, 14], y: [-3, 3] }
+    - { surface: grass, x: [14, 19], y: [-3, 3] }
+    - { surface: dirt, x: [19, 24], y: [-3, 3] }
+    - { surface: dirt, x: [24, 29], y: [-3, 3], roughness_m: 0.035 }
+  ramps:
+    - { x: [30, 32], y: [-3, 3], from_m: 0.0, to_m: 0.536, along: x }    # 15 degrees up
+    - { x: [34, 36], y: [-3, 3], from_m: 0.536, to_m: 0.0, along: x }    # and down
+  raised:
+    - { x: [32, 34], y: [-3, 3], height_m: 0.536 }
+    - { x: [39, 44], y: [-3, 3], height_m: 0.10 }
+    - { x: [44, 52], y: [-3, 3], height_m: 0.25 }    # a 15 cm step up from the 10 cm one
+locations:
+  start:        { pose: { x: 0.0, y: 0.0, yaw: 0.0 } }
+  end_asphalt:  { pose: { x: 8.5, y: 0.0, yaw: 0.0 }, tolerance_m: 0.3 }
+  end_gravel:   { pose: { x: 13.5, y: 0.0, yaw: 0.0 }, tolerance_m: 0.3 }
+  end_grass:    { pose: { x: 18.5, y: 0.0, yaw: 0.0 }, tolerance_m: 0.3 }
+  end_dirt:     { pose: { x: 23.5, y: 0.0, yaw: 0.0 }, tolerance_m: 0.3 }
+  end_rough:    { pose: { x: 28.5, y: 0.0, yaw: 0.0 }, tolerance_m: 0.3 }
+  end_ramps:    { pose: { x: 37.5, y: 0.0, yaw: 0.0 }, tolerance_m: 0.3 }
+  end_step_10:  { pose: { x: 42.0, y: 0.0, yaw: 0.0 }, tolerance_m: 0.3 }
+  end_step_15:  { pose: { x: 47.0, y: 0.0, yaw: 0.0 }, tolerance_m: 0.3 }
+obstacles: []
+safety:
+  geofence: { x_min: -1.5, x_max: 51.5, y_min: -2.5, y_max: 2.5 }
+  max_speed: 1.0
+  min_battery_pct: 5

@@ -1,64 +1,64 @@
-{"ts": 1791531104.681456, "run_id": "r-20261009-093144-585123", "kind": "safety.speed_capped", "sim_t": 0.0, "limit": 0.8, "applied": 0.8}
-{"ts": 1791531104.681835, "run_id": "r-20261009-093144-585123", "kind": "safety.armed", "sim_t": 0.0, "limits": {"geofence": {"x_min": -1.0, "x_max": 10.0, "y_min": -1.0, "y_max": 9.0}, "max_speed": 0.8, "min_battery_pct": 5.0, "estop_on_geofence": true}, "period_s": 0.1}
-{"ts": 1791531104.682116, "run_id": "r-20261009-093144-585123", "kind": "run.start", "sim_t": 0.0, "plan_id": "demo_material_runner", "steps": 8}
-{"ts": 1791531104.682251, "run_id": "r-20261009-093144-585123", "kind": "plan.validated", "sim_t": 0.0, "plan_id": "demo_material_runner"}
-{"ts": 1791531104.682303, "run_id": "r-20261009-093144-585123", "kind": "step.start", "sim_t": 0.0, "index": 0, "skill": "say", "params": {"text": "Fetching the red box"}}
-{"ts": 1791531104.682466, "run_id": "r-20261009-093144-585123", "kind": "skill.start", "sim_t": 0.0, "skill": "say", "attempt": 0}
-{"ts": 1791531104.682661, "run_id": "r-20261009-093144-585123", "kind": "say", "sim_t": 0.0, "text": "Fetching the red box"}
-{"ts": 1791531104.682802, "run_id": "r-20261009-093144-585123", "kind": "skill.end", "sim_t": 0.0, "skill": "say", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 0.0}
-{"ts": 1791531104.682851, "run_id": "r-20261009-093144-585123", "kind": "step.end", "sim_t": 0.0, "index": 0, "skill": "say", "outcome": "success"}
-{"ts": 1791531104.6828969, "run_id": "r-20261009-093144-585123", "kind": "step.start", "sim_t": 0.0, "index": 1, "skill": "navigate", "params": {"to": "shelf_A", "via": ["aisle_in"]}}
-{"ts": 1791531104.683022, "run_id": "r-20261009-093144-585123", "kind": "skill.start", "sim_t": 0.0, "skill": "navigate", "attempt": 0}
-{"ts": 1791531104.683121, "run_id": "r-20261009-093144-585123", "kind": "adapter.call", "sim_t": 0.0, "op": "walk_to", "to": "aisle_in", "max_speed": 0.5}
-{"ts": 1791531104.7217312, "run_id": "r-20261009-093144-585123", "kind": "adapter.call", "sim_t": 9.6, "op": "walk_to", "to": "shelf_A", "max_speed": 0.5}
-{"ts": 1791531104.753535, "run_id": "r-20261009-093144-585123", "kind": "skill.end", "sim_t": 17.2, "skill": "navigate", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 17.2}
-{"ts": 1791531104.753933, "run_id": "r-20261009-093144-585123", "kind": "state.delta", "sim_t": 17.2, "skill": "navigate", "delta": {"robot_pose": {"x": 4.0, "y": 3.0, "yaw": 0.0}, "robot_mode": "idle", "battery_pct": 96.50000000000315, "clear_holding": false, "objects_upsert": {}, "objects_remove": []}}
-{"ts": 1791531104.754001, "run_id": "r-20261009-093144-585123", "kind": "step.end", "sim_t": 17.2, "index": 1, "skill": "navigate", "outcome": "success"}
-{"ts": 1791531104.754066, "run_id": "r-20261009-093144-585123", "kind": "step.start", "sim_t": 17.2, "index": 2, "skill": "detect", "params": {"cls": "red_box", "expect": 1}}
-{"ts": 1791531104.7542138, "run_id": "r-20261009-093144-585123", "kind": "skill.start", "sim_t": 17.2, "skill": "detect", "attempt": 0}
-{"ts": 1791531105.254949, "run_id": "r-20261009-093144-585123", "kind": "perception.result", "sim_t": 17.2, "frame_id": "sim-1", "frame_ref": "frames/sim-1.png", "cls": "red_box", "found": []}
-{"ts": 1791531105.2553759, "run_id": "r-20261009-093144-585123", "kind": "skill.end", "sim_t": 17.2, "skill": "detect", "attempt": 0, "outcome": "recoverable", "reason": "found 0 'red_box', expected 1", "duration_s": 0.0}
-{"ts": 1791531105.2555578, "run_id": "r-20261009-093144-585123", "kind": "step.retry", "sim_t": 17.2, "index": 2, "skill": "detect", "attempt": 1}
-{"ts": 1791531105.255699, "run_id": "r-20261009-093144-585123", "kind": "skill.start", "sim_t": 17.2, "skill": "detect", "attempt": 1}
-{"ts": 1791531105.326423, "run_id": "r-20261009-093144-585123", "kind": "perception.result", "sim_t": 17.2, "frame_id": "sim-2", "frame_ref": "frames/sim-2.png", "cls": "red_box", "found": []}
-{"ts": 1791531105.326747, "run_id": "r-20261009-093144-585123", "kind": "skill.end", "sim_t": 17.2, "skill": "detect", "attempt": 1, "outcome": "recoverable", "reason": "found 0 'red_box', expected 1", "duration_s": 0.0}
-{"ts": 1791531105.32687, "run_id": "r-20261009-093144-585123", "kind": "step.retry", "sim_t": 17.2, "index": 2, "skill": "detect", "attempt": 2}
-{"ts": 1791531105.327025, "run_id": "r-20261009-093144-585123", "kind": "skill.start", "sim_t": 17.2, "skill": "detect", "attempt": 2}
-{"ts": 1791531105.3707268, "run_id": "r-20261009-093144-585123", "kind": "perception.result", "sim_t": 17.2, "frame_id": "sim-3", "frame_ref": "frames/sim-3.png", "cls": "red_box", "found": ["red_box_01"]}
-{"ts": 1791531105.3711832, "run_id": "r-20261009-093144-585123", "kind": "skill.end", "sim_t": 17.2, "skill": "detect", "attempt": 2, "outcome": "success", "reason": "", "duration_s": 0.0}
-{"ts": 1791531105.371364, "run_id": "r-20261009-093144-585123", "kind": "state.delta", "sim_t": 17.2, "skill": "detect", "delta": {"clear_holding": false, "objects_upsert": {"red_box_01": {"id": "red_box_01", "cls": "red_box", "pose": {"x": 4.75, "y": 3.0, "z": 0.95, "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0}, "confidence": 0.95, "marker_id": 7}}, "objects_remove": []}}
-{"ts": 1791531105.371449, "run_id": "r-20261009-093144-585123", "kind": "step.end", "sim_t": 17.2, "index": 2, "skill": "detect", "outcome": "success"}
-{"ts": 1791531105.371711, "run_id": "r-20261009-093144-585123", "kind": "step.start", "sim_t": 17.2, "index": 3, "skill": "pick", "params": {"object_id": "red_box_01"}}
-{"ts": 1791531105.3718588, "run_id": "r-20261009-093144-585123", "kind": "skill.start", "sim_t": 17.2, "skill": "pick", "attempt": 0}
-{"ts": 1791531105.371955, "run_id": "r-20261009-093144-585123", "kind": "adapter.call", "sim_t": 17.2, "op": "move_arm", "arm": "right", "target": {"x": 4.75, "y": 3.0, "z": 0.95, "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0}}
-{"ts": 1791531105.372715, "run_id": "r-20261009-093144-585123", "kind": "skill.end", "sim_t": 19.2, "skill": "pick", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 2.0}
-{"ts": 1791531105.372906, "run_id": "r-20261009-093144-585123", "kind": "state.delta", "sim_t": 19.2, "skill": "pick", "delta": {"holding": {"id": "red_box_01", "cls": "red_box", "pose": {"x": 4.75, "y": 3.0, "z": 0.95, "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0}, "confidence": 0.95, "marker_id": 7}, "clear_holding": false, "objects_upsert": {}, "objects_remove": ["red_box_01"]}}
-{"ts": 1791531105.372978, "run_id": "r-20261009-093144-585123", "kind": "step.end", "sim_t": 19.2, "index": 3, "skill": "pick", "outcome": "success"}
-{"ts": 1791531105.373039, "run_id": "r-20261009-093144-585123", "kind": "step.start", "sim_t": 19.2, "index": 4, "skill": "navigate", "params": {"to": "workstation_B", "via": ["aisle_out"]}}
-{"ts": 1791531105.373167, "run_id": "r-20261009-093144-585123", "kind": "skill.start", "sim_t": 19.2, "skill": "navigate", "attempt": 0}
-{"ts": 1791531105.37325, "run_id": "r-20261009-093144-585123", "kind": "adapter.call", "sim_t": 19.2, "op": "walk_to", "to": "aisle_out", "max_speed": 0.5}
-{"ts": 1791531105.40165, "run_id": "r-20261009-093144-585123", "kind": "adapter.call", "sim_t": 25.24, "op": "walk_to", "to": "workstation_B", "max_speed": 0.5}
-{"ts": 1791531105.441128, "run_id": "r-20261009-093144-585123", "kind": "skill.end", "sim_t": 33.76, "skill": "navigate", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 14.56}
-{"ts": 1791531105.441489, "run_id": "r-20261009-093144-585123", "kind": "state.delta", "sim_t": 33.76, "skill": "navigate", "delta": {"robot_pose": {"x": 8.0, "y": 7.0, "yaw": 0.0}, "robot_mode": "idle", "battery_pct": 92.93844718719754, "clear_holding": false, "objects_upsert": {}, "objects_remove": []}}
-{"ts": 1791531105.441591, "run_id": "r-20261009-093144-585123", "kind": "step.end", "sim_t": 33.76, "index": 4, "skill": "navigate", "outcome": "success"}
-{"ts": 1791531105.441665, "run_id": "r-20261009-093144-585123", "kind": "step.start", "sim_t": 33.76, "index": 5, "skill": "place", "params": {"at": "workstation_B"}}
-{"ts": 1791531105.4417942, "run_id": "r-20261009-093144-585123", "kind": "skill.start", "sim_t": 33.76, "skill": "place", "attempt": 0}
-{"ts": 1791531105.441969, "run_id": "r-20261009-093144-585123", "kind": "adapter.call", "sim_t": 33.76, "op": "move_arm", "arm": "right", "target": {"x": 8.35, "y": 7.0, "z": 0.9, "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0}}
-{"ts": 1791531105.4435132, "run_id": "r-20261009-093144-585123", "kind": "skill.end", "sim_t": 35.76, "skill": "place", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 2.0}
-{"ts": 1791531105.443657, "run_id": "r-20261009-093144-585123", "kind": "state.delta", "sim_t": 35.76, "skill": "place", "delta": {"clear_holding": true, "objects_upsert": {"red_box_01": {"id": "red_box_01", "cls": "red_box", "pose": {"x": 8.35, "y": 7.0, "z": 0.9, "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0}, "confidence": 1.0, "marker_id": 7}}, "objects_remove": []}}
-{"ts": 1791531105.443723, "run_id": "r-20261009-093144-585123", "kind": "step.end", "sim_t": 35.76, "index": 5, "skill": "place", "outcome": "success"}
-{"ts": 1791531105.443787, "run_id": "r-20261009-093144-585123", "kind": "step.start", "sim_t": 35.76, "index": 6, "skill": "navigate", "params": {"to": "dock", "via": ["aisle_out", "aisle_in"]}}
-{"ts": 1791531105.4438899, "run_id": "r-20261009-093144-585123", "kind": "skill.start", "sim_t": 35.76, "skill": "navigate", "attempt": 0}
-{"ts": 1791531105.4439669, "run_id": "r-20261009-093144-585123", "kind": "adapter.call", "sim_t": 35.76, "op": "walk_to", "to": "aisle_out", "max_speed": 0.5}
-{"ts": 1791531105.485494, "run_id": "r-20261009-093144-585123", "kind": "adapter.call", "sim_t": 45.84, "op": "walk_to", "to": "aisle_in", "max_speed": 0.5}
-{"ts": 1791531105.5465128, "run_id": "r-20261009-093144-585123", "kind": "adapter.call", "sim_t": 61.02, "op": "walk_to", "to": "dock", "max_speed": 0.5}
-{"ts": 1791531105.592088, "run_id": "r-20261009-093144-585123", "kind": "skill.end", "sim_t": 72.2, "skill": "navigate", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 36.44}
-{"ts": 1791531105.592444, "run_id": "r-20261009-093144-585123", "kind": "state.delta", "sim_t": 72.2, "skill": "navigate", "delta": {"robot_pose": {"x": 0.0, "y": 0.0, "yaw": 0.0}, "robot_mode": "idle", "battery_pct": 85.87689437439508, "clear_holding": false, "objects_upsert": {}, "objects_remove": []}}
-{"ts": 1791531105.592524, "run_id": "r-20261009-093144-585123", "kind": "step.end", "sim_t": 72.2, "index": 6, "skill": "navigate", "outcome": "success"}
-{"ts": 1791531105.592598, "run_id": "r-20261009-093144-585123", "kind": "step.start", "sim_t": 72.2, "index": 7, "skill": "say", "params": {"text": "Delivery completed"}}
-{"ts": 1791531105.5927339, "run_id": "r-20261009-093144-585123", "kind": "skill.start", "sim_t": 72.2, "skill": "say", "attempt": 0}
-{"ts": 1791531105.592874, "run_id": "r-20261009-093144-585123", "kind": "say", "sim_t": 72.2, "text": "Delivery completed"}
-{"ts": 1791531105.592983, "run_id": "r-20261009-093144-585123", "kind": "skill.end", "sim_t": 72.2, "skill": "say", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 0.0}
-{"ts": 1791531105.593051, "run_id": "r-20261009-093144-585123", "kind": "step.end", "sim_t": 72.2, "index": 7, "skill": "say", "outcome": "success"}
-{"ts": 1791531105.5931132, "run_id": "r-20261009-093144-585123", "kind": "run.end", "sim_t": 72.2, "status": "success", "steps_completed": 8, "reason": ""}
-{"ts": 1791531105.593274, "run_id": "r-20261009-093144-585123", "kind": "safety.disarmed", "sim_t": 72.2, "checks": 362, "violations": 0}
+{"ts": 1793538713.4151418, "run_id": "r-20261101-141153-a67908", "kind": "safety.speed_capped", "sim_t": 0.0, "limit": 0.8, "applied": 0.8}
+{"ts": 1793538713.415394, "run_id": "r-20261101-141153-a67908", "kind": "safety.armed", "sim_t": 0.0, "limits": {"geofence": {"x_min": -1.0, "x_max": 10.0, "y_min": -1.0, "y_max": 9.0}, "max_speed": 0.8, "min_battery_pct": 5.0, "estop_on_geofence": true}, "period_s": 0.1}
+{"ts": 1793538713.415675, "run_id": "r-20261101-141153-a67908", "kind": "run.start", "sim_t": 0.0, "plan_id": "demo_material_runner", "steps": 8}
+{"ts": 1793538713.4158819, "run_id": "r-20261101-141153-a67908", "kind": "plan.validated", "sim_t": 0.0, "plan_id": "demo_material_runner"}
+{"ts": 1793538713.415942, "run_id": "r-20261101-141153-a67908", "kind": "step.start", "sim_t": 0.0, "index": 0, "skill": "say", "params": {"text": "Fetching the red box"}}
+{"ts": 1793538713.416098, "run_id": "r-20261101-141153-a67908", "kind": "skill.start", "sim_t": 0.0, "skill": "say", "attempt": 0}
+{"ts": 1793538713.4162529, "run_id": "r-20261101-141153-a67908", "kind": "say", "sim_t": 0.0, "text": "Fetching the red box"}
+{"ts": 1793538713.416397, "run_id": "r-20261101-141153-a67908", "kind": "skill.end", "sim_t": 0.0, "skill": "say", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 0.0}
+{"ts": 1793538713.4164531, "run_id": "r-20261101-141153-a67908", "kind": "step.end", "sim_t": 0.0, "index": 0, "skill": "say", "outcome": "success"}
+{"ts": 1793538713.4165068, "run_id": "r-20261101-141153-a67908", "kind": "step.start", "sim_t": 0.0, "index": 1, "skill": "navigate", "params": {"to": "shelf_A", "via": ["aisle_in"]}}
+{"ts": 1793538713.416623, "run_id": "r-20261101-141153-a67908", "kind": "skill.start", "sim_t": 0.0, "skill": "navigate", "attempt": 0}
+{"ts": 1793538713.416715, "run_id": "r-20261101-141153-a67908", "kind": "adapter.call", "sim_t": 0.0, "op": "walk_to", "to": "aisle_in", "max_speed": 0.5}
+{"ts": 1793538713.452267, "run_id": "r-20261101-141153-a67908", "kind": "adapter.call", "sim_t": 9.6, "op": "walk_to", "to": "shelf_A", "max_speed": 0.5}
+{"ts": 1793538713.481241, "run_id": "r-20261101-141153-a67908", "kind": "skill.end", "sim_t": 17.2, "skill": "navigate", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 17.2}
+{"ts": 1793538713.4815722, "run_id": "r-20261101-141153-a67908", "kind": "state.delta", "sim_t": 17.2, "skill": "navigate", "delta": {"robot_pose": {"x": 4.0, "y": 3.0, "yaw": 0.0}, "robot_mode": "idle", "battery_pct": 96.50000000000315, "clear_holding": false, "objects_upsert": {}, "objects_remove": []}}
+{"ts": 1793538713.481636, "run_id": "r-20261101-141153-a67908", "kind": "step.end", "sim_t": 17.2, "index": 1, "skill": "navigate", "outcome": "success"}
+{"ts": 1793538713.481695, "run_id": "r-20261101-141153-a67908", "kind": "step.start", "sim_t": 17.2, "index": 2, "skill": "detect", "params": {"cls": "red_box", "expect": 1}}
+{"ts": 1793538713.4818099, "run_id": "r-20261101-141153-a67908", "kind": "skill.start", "sim_t": 17.2, "skill": "detect", "attempt": 0}
+{"ts": 1793538713.933163, "run_id": "r-20261101-141153-a67908", "kind": "perception.result", "sim_t": 17.2, "frame_id": "sim-1", "frame_ref": "frames/sim-1.png", "cls": "red_box", "found": []}
+{"ts": 1793538713.933362, "run_id": "r-20261101-141153-a67908", "kind": "skill.end", "sim_t": 17.2, "skill": "detect", "attempt": 0, "outcome": "recoverable", "reason": "found 0 'red_box', expected 1", "duration_s": 0.0}
+{"ts": 1793538713.933418, "run_id": "r-20261101-141153-a67908", "kind": "step.retry", "sim_t": 17.2, "index": 2, "skill": "detect", "attempt": 1}
+{"ts": 1793538713.933553, "run_id": "r-20261101-141153-a67908", "kind": "skill.start", "sim_t": 17.2, "skill": "detect", "attempt": 1}
+{"ts": 1793538713.9925199, "run_id": "r-20261101-141153-a67908", "kind": "perception.result", "sim_t": 17.2, "frame_id": "sim-2", "frame_ref": "frames/sim-2.png", "cls": "red_box", "found": []}
+{"ts": 1793538713.9927502, "run_id": "r-20261101-141153-a67908", "kind": "skill.end", "sim_t": 17.2, "skill": "detect", "attempt": 1, "outcome": "recoverable", "reason": "found 0 'red_box', expected 1", "duration_s": 0.0}
+{"ts": 1793538713.992921, "run_id": "r-20261101-141153-a67908", "kind": "step.retry", "sim_t": 17.2, "index": 2, "skill": "detect", "attempt": 2}
+{"ts": 1793538713.993061, "run_id": "r-20261101-141153-a67908", "kind": "skill.start", "sim_t": 17.2, "skill": "detect", "attempt": 2}
+{"ts": 1793538714.0325499, "run_id": "r-20261101-141153-a67908", "kind": "perception.result", "sim_t": 17.2, "frame_id": "sim-3", "frame_ref": "frames/sim-3.png", "cls": "red_box", "found": ["red_box_01"]}
+{"ts": 1793538714.032751, "run_id": "r-20261101-141153-a67908", "kind": "skill.end", "sim_t": 17.2, "skill": "detect", "attempt": 2, "outcome": "success", "reason": "", "duration_s": 0.0}
+{"ts": 1793538714.032903, "run_id": "r-20261101-141153-a67908", "kind": "state.delta", "sim_t": 17.2, "skill": "detect", "delta": {"clear_holding": false, "objects_upsert": {"red_box_01": {"id": "red_box_01", "cls": "red_box", "pose": {"x": 4.75, "y": 3.0, "z": 0.95, "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0}, "confidence": 0.95, "marker_id": 7}}, "objects_remove": []}}
+{"ts": 1793538714.0329611, "run_id": "r-20261101-141153-a67908", "kind": "step.end", "sim_t": 17.2, "index": 2, "skill": "detect", "outcome": "success"}
+{"ts": 1793538714.0331268, "run_id": "r-20261101-141153-a67908", "kind": "step.start", "sim_t": 17.2, "index": 3, "skill": "pick", "params": {"object_id": "red_box_01"}}
+{"ts": 1793538714.033256, "run_id": "r-20261101-141153-a67908", "kind": "skill.start", "sim_t": 17.2, "skill": "pick", "attempt": 0}
+{"ts": 1793538714.033379, "run_id": "r-20261101-141153-a67908", "kind": "adapter.call", "sim_t": 17.2, "op": "move_arm", "arm": "right", "target": {"x": 4.75, "y": 3.0, "z": 0.95, "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0}}
+{"ts": 1793538714.0340962, "run_id": "r-20261101-141153-a67908", "kind": "skill.end", "sim_t": 19.2, "skill": "pick", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 2.0}
+{"ts": 1793538714.034243, "run_id": "r-20261101-141153-a67908", "kind": "state.delta", "sim_t": 19.2, "skill": "pick", "delta": {"holding": {"id": "red_box_01", "cls": "red_box", "pose": {"x": 4.75, "y": 3.0, "z": 0.95, "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0}, "confidence": 0.95, "marker_id": 7}, "clear_holding": false, "objects_upsert": {}, "objects_remove": ["red_box_01"]}}
+{"ts": 1793538714.0342982, "run_id": "r-20261101-141153-a67908", "kind": "step.end", "sim_t": 19.2, "index": 3, "skill": "pick", "outcome": "success"}
+{"ts": 1793538714.034351, "run_id": "r-20261101-141153-a67908", "kind": "step.start", "sim_t": 19.2, "index": 4, "skill": "navigate", "params": {"to": "workstation_B", "via": ["aisle_out"]}}
+{"ts": 1793538714.034451, "run_id": "r-20261101-141153-a67908", "kind": "skill.start", "sim_t": 19.2, "skill": "navigate", "attempt": 0}
+{"ts": 1793538714.034529, "run_id": "r-20261101-141153-a67908", "kind": "adapter.call", "sim_t": 19.2, "op": "walk_to", "to": "aisle_out", "max_speed": 0.5}
+{"ts": 1793538714.0671098, "run_id": "r-20261101-141153-a67908", "kind": "adapter.call", "sim_t": 26.56, "op": "walk_to", "to": "workstation_B", "max_speed": 0.5}
+{"ts": 1793538714.103727, "run_id": "r-20261101-141153-a67908", "kind": "skill.end", "sim_t": 35.08, "skill": "navigate", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 15.88}
+{"ts": 1793538714.103965, "run_id": "r-20261101-141153-a67908", "kind": "state.delta", "sim_t": 35.08, "skill": "navigate", "delta": {"robot_pose": {"x": 8.0, "y": 7.0, "yaw": 0.0}, "robot_mode": "idle", "battery_pct": 92.93844718719754, "clear_holding": false, "objects_upsert": {}, "objects_remove": []}}
+{"ts": 1793538714.10403, "run_id": "r-20261101-141153-a67908", "kind": "step.end", "sim_t": 35.08, "index": 4, "skill": "navigate", "outcome": "success"}
+{"ts": 1793538714.104095, "run_id": "r-20261101-141153-a67908", "kind": "step.start", "sim_t": 35.08, "index": 5, "skill": "place", "params": {"at": "workstation_B"}}
+{"ts": 1793538714.104225, "run_id": "r-20261101-141153-a67908", "kind": "skill.start", "sim_t": 35.08, "skill": "place", "attempt": 0}
+{"ts": 1793538714.104362, "run_id": "r-20261101-141153-a67908", "kind": "adapter.call", "sim_t": 35.08, "op": "move_arm", "arm": "right", "target": {"x": 8.35, "y": 7.0, "z": 0.9, "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0}}
+{"ts": 1793538714.1060538, "run_id": "r-20261101-141153-a67908", "kind": "skill.end", "sim_t": 37.08, "skill": "place", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 2.0}
+{"ts": 1793538714.1063108, "run_id": "r-20261101-141153-a67908", "kind": "state.delta", "sim_t": 37.08, "skill": "place", "delta": {"clear_holding": true, "objects_upsert": {"red_box_01": {"id": "red_box_01", "cls": "red_box", "pose": {"x": 8.35, "y": 7.0, "z": 0.9, "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0}, "confidence": 1.0, "marker_id": 7}}, "objects_remove": []}}
+{"ts": 1793538714.1064079, "run_id": "r-20261101-141153-a67908", "kind": "step.end", "sim_t": 37.08, "index": 5, "skill": "place", "outcome": "success"}
+{"ts": 1793538714.1064918, "run_id": "r-20261101-141153-a67908", "kind": "step.start", "sim_t": 37.08, "index": 6, "skill": "navigate", "params": {"to": "dock", "via": ["aisle_out", "aisle_in"]}}
+{"ts": 1793538714.107279, "run_id": "r-20261101-141153-a67908", "kind": "skill.start", "sim_t": 37.08, "skill": "navigate", "attempt": 0}
+{"ts": 1793538714.1073852, "run_id": "r-20261101-141153-a67908", "kind": "adapter.call", "sim_t": 37.08, "op": "walk_to", "to": "aisle_out", "max_speed": 0.5}
+{"ts": 1793538714.1435049, "run_id": "r-20261101-141153-a67908", "kind": "adapter.call", "sim_t": 46.68, "op": "walk_to", "to": "aisle_in", "max_speed": 0.5}
+{"ts": 1793538714.193731, "run_id": "r-20261101-141153-a67908", "kind": "adapter.call", "sim_t": 60.28, "op": "walk_to", "to": "dock", "max_speed": 0.5}
+{"ts": 1793538714.2349398, "run_id": "r-20261101-141153-a67908", "kind": "skill.end", "sim_t": 71.46, "skill": "navigate", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 34.38}
+{"ts": 1793538714.235185, "run_id": "r-20261101-141153-a67908", "kind": "state.delta", "sim_t": 71.46, "skill": "navigate", "delta": {"robot_pose": {"x": 0.0, "y": 0.0, "yaw": 0.0}, "robot_mode": "idle", "battery_pct": 85.87689437439508, "clear_holding": false, "objects_upsert": {}, "objects_remove": []}}
+{"ts": 1793538714.235253, "run_id": "r-20261101-141153-a67908", "kind": "step.end", "sim_t": 71.46, "index": 6, "skill": "navigate", "outcome": "success"}
+{"ts": 1793538714.235337, "run_id": "r-20261101-141153-a67908", "kind": "step.start", "sim_t": 71.46, "index": 7, "skill": "say", "params": {"text": "Delivery completed"}}
+{"ts": 1793538714.23549, "run_id": "r-20261101-141153-a67908", "kind": "skill.start", "sim_t": 71.46, "skill": "say", "attempt": 0}
+{"ts": 1793538714.235588, "run_id": "r-20261101-141153-a67908", "kind": "say", "sim_t": 71.46, "text": "Delivery completed"}
+{"ts": 1793538714.235679, "run_id": "r-20261101-141153-a67908", "kind": "skill.end", "sim_t": 71.46, "skill": "say", "attempt": 0, "outcome": "success", "reason": "", "duration_s": 0.0}
+{"ts": 1793538714.235729, "run_id": "r-20261101-141153-a67908", "kind": "step.end", "sim_t": 71.46, "index": 7, "skill": "say", "outcome": "success"}
+{"ts": 1793538714.2357912, "run_id": "r-20261101-141153-a67908", "kind": "run.end", "sim_t": 71.46, "status": "success", "steps_completed": 8, "reason": ""}
+{"ts": 1793538714.235938, "run_id": "r-20261101-141153-a67908", "kind": "safety.disarmed", "sim_t": 71.46, "checks": 358, "violations": 0}

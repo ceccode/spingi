@@ -1,7 +1,7 @@
 {
   "name": "spingi-viewer",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "Spingi Viewer: web replayer for episodes produced by the Spingi runtime",
   "scripts": {
@@ -9,7 +9,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "model:compress": "for m in g1 go2; do npx --yes @gltf-transform/cli@4 optimize public/models/$m.glb public/models/$m.glb --compress meshopt --simplify false; done"
+    "model:compress": "for m in g1 go2; do npx --yes @gltf-transform/cli@4 optimize public/models/$m.glb public/models/$m.glb --compress meshopt --simplify false --flatten false --join false --instance false --palette false; done"
   },
   "dependencies": {
     "fflate": "^0.8.2",

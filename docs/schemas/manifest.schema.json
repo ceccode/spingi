@@ -45,6 +45,12 @@
           "description": "truth (scene ground truth) or markers (AprilTags in frames)",
           "title": "Perception",
           "type": "string"
+        },
+        "locomotion": {
+          "default": "kinematic",
+          "description": "kinematic (the base glides) or physics (the robot walks)",
+          "title": "Locomotion",
+          "type": "string"
         }
       },
       "title": "RunConfig",

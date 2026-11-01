@@ -2,15 +2,19 @@
 
 There is no path planner in v0 (ADR-0004: plans are data): the plan author lists the waypoints that keep the
 robot clear of shelving and walls. Each leg is a straight line; if a leg is interrupted (obstacle, safety stop)
-the skill returns where it got to and the postcondition fails.
+the skill returns where it got to and the postcondition fails. At an intermediate waypoint the robot faces the next
+one instead of turning to the waypoint's own heading: only the destination's heading matters, and every turn on the
+spot costs time and, on a walking robot, drift.
 """
 
 from __future__ import annotations
 
+import math
+
 from pydantic import BaseModel, Field
 
 from spingi.core.skill import Check, Skill, SkillContext, SkillResult
-from spingi.core.types import StateDelta, WorldState
+from spingi.core.types import Pose2D, StateDelta, WorldState
 
 MIN_BATTERY_PCT = 10.0
 
@@ -40,10 +44,14 @@ class NavigateSkill(Skill):
     async def execute(self, params: NavigateParams, ctx: SkillContext) -> SkillResult:
         legs = [*params.via, params.to]
         reached: list[str] = []
-        for name in legs:
+        for i, name in enumerate(legs):
             waypoint = ctx.state.locations[name]
+            target = waypoint.pose
+            if i < len(legs) - 1:
+                after = ctx.state.locations[legs[i + 1]].pose
+                target = Pose2D(x=target.x, y=target.y, yaw=math.atan2(after.y - target.y, after.x - target.x))
             ctx.log.emit("adapter.call", op="walk_to", to=name, max_speed=params.max_speed)
-            await ctx.robot.walk_to(waypoint.pose, max_speed=params.max_speed)
+            await ctx.robot.walk_to(target, max_speed=params.max_speed)
             pose = await ctx.robot.get_pose()
             if pose.distance_to(waypoint.pose) > waypoint.tolerance_m:
                 break  # interrupted leg: report where we are, let the postcondition decide

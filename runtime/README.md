@@ -10,15 +10,15 @@ All commands run from this folder. Requirements: Python 3.11+ and [uv](https://d
 make setup
 ```
 
-installs the package with its extras: `dev` (pytest, ruff), `sim` (MuJoCo, numpy, imageio, and trimesh with scipy for the viewer model export), `export` (pandas, pyarrow), `llm` (the Anthropic SDK, used only by `spingi plan` and `spingi eval-planner`) and `perception` (OpenCV, for the AprilTag perceiver). Nothing else is needed: the G1 and Go2 models are in `sim/models/`, the tag images in `sim/markers/`.
+installs the package with its extras: `dev` (pytest, ruff), `sim` (MuJoCo, numpy, imageio, and trimesh with scipy for the viewer model export), `export` (pandas, pyarrow), `llm` (the Anthropic SDK, used only by `spingi plan` and `spingi eval-planner`) and `perception` (OpenCV, for the AprilTag perceiver). Nothing else is needed: the G1 and Go2 models are in `sim/models/`, their walking policies in `sim/policies/` (numpy weights: no PyTorch, no ONNX), the tag images in `sim/markers/`.
 
 ## Command line
 
 ```
-spingi run <plan.yaml> [--scene S] [--adapter fake|sim] [--robot g1|go2] [--perception truth|markers] [--operator auto|console]
+spingi run <plan.yaml> [--scene S] [--adapter fake|sim] [--robot g1|go2] [--physics] [--perception truth|markers] [--operator auto|console]
            [--on-failure abort|skip|retry] [--noise P] [--sigma M] [--seed K] [--runs-dir D] [--view] [--record] [--realtime] [--zip] [--quiet]
-spingi bench <plan.yaml> [--scene S] [--adapter fake|sim] [--robot g1|go2] [--perception truth|markers] [--runs N] [--noise P] [--sigma M] [--seed K]
-             [--on-failure abort|skip|retry] [--runs-dir D] [--gate] [--keep-failed]
+spingi bench <plan.yaml> [--scene S] [--adapter fake|sim] [--robot g1|go2] [--physics] [--perception truth|markers] [--runs N] [--noise P]
+             [--sigma M] [--seed K] [--on-failure abort|skip|retry] [--runs-dir D] [--gate] [--keep-failed]
 spingi export lerobot <episode_dir>... --out <dataset_dir> [--fps 10]
 spingi plan "<request>" [--scene S] [--robot g1|go2] [--out plan.yaml] [--model M] [--run [--yes] [--adapter fake|sim] [--operator auto|console]]
 spingi eval-planner [--cases plans/golden/planner_cases.yaml] [--model M] [--out report.json] [--min-pass-rate R]
@@ -32,6 +32,7 @@ spingi robots
 | `--adapter fake` (default) | In-memory robot: instantaneous moves, no physics. For logic and unit tests. |
 | `--adapter sim` | The robot in MuJoCo: realistic travel times, collisions with obstacles, head camera, kinematic grasp. |
 | `--robot g1` (default), `--robot go2` | Which robot the adapter stands for (ADR-0012): the Unitree G1 humanoid, or the Unitree Go2 quadruped, which has no arm. In MuJoCo it picks the model; on every adapter it decides which skills a plan may use. `spingi robots` lists the profiles. |
+| `--physics` | The robot walks (`sim` adapter only, ADR-0015). Learned walking controllers move the legs on the scene's ground; the pose is what the physics gives; an obstacle pushed for 0.1 s blocks the walk, no progress for 4 s means stuck, and a fall e-stops the robot and ends the run. About twice as slow as the default, which glides the base along the path with the legs still, and still about 40 times faster than real time. Each `--seed` moves the start by a few centimetres, so repeated runs differ. |
 | `--scene` | Scene file; default `sim/scenes/lab_small.yaml`. |
 | `--perception truth` (default), `--perception markers` | Who answers `detect` and `inspect`. `truth`: the simulator's ground truth, with `--noise` and `--sigma` to make it unreliable. `markers`: the AprilTags on the objects, read from the frames the head camera renders with OpenCV, as from a real camera (`sim` adapter only; the noise options do not apply). The G1 reads the box on shelf A from 0.9 m; the Go2 cannot, the shelf's edge hides it from its low camera, which is the kind of thing this mode is for. |
 | `--operator auto` (default) | Requests for a human are answered with `--on-failure` (abort, skip or retry) and the event log is printed at the end. |
@@ -53,6 +54,8 @@ Make targets wrap the common cases:
 | `make demo-sim` | Same plan on the G1 in MuJoCo |
 | `make demo-sim-go2` | Same plan on the Go2 quadruped in MuJoCo |
 | `make demo-sim-view` | Same, in the MuJoCo viewer |
+| `make demo-yard` | The Go2 walking a patrol of the outdoor yard, in physics, zipped for the viewer |
+| `make demo-track` | The Go2 walking the test track, in physics, zipped for the viewer |
 | `make demo-sim-record` | Same, with video |
 | `make bench` | Material runner in `warehouse_small`, 100 simulated runs with 20 % perception false negatives and 0.02 m position noise, gate checked |
 | `make test`, `make lint` | Test suite, `ruff check` (CI also runs `ruff format --check`) |
@@ -66,6 +69,8 @@ Sample plans and scenes:
 | `plans/demo_material_runner.yaml` | `sim/scenes/warehouse_small.yaml` | L2 | Aisle waypoints, detect, pick, carry, place on a table, return |
 | any `navigate` to `workstation_B`, e.g. `tests/golden/plans/to_workstation.yaml` | `sim/scenes/lab_blocked.yaml` | – | A wall across the path: the robot stops, retries, asks the operator |
 | any `navigate` to `workstation_B` | `sim/scenes/lab_geofence.yaml` | – | A target outside the geofence: the safety monitor e-stops the robot and the run ends with status `estop` |
+| `plans/yard_patrol.yaml` | `sim/scenes/yard_outdoor.yaml` | L1 | Outdoors, for the Go2: a gauge on a pump at the end of a dirt track, an extinguisher on a loading dock up a ramp, a sign behind a kerb, back to the dock. Use `--physics` |
+| `plans/test_track.yaml` | `sim/scenes/test_track.yaml` | – | A straight course of 5 m stretches from concrete to a 15 cm step; the run stops at the first stretch the robot cannot walk. Use `--physics` |
 
 ## Scenes
 
@@ -87,7 +92,35 @@ safety:
   min_battery_pct: 5
 ```
 
-In simulation the same file generates the MuJoCo scene (floor, racks, box, cameras) and feeds the ground-truth perceiver. Routes are not planned automatically: when a straight line crosses an obstacle, the plan lists waypoints (`via`). An optional `routes:` section (`"dock->shelf_A": [aisle_in]`) tells the LLM planner which waypoints to use; see `sim/scenes/warehouse_small.yaml`. Perception noise is not part of the scene: it is a run option (`--noise`, `--sigma`, `--seed`).
+In simulation the same file generates the MuJoCo scene (floor, racks, box, cameras) and feeds the ground-truth perceiver. Obstacles and objects take an optional `color: "#rrggbb"`. Routes are not planned automatically: when a straight line crosses an obstacle, the plan lists waypoints (`via`). An optional `routes:` section (`"dock->shelf_A": [aisle_in]`) tells the LLM planner which waypoints to use; see `sim/scenes/warehouse_small.yaml`. Perception noise is not part of the scene: it is a run option (`--noise`, `--sigma`, `--seed`).
+
+Outdoors, a `terrain` section gives the scene its ground (runtime-spec §8.3, ADR-0015):
+
+```yaml
+terrain:
+  extent: { x_min: -2, x_max: 52, y_min: -3, y_max: 3 }   # must cover the geofence
+  cell_m: 0.1                     # 0.08 to 0.25 m; finer grids make feet catch between cells
+  seed: 5
+  surface: concrete               # floor, concrete, asphalt, gravel, dirt, grass
+  regions:
+    - { surface: gravel, x: [9, 14], y: [-3, 3] }
+    - { surface: dirt, x: [24, 29], y: [-3, 3], roughness_m: 0.035 }
+  ramps:
+    - { x: [30, 32], y: [-3, 3], from_m: 0.0, to_m: 0.536, along: x }   # 15 degrees
+  raised:
+    - { x: [39, 44], y: [-3, 3], height_m: 0.10 }                         # a 10 cm step
+```
+
+| Surface | Grip (friction) | Roughness (std. dev.) | Bump size |
+|---------|-----------------|-----------------------|-----------|
+| `floor` | 0.8 | 0 | – |
+| `concrete` | 0.85 | 2 mm | 1 m |
+| `asphalt` | 0.9 | 3 mm | 0.8 m |
+| `gravel` | 0.6 | 8 mm | 0.3 m |
+| `dirt` | 0.65 | 1.5 cm | 0.6 m |
+| `grass` | 0.5 | 1 cm | 0.5 m |
+
+Ramps and raised areas are solid, flat on top with vertical sides; heights go from 0 to 3 m and ramps up to 45 degrees. In kinematic runs the base follows the ground's height; in physics the robot walks on it. A route for a walking robot keeps about 0.6 m from obstacles and meets a kerb square on (`kerb_front` in `yard_outdoor.yaml`).
 
 Names of locations, objects, classes and routes must match `^[A-Za-z0-9_-]{1,64}$`, and every number must be finite: NaN or infinity in a pose, the geofence or the limits is rejected. The checks run when the world is loaded and again when the MuJoCo scene is generated. Leaving the geofence e-stops the robot (latched until a manual reset); `estop_on_geofence: false` in the `safety:` section makes it a plain stop instead, repeated at every check while the robot is outside.
 
@@ -99,7 +132,7 @@ A plan is an ordered list of steps. Each step names a skill, its parameters and 
 
 | Skill | Parameters | Precondition | Effect |
 |-------|------------|--------------|--------|
-| `navigate` | `to`, `via=[]`, `max_speed=0.5` | known locations, battery above minimum | robot within tolerance of `to` |
+| `navigate` | `to`, `via=[]`, `max_speed=0.5` | known locations, battery above minimum | robot within tolerance of `to`; at each `via` waypoint it faces the next one |
 | `detect` | `cls`, `expect=1` | robot idle | objects of class `cls` added to the world state with their pose |
 | `pick` | `object_id`, `arm=right` | object pose known and within 0.9 m, hand empty | `robot.holding` set, object removed from the scene |
 | `place` | `at`, `arm=right` | holding something, robot at `at` | object put down ahead of the robot, `holding` cleared |
@@ -115,7 +148,7 @@ Each skill declares the robot capabilities it `requires`: `navigate` needs `loco
 
 ## Episodes
 
-Every `spingi run` leaves an episode in `runs/<run_id>/` ([../docs/episode-format.md](../docs/episode-format.md)): `manifest.json`, copies of the plan and the scene, `events.jsonl` (every event with wall-clock and simulated time), `trajectory.jsonl` (robot pose at 10 Hz, object positions when they change), `frames/` (head-camera PNGs referenced by `perception.result` events through `frame_ref`, a path relative to the episode folder, written only when an OpenGL context is available) and, with `--record`, `run.mp4`, streamed to disk while the run goes on. `manifest.json` also records the robot profile (`robot.model`, which the viewer uses to draw the right robot) and the perception noise and seed, so that `spingi replay` can run the episode again on the same robot.
+Every `spingi run` leaves an episode in `runs/<run_id>/` ([../docs/episode-format.md](../docs/episode-format.md)): `manifest.json`, copies of the plan and the scene, `events.jsonl` (every event with wall-clock and simulated time), `trajectory.jsonl` (robot pose at 10 Hz, object positions when they change; with `--physics` at 25 Hz with the base's height and tilt and every joint angle, so the viewer moves the legs), `terrain.json` (the ground, for scenes that have one), `frames/` (head-camera PNGs referenced by `perception.result` events through `frame_ref`, a path relative to the episode folder, written only when an OpenGL context is available) and, with `--record`, `run.mp4`, streamed to disk while the run goes on. `manifest.json` also records the robot profile (`robot.model`, which the viewer uses to draw the right robot) and the perception noise and seed, so that `spingi replay` can run the episode again on the same robot.
 
 ## Operator console
 
@@ -144,7 +177,7 @@ Only the answers the request offers are accepted: retry, skip or abort for a fai
 
 ## Safety in a run
 
-The session arms the safety monitor before the first step: it caps the adapter speed with `set_speed_limit`, then checks the geofence and the battery every 0.1 s of robot time (in fast simulation the adapter yields every 0.2 s of simulated time) and sends the heartbeat of the adapter watchdog, set to 500 ms of robot time in every session. Every motion command checks the e-stop and the watchdog before it acts. An e-stop is terminal: the run ends with status `estop` and nothing is retried. If a check raises, the monitor e-stops the robot (`safety.monitor_error`). If the run raises, it ends with status `error`, the robot is stopped and the episode is still written. Run statuses: `success`, `aborted`, `invalid_plan`, `deadline`, `estop`, `error`. Decisions in [ADR-0011](../adr/0011-robot-time-and-terminal-estop.md), threat model in [SECURITY.md](../SECURITY.md).
+The session arms the safety monitor before the first step: it caps the adapter speed with `set_speed_limit`, then checks the geofence and the battery every 0.1 s of robot time (in fast simulation the adapter yields every 0.2 s of simulated time) and sends the heartbeat of the adapter watchdog, set to 500 ms of robot time in every session. Every motion command checks the e-stop and the watchdog before it acts. An e-stop is terminal: the run ends with status `estop` and nothing is retried. If a check raises, the monitor e-stops the robot (`safety.monitor_error`). If the run raises, it ends with status `error`, the robot is stopped and the episode is still written. With `--physics` a robot that falls is e-stopped by the adapter (`RobotFell`), the event log says where (`robot.fell`) and the run ends as `estop`. Run statuses: `success`, `aborted`, `invalid_plan`, `deadline`, `estop`, `error`. Decisions in [ADR-0011](../adr/0011-robot-time-and-terminal-estop.md), threat model in [SECURITY.md](../SECURITY.md).
 
 ## Benchmarks and the sim-to-real gate
 
@@ -165,6 +198,20 @@ GATE PASSED
 ```
 
 At 60 % false negatives the same plan drops to about 74 % success with 26 operator requests per 100 runs, and the gate fails: the retries in the plan absorb moderate noise, not heavy noise.
+
+With `--physics` the robot walks, and the same gate measures drift, blocked paths and falls. Measured on 2026-11-01 (perception without noise; the seed changes the start by up to 3 cm and 3 degrees):
+
+| Plan · scene | Robot | Runs | Success | Operator requests per 100 | Fatal runs (falls) | p95 simulated time |
+|---|---|---|---|---|---|---|
+| inspection round · `lab_small` | G1 | 30 | 100 % | 0 | 0 | 49.6 s |
+| inspection round · `lab_small` | Go2 | 30 | 100 % | 0 | 0 | 60.7 s |
+| material runner · `warehouse_small` | G1 | 30 | 100 % | 0 | 0 | 89.8 s |
+| yard patrol · `yard_outdoor` | Go2 | 30 | 93.3 % | 3.3 | 1 (1) | 164.5 s |
+| yard patrol · `yard_outdoor`, kinematic, for comparison | Go2 | 30 | 100 % | 0 | 0 | 99.9 s |
+| test track · `test_track` | Go2 | 20 | 65 % | 0 | 1 (1) | 112.1 s |
+| test track · `test_track` | G1 | 20 | 0 % | 0 | 20 (19; one stumbled out of the geofence) | – |
+
+The kinematic base finishes the yard patrol every time in 100 s; walking, the Go2 needs 160 s and fails a few runs out of a hundred, at the kerb. On the test track the Go2 crosses every surface, the rough dirt and the ramps in all 20 runs and fails only at the steps: the 10 cm one in 3 runs, the 15 cm one in 4. The G1's controller was trained on flat floors: indoors it passes, outdoors it falls. The report counts falls among the fatal runs.
 
 ## Export to LeRobot
 
@@ -204,7 +251,8 @@ spingi/core        types, ports (RobotAdapter, Clock, Perceiver, HumanGateway), 
 spingi/skills      one file per skill
 spingi/safety      SafetyMonitor and limits
 spingi/perception  FakePerceiver, SimPerceiver (ground truth from the scene), MarkerPerceiver (AprilTags in frames)
-spingi/adapters    FakeAdapter, sim_mujoco/ (the G1 or the Go2 in MuJoCo, from the profile)
+spingi/adapters    FakeAdapter, sim_mujoco/ (the G1 or the Go2 in MuJoCo, from the profile: scene and terrain generation, the
+                   kinematic base, and locomotion.py for walking with learned policies)
 spingi/planner     StaticPlanner (YAML), LLMPlanner (Claude, structured output), schema, evaluation
 spingi/console     terminal operator console (reporter + HumanGateway)
 spingi/export      LeRobot v3.0 exporter
@@ -216,7 +264,8 @@ spingi/episode.py  episode writer and the pydantic models behind docs/schemas
 spingi/scenes.py   initial WorldState, safety limits and routes from a scene file
 spingi/robots.py   robot profiles: name, capabilities, how the simulator loads and moves the model (ADR-0012)
 spingi/cli.py      the `spingi` command; spingi/dotenv.py loads .env
-plans/  sim/scenes/  sim/models/  sim/markers/  tests/  scripts/ (gen_schemas, record_golden, export_glb)
+plans/  sim/scenes/  sim/models/  sim/policies/  sim/markers/  tests/
+scripts/ (gen_schemas, record_golden, record_samples, export_glb, import_policies)
 ```
 
 `spingi.core` imports nothing from the other packages; `tests/test_architecture.py` enforces it.
@@ -227,7 +276,7 @@ plans/  sim/scenes/  sim/models/  sim/markers/  tests/  scripts/ (gen_schemas, r
 make test
 ```
 
-233 tests, about 25 seconds (4 skip by design: arm tests on robots without an arm). Unit tests on the fake adapter, the marker perceiver on synthetic images, contract tests run against every adapter and robot (fake and sim, as the G1 and as the Go2), scenario tests in MuJoCo (inspection round on both robots, warehouse delivery, a delivery refused on the Go2, wall, geofence, speed cap, rendering, AprilTags read from rendered frames, Ctrl+C operator stop, every golden plan, robot time for the watchdog, the monitor and the plan deadline), golden episodes replayed, metrics and gate, bench, console, LeRobot export, the LLM planner with a fake client (request shape, schema, retry with errors, refusals), episode and schema tests, architecture rules, and a licensing test that keeps `LICENSE` and `NOTICE` in this folder (shipped in the wheel) equal to the repository's. No test calls the network. Rendering tests skip themselves on machines without an OpenGL context.
+278 tests, about 25 seconds (4 skip by design: arm tests on robots without an arm). Unit tests on the fake adapter, the marker perceiver on synthetic images, the ground (validation, seams, height fields and boxes, the viewer's copy), walking (going to a pose as velocity commands, the policy files against the robot models, the gait switch), falls in the executor and the gate, contract tests run against every adapter and robot (fake and sim, as the G1 and as the Go2), scenario tests in MuJoCo (inspection round on both robots, warehouse delivery, a delivery refused on the Go2, wall, geofence, speed cap, rendering, AprilTags read from rendered frames, Ctrl+C operator stop, every golden plan, robot time for the watchdog, the monitor and the plan deadline), physics locomotion in MuJoCo (both robots walk to a pose, the Go2 turns on the spot, climbs the loading-dock ramp and a 10 cm step, an obstacle blocks the G1, a shove makes it fall, a walking G1 grasps without being moved, a physics episode replays the same, an outdoor episode carries its ground), golden episodes replayed, metrics and gate, bench, console, LeRobot export, the LLM planner with a fake client (request shape, schema, retry with errors, refusals), episode and schema tests, architecture rules, and a licensing test that keeps `LICENSE` and `NOTICE` in this folder (shipped in the wheel) equal to the repository's. No test calls the network. Rendering tests skip themselves on machines without an OpenGL context.
 
 `make lint` runs ruff with the rules `E`, `F`, `I`, `B`, `UP`, `S` (bandit), `ASYNC`, `SIM`, `RUF`, `PIE`, `BLE`; a blind `except` needs a `noqa` that says why. CI runs the same lint, `ruff format --check` and the tests on GitHub Actions.
 
@@ -237,7 +286,7 @@ make test
 
 **An adapter**: implement the `RobotAdapter` protocol in `spingi/adapters/`, add it to `ADAPTERS` in `tests/contract/test_adapter_contract.py` so the shared contract suite runs on it. Adapters translate; they hold no task logic. Besides the motion and sensor methods the port asks for a `clock` (the robot's time: `WallClock` on hardware), an `estopped` flag, `capabilities`, `set_speed_limit` (which can only lower the cap) and a `GripResult` from `gripper`; every motion command must check the e-stop (raise `RobotEstopped`) and the watchdog before it acts, and a command for a part the robot lacks raises `CapabilityMissing`.
 
-**A robot**: a `RobotProfile` in `spingi/robots.py` (name, alias, label, kind, capabilities, and for the simulator the model folder, the MJCF file, the root body, the standing height and the hand offsets), the vendored MJCF with its license under `sim/models/<name>/` and in `NOTICE`, a `head` camera in the MJCF, a GLB for the viewer (`scripts/export_glb.py --robot <alias>`, then `npm run model:compress` in `viewer/`, and the table in `viewer/src/episode.ts`), the profile in `ADAPTERS` of the contract tests, and a golden episode.
+**A robot**: a `RobotProfile` in `spingi/robots.py` (name, alias, label, kind, capabilities, and for the simulator the model folder, the MJCF file, the root body, the standing height and the hand offsets), the vendored MJCF with its license under `sim/models/<name>/` and in `NOTICE`, a `head` camera in the MJCF, a GLB and its joint table for the viewer (`scripts/export_glb.py --robot <alias>`, then `npm run model:compress` in `viewer/`, and the table in `viewer/src/episode.ts`), the profile in `ADAPTERS` of the contract tests, and a golden episode. To walk in physics it also needs a walking policy: a folder under `sim/policies/` with `policy.npz`, `policy.json` (joint order, gains, default pose, action scale, observation terms), `LICENSE` and `README.md`, made by `scripts/import_policies.py` from the published weights, named in the profile's `policy` (and `maneuver_policy` if a second policy turns on the spot better), and checked by `tests/unit/test_locomotion.py`.
 
 **A perceiver**: implement `detect` and `localize` from the `Perceiver` protocol. A perceiver that reads pixels gets the image through a callable and the camera through `frame.camera_model`, like `MarkerPerceiver`; it never asks the adapter for anything else, so it can be tested on synthetic images (`tests/unit/test_markers.py`).
 

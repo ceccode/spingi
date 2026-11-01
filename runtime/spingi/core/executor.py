@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 
 from spingi.core.events import EventLog
 from spingi.core.plan import PlanError, TaskPlan, resolve_params, validate_plan
-from spingi.core.ports import Clock, HumanGateway, HumanRequest, Perceiver, RobotAdapter, RobotEstopped
+from spingi.core.ports import Clock, HumanGateway, HumanRequest, Perceiver, RobotAdapter, RobotEstopped, RobotFell
 from spingi.core.skill import SkillContext, SkillOutcome, SkillRegistry, SkillResult
 from spingi.core.types import WorldState, apply_delta
 
@@ -136,8 +136,9 @@ class Executor:
                         reason=result.reason,
                         duration_s=round(self._clock() - t0, 4),
                     )
-                    if self.robot.estopped:  # e-stopped during the skill (monitor, operator, adapter): terminal
-                        return await self._finish(state, index, outputs, "estop", "robot e-stopped")
+                    if self.robot.estopped:  # e-stopped during the skill (monitor, operator, adapter, a fall): terminal
+                        fatal = result.outcome is SkillOutcome.FATAL and result.reason
+                        return await self._finish(state, index, outputs, "estop", fatal or "robot e-stopped")
                     if plan_limited and result.reason.startswith("deadline"):
                         return await self._finish(state, index, outputs, "deadline", "run budget exhausted")
                     if result.outcome is SkillOutcome.SUCCESS:
@@ -205,6 +206,9 @@ class Executor:
             return SkillResult.recoverable(f"deadline of {deadline:g}s exceeded")
         try:
             return work.result()
+        except RobotFell as exc:
+            self.log.emit("robot.fell", skill=skill.name, reason=str(exc))
+            return SkillResult.fatal(str(exc))
         except RobotEstopped:
             return SkillResult.fatal("robot e-stopped")
         except Exception as exc:  # noqa: BLE001 - a bug in a skill must not leave the robot moving

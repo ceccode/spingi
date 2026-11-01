@@ -24,3 +24,11 @@ def test_every_vendored_model_is_listed_in_the_notice():
     for model_dir in (RUNTIME / "sim" / "models").iterdir():
         if model_dir.is_dir():
             assert f"runtime/sim/models/{model_dir.name}" in notice, f"{model_dir.name} missing from NOTICE"
+
+
+def test_every_walking_policy_has_its_license_and_is_listed_in_the_notice():
+    notice = (ROOT / "NOTICE").read_text()
+    for policy_dir in (RUNTIME / "sim" / "policies").iterdir():
+        if policy_dir.is_dir():
+            assert f"runtime/sim/policies/{policy_dir.name}" in notice, f"{policy_dir.name} missing from NOTICE"
+            assert "Apache License" in (policy_dir / "LICENSE").read_text()
