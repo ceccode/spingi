@@ -57,7 +57,8 @@ class SessionConfig:
     seed: int = 0
     realtime: bool = False
     view: bool = False
-    record_video: bool = False
+    record_video: bool = False  # third-person video, runs/<id>/run.mp4 (sim adapter)
+    record_camera: bool = False  # the head camera's view at 10 frames per second, runs/<id>/head.mp4 (sim adapter)
     write_episode: bool = True
     zip_episode: bool = False
     # Safety layer S1: the adapter stops the robot if the SafetyMonitor's heartbeat is older than this, in robot time.
@@ -73,6 +74,7 @@ class SessionResult:
     steps_total: int
     log: EventLog
     video: Path | None = None
+    camera_video: Path | None = None
     archive: Path | None = None
     sim_time_s: float | None = None
 
@@ -105,6 +107,7 @@ async def run_session(cfg: SessionConfig, human: HumanGateway, log: EventLog | N
             viewer=cfg.view,
             record_dir=run_dir if cfg.write_episode else None,
             record_video=cfg.record_video,
+            record_camera=cfg.record_camera,
             watchdog_ms=cfg.watchdog_ms,
             locomotion=cfg.locomotion,
             start=state.robot.pose,
@@ -128,6 +131,8 @@ async def run_session(cfg: SessionConfig, human: HumanGateway, log: EventLog | N
             raise ValueError("locomotion 'physics' needs the sim adapter")
         if cfg.odometry == "drift" or cfg.camera_noise:
             raise ValueError("odometry drift and camera noise are simulated sensors: they need the sim adapter")
+        if cfg.record_video or cfg.record_camera:
+            raise ValueError("videos are rendered by the simulator: they need the sim adapter")
         robot = FakeAdapter(start=state.robot.pose, watchdog_ms=cfg.watchdog_ms, capabilities=profile.capabilities)
         perceiver = FakePerceiver(
             objects=list(state.objects.values()), false_negative_rate=cfg.perception_noise, seed=cfg.seed
@@ -197,6 +202,7 @@ async def run_session(cfg: SessionConfig, human: HumanGateway, log: EventLog | N
             with contextlib.suppress(Exception):
                 video = robot.close()
 
+    camera = robot.camera_video_for_viewer() if hasattr(robot, "camera_video_for_viewer") else None
     archive = None
     if cfg.write_episode:
         write_episode(
@@ -231,6 +237,7 @@ async def run_session(cfg: SessionConfig, human: HumanGateway, log: EventLog | N
         steps_total=len(plan.steps),
         log=log,
         video=video,
+        camera_video=run_dir / camera["file"] if camera else None,
         archive=archive,
         sim_time_s=getattr(robot, "sim_time_s", None),
     )

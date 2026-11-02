@@ -44,3 +44,9 @@ select { background: #262a35; color: var(--text); border: 1px solid var(--line);
 .frame-large { width: 100%; border-radius: 6px; border: 1px solid var(--line); display: block; margin-bottom: 6px; }
 .frame-large[hidden] { display: none; }
 .small { font-size: 12px; margin: 0 0 6px; }
+.fpv { position: absolute; right: 12px; bottom: 12px; width: min(34%, 420px); margin: 0; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); background: #000; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45); cursor: zoom-in; }
+.fpv.large { width: min(75%, 1000px); cursor: zoom-out; }
+.fpv[hidden] { display: none; }
+.fpv video { display: block; width: 100%; height: auto; }
+.fpv-label { position: absolute; left: 8px; top: 6px; font-size: 11px; background: rgba(20, 22, 28, 0.75); padding: 2px 6px; border-radius: 4px; pointer-events: none; }
+.chk:has(input:disabled) { opacity: 0.5; }

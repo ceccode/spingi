@@ -5,11 +5,12 @@
   publish = "dist"
 
 # Security headers for the viewer. Episodes are read in the browser, never uploaded; `?url=` may fetch any HTTPS
-# URL, so connect-src allows https:. 'wasm-unsafe-eval' is needed by the meshopt decoder of the G1 model.
+# URL, so connect-src allows https:. 'wasm-unsafe-eval' is needed by the meshopt decoder of the G1 model. Frames and
+# the head camera's video are read from the episode into blob: URLs (img-src, media-src).
 [[headers]]
   for = "/*"
   [headers.values]
-    Content-Security-Policy = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' blob: data:; connect-src 'self' https:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self' https:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "no-referrer"
     Cross-Origin-Opener-Policy = "same-origin"

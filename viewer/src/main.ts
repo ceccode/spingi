@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import {
   DEFAULT_ROBOT_MODEL, describeEvent, episodeDuration, estimateAt, eventTime, jointsAt, loadEpisodeFromZip, manifestRows,
-  MAX_ZIP_BYTES, objectsAt, poseAt, readCapped, robotJointsUrl, robotModelUrl, safeEpisodeUrl, type Episode,
+  MAX_ZIP_BYTES, objectsAt, poseAt, readCapped, robotJointsUrl, robotModelUrl, safeEpisodeUrl, videoTimeAt, type Episode,
 } from "./episode";
 import { Player } from "./player";
 import { World } from "./world";
@@ -41,12 +41,14 @@ let episode: Episode | null = null;
 let eventTimes: number[] = [];
 let frameTimes: { id: string; t: number }[] = [];
 let frameUrls: string[] = [];
+let videoUrl = "";
 
 const ui = {
   title: $("title"), drop: $("drop"), hud: $("hud"), manifest: $("manifest"), events: $<HTMLOListElement>("events"),
   framesCard: $("framesCard"), frames: $("frames"), frameLarge: $<HTMLImageElement>("frameLarge"), frameCaption: $("frameCaption"), play: $<HTMLButtonElement>("play"), scrub: $<HTMLInputElement>("scrub"),
   clock: $("clock"), speed: $<HTMLSelectElement>("speed"), follow: $<HTMLInputElement>("follow"),
   file: $<HTMLInputElement>("file"), sample: $<HTMLSelectElement>("sample"),
+  fpv: $("fpv"), fpvVideo: $<HTMLVideoElement>("fpvVideo"), fpvLabel: $("fpvLabel"), robotView: $<HTMLInputElement>("robotView"),
 };
 
 function resize(): void {
@@ -97,6 +99,7 @@ function render(episode: Episode, t: number): void {
   world.setEstimate(belief, pose);
   world.setJoints(jointsAt(episode.trajectory, t));
   world.setObjectPositions(objectsAt(episode.trajectory, t));
+  syncVideo(t);
   ui.scrub.value = String(t / player.duration);
   ui.clock.textContent = `${t.toFixed(1)} s`;
   ui.play.textContent = player.playing ? "❚❚" : "▶";
@@ -130,6 +133,51 @@ function render(episode: Episode, t: number): void {
   }
 }
 
+const DRIFT_S = 0.3;  // video seconds the camera may run ahead of or behind the replay before it is put back
+let starting = false;  // play() was called and has not started yet
+
+/** Keeps the head camera's video on the replay's time: it plays along at the replay's speed and is sought only when
+ *  it drifts; paused or scrubbing, it shows the frame taken last at or before t. */
+function syncVideo(t: number): void {
+  const cam = episode?.cameraVideo;
+  const video = ui.fpvVideo;
+  if (!cam || ui.fpv.hidden) {
+    if (!video.paused) video.pause();
+    return;
+  }
+  const along = t - cam.start;  // where the video is if it runs with the replay
+  if (player.playing && along >= 0 && along < (cam.frames - 1) / cam.fps) {
+    if (video.playbackRate !== player.speed) video.playbackRate = player.speed;
+    if (!starting && Math.abs(video.currentTime - along) > DRIFT_S * Math.max(1, player.speed)) video.currentTime = along;
+    if (video.paused && !starting) {
+      starting = true;
+      video.play().catch(() => undefined).finally(() => (starting = false));
+    }
+    return;
+  }
+  if (!video.paused) video.pause();  // never left to end: play() after the end would restart it from the beginning
+  const still = videoTimeAt(cam, t);
+  if (!video.seeking && Math.abs(video.currentTime - still) > 0.5 / cam.fps) video.currentTime = still;
+}
+
+/** The video of a new episode, or none: the robot's view is offered only when the episode has one. */
+function showVideo(ep: Episode): void {
+  const cam = ep.cameraVideo;
+  ui.fpvVideo.pause();
+  if (videoUrl) URL.revokeObjectURL(videoUrl);
+  videoUrl = cam ? URL.createObjectURL(cam.blob) : "";
+  if (cam) {
+    ui.fpvVideo.src = videoUrl;
+    ui.fpv.style.aspectRatio = `${cam.width} / ${cam.height}`;
+    ui.fpvLabel.textContent = `${cam.camera} camera · ${cam.fps} fps`;
+  } else {
+    ui.fpvVideo.removeAttribute("src");
+    ui.fpvVideo.load();
+  }
+  ui.robotView.disabled = !cam;
+  ui.fpv.hidden = !cam || !ui.robotView.checked;
+}
+
 let robotModel = "";  // the GLB currently loaded, so that episodes of the same robot do not reload it
 
 /** Draws the robot the episode was recorded on (manifest.robot.model); a failed load keeps the previous model. */
@@ -150,6 +198,7 @@ async function show(ep: Episode): Promise<void> {
     ui.title.textContent += ` · robot model not loaded: ${(err as Error).message}`;
   }
   ui.drop.classList.add("hidden");
+  showVideo(ep);
   // Episode content is untrusted (a shared zip, a ?url= link): it only ever reaches the page as text.
   const dl = el("dl");
   for (const [label, value] of manifestRows(ep)) dl.append(el("dt", label), el("dd", value));
@@ -217,6 +266,12 @@ ui.sample.addEventListener("change", async () => {
   ui.sample.value = "";
 });
 ui.play.addEventListener("click", () => player.toggle());
+ui.robotView.addEventListener("change", () => {
+  ui.fpv.hidden = !episode?.cameraVideo || !ui.robotView.checked;
+  syncVideo(player.t);
+});
+ui.fpv.addEventListener("click", () => ui.fpv.classList.toggle("large"));
+ui.fpvVideo.addEventListener("seeked", () => { if (!player.playing) syncVideo(player.t); });  // the last scrub may have come mid-seek
 ui.scrub.addEventListener("input", () => player.seek(Number(ui.scrub.value) * player.duration));
 ui.speed.addEventListener("change", () => (player.speed = Number(ui.speed.value)));
 addEventListener("keydown", (e) => {

@@ -34,7 +34,15 @@ async def bench(
     metrics: list[RunMetrics] = []
     for i in range(runs):
         run_id = f"{new_run_id()}-{i:03d}"
-        cfg = replace(base, seed=base.seed + i, write_episode=False, view=False, realtime=False, record_video=False)
+        cfg = replace(
+            base,
+            seed=base.seed + i,
+            write_episode=False,
+            view=False,
+            realtime=False,
+            record_video=False,
+            record_camera=False,
+        )
         log = EventLog(run_id=run_id)
         result = await run_session(cfg, ScriptedHuman(default=on_failure), log=log)
         m = run_metrics(log.events, len(plan.steps))

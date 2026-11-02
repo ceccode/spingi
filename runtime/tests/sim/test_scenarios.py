@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import imageio.v2 as imageio
+import numpy as np
 import pytest
 
 from spingi.adapters.sim_mujoco import SimAdapter
@@ -10,6 +12,7 @@ from spingi.core.executor import Executor
 from spingi.core.human import ScriptedHuman
 from spingi.core.plan import Step, TaskPlan, load_plan
 from spingi.core.types import Pose2D
+from spingi.episode import write_episode
 from spingi.perception.fake import FakePerceiver
 from spingi.perception.sim import SimPerceiver
 from spingi.safety import SafetyMonitor
@@ -111,6 +114,63 @@ async def test_recording_writes_a_video(tmp_path):
     if video is None:
         pytest.skip("rendering unavailable (no GL context)")
     assert video.exists() and video.stat().st_size > 1000
+
+
+async def test_the_head_camera_video_puts_every_frame_on_the_episode_timeline(tmp_path):
+    adapter = SimAdapter(LAB, record_dir=tmp_path, record_camera=True, record_every=10)
+    await adapter.walk_to(Pose2D(x=1.0, y=0.0, yaw=0.0), max_speed=1.0)
+    adapter.close()
+    info = adapter.camera_video_for_viewer()
+    if info is None:
+        pytest.skip(f"rendering unavailable: {adapter.render_error}")
+    # 10 ticks of 20 ms between frames: 5 per second, the first at 0.2 s
+    assert info == {
+        "file": "head.mp4",
+        "camera": "head",
+        "fps": 5.0,
+        "start_t": 0.2,
+        "frames": adapter.ticks // 10,
+        "width": 640,
+        "height": 480,
+    }
+    assert imageio.get_reader(tmp_path / "head.mp4").count_frames() == info["frames"]
+    log = EventLog(run_id="r-video")
+    manifest = write_episode(
+        tmp_path,
+        log=log,
+        plan_path="plans/demo_inspection_round.yaml",
+        scene_path=LAB,
+        plan_id="p",
+        steps_total=0,
+        status="success",
+        steps_completed=0,
+        adapter=adapter,
+        adapter_name="sim_mujoco",
+        robot_model="unitree_g1",
+    )
+    assert manifest.camera_video.model_dump() == info and "head.mp4" in manifest.files
+
+
+async def test_recording_the_head_camera_does_not_change_the_run(tmp_path):
+    async def walk(record: bool):
+        adapter = SimAdapter(
+            LAB,
+            robot="go2",
+            locomotion="physics",
+            odometry="drift",
+            camera_noise=True,
+            record_dir=tmp_path / str(record),
+            record_camera=record,
+        )
+        await adapter.walk_to(Pose2D(x=1.5, y=0.5, yaw=0.5), max_speed=0.6)
+        frame = await adapter.get_camera()
+        adapter.close()
+        return adapter.pose, adapter.estimate, frame.camera_model, adapter.image(frame.id)
+
+    plain, recorded = await walk(False), await walk(True)
+    assert plain[:3] == recorded[:3]
+    if plain[3] is not None:
+        assert np.array_equal(plain[3], recorded[3])  # the same noise on the frame the robot took
 
 
 async def test_material_runner_delivers_the_box_in_the_warehouse(tmp_path):

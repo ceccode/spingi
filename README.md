@@ -6,15 +6,15 @@ Spingi is a **Physical Agent Runtime** for legged robots, humanoids and quadrupe
 
 This repository is a neutral open-source toolkit. Applications built on top of it live elsewhere; this repo keeps sample plans and scenes that show how to use the system.
 
-Status: **runtime M4.0 in progress, two robots that walk in simulation, indoors and outdoors · viewer v0.3** · 2026-11-01
+Status: **runtime M4.0 in progress, two robots that walk in simulation, indoors and outdoors · viewer v0.5** · 2026-11-02
 
 ## What is in the box
 
 | Folder | Project | What it does |
 |--------|---------|--------------|
 | [runtime/](runtime/README.md) | **Spingi runtime** (Python) | Executes a declarative *plan* made of *skills* on a *robot adapter*. Ships with a fake adapter for unit tests and a MuJoCo adapter that drives the Unitree G1 or the Unitree Go2, either gliding along the path (fast, exactly repeatable) or walking with learned controllers on indoor floors and outdoor ground, where it can drift, get stuck and fall. Writes an episode for every run. |
-| [viewer/](viewer/README.md) | **Spingi Viewer** (web, Three.js) | Loads an episode `.zip` and replays it: robot and objects moving in the 3D scene, legs included when the robot walked, outdoor ground, event timeline, head-camera frames, safety and operator events. Live at **[spingi-viewer.netlify.app](https://spingi-viewer.netlify.app)**. |
-| [docs/episode-format.md](docs/episode-format.md) | **Episode format** | The contract between the two: a folder with `manifest.json`, `scene.yaml`, `plan.yaml`, `events.jsonl`, `trajectory.jsonl`, `frames/`. JSON schemas in [docs/schemas/](docs/schemas/). |
+| [viewer/](viewer/README.md) | **Spingi Viewer** (web, Three.js) | Loads an episode `.zip` and replays it: robot and objects moving in the 3D scene, legs included when the robot walked, outdoor ground, what the head camera saw as a video in step with the replay, event timeline, the frames the robot analysed, safety and operator events. Live at **[spingi-viewer.netlify.app](https://spingi-viewer.netlify.app)**. |
+| [docs/episode-format.md](docs/episode-format.md) | **Episode format** | The contract between the two: a folder with `manifest.json`, `scene.yaml`, `plan.yaml`, `events.jsonl`, `trajectory.jsonl`, `frames/` and, optionally, the head camera's video `head.mp4`. JSON schemas in [docs/schemas/](docs/schemas/). |
 
 ## Quick start
 
@@ -56,6 +56,8 @@ A walking robot does not know exactly where it is either. With `--realistic` it 
 uv run spingi run plans/yard_patrol.yaml --scene sim/scenes/yard_outdoor.yaml --robot go2 --realistic --zip
 ```
 
+To see what the robot saw, add `--camera-video`: the head camera is recorded at 10 frames per second as `head.mp4` in the episode ([ADR-0017](adr/0017-head-camera-video.md)), and the viewer plays it in a corner of the 3D view, in step with the replay. The run takes 3 to 5 times longer, because every frame is rendered; `make demo-yard` runs the patrol above with it.
+
 `plans/test_track.yaml` on `sim/scenes/test_track.yaml` walks a robot over concrete, asphalt, gravel, grass, dirt, rough dirt, a 15 degree ramp and two steps, and stops where it fails: the Go2 usually finishes, the G1, whose controller was trained on flat floors only, falls early.
 
 ### 2. Replay the episode in the browser
@@ -66,7 +68,7 @@ Open **https://spingi-viewer.netlify.app** and drop the `.zip` onto the page, or
 cd viewer && npm install && npm run dev
 ```
 
-Then open http://localhost:5173. Space plays and pauses, the arrow keys step one second, clicking an event jumps to it.
+Then open http://localhost:5173. Space plays and pauses, the arrow keys step one second, clicking an event jumps to it. An episode recorded with `--camera-video` shows the head camera's view in the bottom right corner ("robot's view" in the bar below turns it off, a click enlarges it): the yard patrol sample has one, so you can see the Go2 find the tags by the pump while the orange outline shows where it believed it was.
 
 ### 3. Supervise a run, measure it, export it
 
@@ -141,7 +143,7 @@ Safety layers run on the robot's own clock (simulated time in MuJoCo), so a simu
 |----------|---------|
 | [docs/runtime-spec.md](docs/runtime-spec.md) | Principles, architecture, contracts, execution model, safety layers, testing strategy, milestones |
 | [docs/episode-format.md](docs/episode-format.md) | The episode folder, manifest, trajectory, frames, compatibility rules |
-| [adr/](adr/README.md) | Architecture decisions 0001–0015 and the ones still open |
+| [adr/](adr/README.md) | Architecture decisions 0001–0017 and the ones still open |
 | [runtime/README.md](runtime/README.md) | CLI reference, scenes, plans, skills, episodes, tests, how to add a skill or an adapter |
 | [viewer/README.md](viewer/README.md) | Running, loading episodes, deploying |
 | [SECURITY.md](SECURITY.md) | Threat model and how to report a security or safety problem |
@@ -152,7 +154,7 @@ Safety layers run on the robot's own clock (simulated time in MuJoCo), so a simu
 make test
 ```
 
-runs the runtime suite (unit, adapter contract on every adapter and robot, MuJoCo scenarios kinematic and walking, golden episodes, architecture and licensing rules): 278 tests in about 25 seconds. The viewer has `npm test` (31 tests) and `npm run build`. CI is GitHub Actions ([.github/workflows/ci.yml](.github/workflows/ci.yml)), on every push to `main` and every pull request, without a GPU: runtime lint, format check and tests (with offscreen MuJoCo rendering through EGL), viewer install, audit of the production dependencies, tests and build.
+runs the runtime suite (unit, adapter contract on every adapter and robot, MuJoCo scenarios kinematic and walking, golden episodes, architecture and licensing rules): 330 tests in about 50 seconds. The viewer has `npm test` (40 tests) and `npm run build`. CI is GitHub Actions ([.github/workflows/ci.yml](.github/workflows/ci.yml)), on every push to `main` and every pull request, without a GPU: runtime lint, format check and tests (with offscreen MuJoCo rendering through EGL), viewer install, audit of the production dependencies, tests and build.
 
 Conventions: every architectural decision is an ADR, changed by writing a new one; the runtime never imports the viewer and the viewer never imports the runtime, they only share the episode format; `spingi.core` imports nothing from adapters, skills, planner or perception, and a test enforces it.
 
@@ -160,7 +162,7 @@ Conventions: every architectural decision is an ADR, changed by writing a new on
 
 - **M2** (done): operator console, `spingi bench` with the sim-to-real gate, LeRobot v3.0 export, `wait_for_human`.
 - **M3** (done): LLM planner with structured output, golden episodes replayed on every commit. On the ten golden requests `claude-opus-5-5` scored 10/10, nine at the first attempt.
-- **M4.0** (in progress, no robot needed): perception on real images (AprilTag markers, exercised on MuJoCo frames), the lab safety checklist, the remaining decisions as ADRs, the p95 check of the gate, and a simulator where the robots walk with learned controllers on indoor floors and outdoor ground, with drifting odometry corrected by AprilTag landmarks and a noisy camera, so that plans meet drift, blocked paths and falls before a robot does.
+- **M4.0** (in progress, no robot needed): perception on real images (AprilTag markers, exercised on MuJoCo frames), the lab safety checklist, the remaining decisions as ADRs, the p95 check of the gate, and a simulator where the robots walk with learned controllers on indoor floors and outdoor ground, with drifting odometry corrected by AprilTag landmarks and a noisy camera, so that plans meet drift, blocked paths and falls before a robot does; episodes can keep what the head camera saw, as a video the viewer plays with the replay.
 - **M4.1** (needs a Go2 and a fenced area): one Unitree adapter on `unitree_sdk2_python`, parametrized by the robot profile, contract tests with the robot connected, sim-to-real gate on `navigate` and `inspect`.
 - **M4.2** (needs a G1): the same adapter and gate on the humanoid, then `pick` and `place` in M5.
 

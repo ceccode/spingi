@@ -5,9 +5,9 @@ What goes in, per frame at a fixed rate (default 10 Hz, resampled from trajector
   action             float32[4]  the same quantities at the next frame (the commanded target)
   timestamp, frame_index, episode_index, index, task_index, next.done, next.success
 
-What does not go in yet: camera images. Spingi frames are sparse (one per inspection or detection), while
-LeRobot expects a video at the dataset rate; images arrive when an adapter records the head camera at a fixed
-rate. Joint states arrive with real locomotion.
+What does not go in yet: camera images. The frames the runtime takes are sparse (one per inspection or detection),
+while LeRobot expects a video at the dataset rate; `spingi run --camera-video` now records the head camera at 10 Hz
+(`head.mp4`), which this export does not read yet. Joint states arrive with real locomotion.
 
 Layout (from lerobot's own metadata code and published v3.0 datasets):
   meta/info.json · meta/stats.json · meta/tasks.parquet · meta/episodes/chunk-000/file-000.parquet

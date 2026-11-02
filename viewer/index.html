@@ -28,6 +28,10 @@
           <canvas id="canvas"></canvas>
           <div id="drop" class="drop">Drop an episode (.zip) here</div>
           <div id="hud" class="hud"></div>
+          <figure id="fpv" class="fpv" title="What the head camera saw · click to enlarge" hidden>
+            <video id="fpvVideo" muted playsinline preload="auto"></video>
+            <figcaption id="fpvLabel" class="fpv-label"></figcaption>
+          </figure>
         </div>
         <aside id="side">
           <section id="manifest" class="card"></section>
@@ -36,8 +40,8 @@
             <ol id="events"></ol>
           </section>
           <section id="framesCard" class="card" hidden>
-            <h3>Head camera</h3>
-            <img id="frameLarge" class="frame-large" alt="latest head-camera frame" hidden />
+            <h3>Frames analysed</h3>
+            <img id="frameLarge" class="frame-large" alt="latest frame the robot analysed" hidden />
             <p id="frameCaption" class="muted small"></p>
             <div id="frames" class="frames"></div>
           </section>
@@ -54,6 +58,7 @@
           <option value="4">4×</option>
         </select>
         <label class="chk"><input id="follow" type="checkbox" checked /> follow robot</label>
+        <label class="chk" title="the head camera's video, for episodes recorded with --camera-video"><input id="robotView" type="checkbox" checked disabled /> robot's view</label>
       </footer>
     </div>
     <script type="module" src="/src/main.ts"></script>

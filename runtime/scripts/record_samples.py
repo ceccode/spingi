@@ -3,10 +3,10 @@ remade after a change in the runtime or the scenes.
 
 Usage: uv run python scripts/record_samples.py
 
-Each sample is a normal `spingi run --physics` (the yard patrol: `--realistic`). To keep the archives small, since
-the viewer only shows them, the head-camera frames are shrunk to 640x480: PNGs to a 256-colour palette, the noisy
-camera's JPEGs re-encoded at quality 75. Frames that no event references (the second and third frame of each
-landmark look) are left out.
+Each sample is a normal `spingi run --physics --camera-video` (the yard patrol: `--realistic`). To keep the archives
+small, since the viewer only shows them, the head-camera frames are shrunk to 640x480: PNGs to a 256-colour palette,
+the noisy camera's JPEGs re-encoded at quality 75. Frames that no event references (the second and third frame of
+each landmark look) are left out. The head-camera video stays as it is.
 """
 
 import asyncio
@@ -23,7 +23,7 @@ from spingi.core.human import ScriptedHuman
 from spingi.session import SessionConfig, run_session
 
 OUT = Path(__file__).resolve().parents[2] / "viewer" / "public" / "samples"
-PHYSICS = {"adapter": "sim", "locomotion": "physics"}
+PHYSICS = {"adapter": "sim", "locomotion": "physics", "record_camera": True}
 REALISTIC = {**PHYSICS, "odometry": "drift", "camera_noise": True, "perception": "markers"}
 
 SAMPLES = {
@@ -66,7 +66,7 @@ async def main() -> None:
             target = OUT / f"{name}.zip"
             with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
                 for p in sorted(result.run_dir.rglob("*")):
-                    if p.is_file() and p.suffix != ".mp4":
+                    if p.is_file():
                         zf.write(p, Path(name) / p.relative_to(result.run_dir))
             shutil.rmtree(result.run_dir, ignore_errors=True)
             size = target.stat().st_size / 1e6

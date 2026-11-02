@@ -52,6 +52,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     run.add_argument("--view", action="store_true", help="open the MuJoCo viewer (only with --adapter sim)")
     run.add_argument("--record", action="store_true", help="save a video of the run to runs/<id>/run.mp4")
+    run.add_argument(
+        "--camera-video",
+        action="store_true",
+        help="save what the head camera sees, 10 frames per second, to runs/<id>/head.mp4: the viewer plays it "
+        "alongside the replay (sim adapter; rendering it makes the run 3 to 5 times slower)",
+    )
     run.add_argument("--realtime", action="store_true", help="simulate in real time instead of as fast as possible")
     run.add_argument("--zip", action="store_true", help="also create runs/<id>.zip with the episode")
     run.add_argument("--quiet", action="store_true", help="print only the final summary")
@@ -188,6 +194,7 @@ def _config(args) -> SessionConfig:
 async def _run(args) -> int:
     cfg = _config(args)
     cfg.realtime, cfg.view, cfg.record_video, cfg.zip_episode = args.realtime, args.view, args.record, args.zip
+    cfg.record_camera = args.camera_video
 
     from spingi.core.events import EventLog
     from spingi.session import new_run_id
@@ -210,6 +217,7 @@ async def _run(args) -> int:
         for event in result.log.events:
             print(event.to_jsonl())
     extra = f" · video: {result.video}" if result.video else ""
+    extra += f" · camera video: {result.camera_video}" if result.camera_video else ""
     extra += f" · zip: {result.archive}" if result.archive else ""
     sim_info = f" · {result.sim_time_s:.1f} s simulated" if result.sim_time_s is not None else ""
     summary = f"{result.status.upper()} · {result.steps_completed}/{result.steps_total} steps{sim_info}"

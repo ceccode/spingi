@@ -54,10 +54,12 @@ def test_cli_bench_gate_sets_the_exit_code(tmp_path, capsys):
     assert "GATE FAILED" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("sensors", [{"odometry": "drift"}, {"camera_noise": True}])
-async def test_simulated_sensors_need_the_simulator(tmp_path, sensors):
+@pytest.mark.parametrize(
+    "settings", [{"odometry": "drift"}, {"camera_noise": True}, {"record_camera": True}, {"record_video": True}]
+)
+async def test_simulated_sensors_and_videos_need_the_simulator(tmp_path, settings):
     with pytest.raises(ValueError, match="sim adapter"):
-        await run_session(SessionConfig(plan=PLAN, scene=SCENE, runs_dir=tmp_path, **sensors), ScriptedHuman())
+        await run_session(SessionConfig(plan=PLAN, scene=SCENE, runs_dir=tmp_path, **settings), ScriptedHuman())
 
 
 def test_cli_realistic_is_the_simulator_with_every_realistic_sensor(tmp_path):

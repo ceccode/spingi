@@ -9,6 +9,7 @@ export interface Manifest {
   robot: { model: string; adapter: string };
   plan_id: string; status: string; steps_completed: number; steps_total: number;
   duration_s: number; sim_time_s?: number | null; sample_rate_hz?: number | null; files: string[];
+  camera_video?: unknown; // checked by `cameraVideoOf` before it is played
 }
 /** Base height and tilt: present when the robot left the flat floor (outdoor ground, physics walking). */
 export interface BaseLift { z?: number; roll?: number; pitch?: number }
@@ -29,10 +30,13 @@ export interface Scene {
 /** A tag at a known place (scene.yaml `landmarks`): x, y on the ground, the direction its face looks, its height. */
 export interface Landmark { markerId: number; x: number; y: number; facing: number; height: number; size: number; post: boolean }
 export interface Plan { id: string; description?: string; steps: { skill: string; params: Record<string, unknown> }[] }
+/** The head camera recorded continuously (`spingi run --camera-video`): frame i was taken at start + i / fps. */
+export interface CameraVideo { blob: Blob; camera: string; fps: number; start: number; frames: number; width: number; height: number }
 export interface Episode {
   manifest: Manifest; scene: Scene; plan: Plan; events: Event[]; trajectory: Sample[];
   frames: Map<string, Blob>;
   terrain: Terrain | null; // outdoor ground; null on a flat floor
+  cameraVideo: CameraVideo | null;
 }
 
 export const SUPPORTED_FORMAT = "0.1";
@@ -96,7 +100,35 @@ export function parseEpisodeFiles(raw: Record<string, Uint8Array>): Episode {
     trajectory: files["trajectory.jsonl"] ? checkTrajectory(parseJsonl<Sample>(text("trajectory.jsonl"))) : [],
     frames,
     terrain: files["terrain.json"] ? parseTerrain(JSON.parse(text("terrain.json"))) : null,
+    cameraVideo: cameraVideoOf(manifest, files),
   };
+}
+
+/** The manifest's `camera_video`, checked: a malformed entry refuses the episode; a video left out of the archive
+ *  (episodes kept for replay drop it) leaves the replay without it. */
+export function cameraVideoOf(manifest: Manifest, files: Record<string, Uint8Array>): CameraVideo | null {
+  const raw = manifest.camera_video;
+  if (raw === undefined || raw === null) return null;
+  const v = (typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const count = (x: unknown, max: number): x is number => Number.isInteger(x) && (x as number) >= 1 && (x as number) <= max;
+  const { file, camera, fps, start_t: start, frames, width, height } = v;
+  const ok = typeof file === "string" && /^[\w-]+\.mp4$/.test(file) && typeof camera === "string" && camera.length <= 64
+    && typeof fps === "number" && fps > 0 && fps <= 120 && typeof start === "number" && Number.isFinite(start) && start >= 0
+    && count(frames, 10_000_000) && count(width, 8192) && count(height, 8192);
+  if (!ok) throw new Error("malformed camera_video in manifest.json");
+  const data = files[file as string];
+  if (!data) return null;
+  return {
+    blob: new Blob([data as BlobPart], { type: "video/mp4" }), camera: camera as string, fps: fps as number,
+    start: start as number, frames: frames as number, width: width as number, height: height as number,
+  };
+}
+
+/** The video time that shows what the camera saw at replay time t: the middle of the last frame taken at or before
+ *  t, safe from rounding at the frame's edges. The first frame is held before it was taken, the last one after. */
+export function videoTimeAt(video: Pick<CameraVideo, "fps" | "start" | "frames">, t: number): number {
+  const frame = Math.min(Math.max(Math.floor((t - video.start) * video.fps + 1e-6), 0), video.frames - 1);
+  return (frame + 0.5) / video.fps;
 }
 
 /** A malformed trajectory is refused at load time instead of breaking the replay loop later. */

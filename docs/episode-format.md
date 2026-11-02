@@ -1,12 +1,12 @@
 # Episode format v0.1
 
-Status: v0.1 implemented in the runtime and the viewer · Date: 2026-10-02, updated 2026-11-01
+Status: v0.1 implemented in the runtime and the viewer · Date: 2026-10-02, updated 2026-11-02
 
 An **episode** is the result of a runtime run, packaged so that anyone can replay it without the runtime and without the simulator. It is the contract between the `runtime/` project (which writes it) and the `viewer/` project (which reads it), and it is the form in which episodes are shared and archived as datasets (ADR-0005).
 
 ## Principles
 
-- **One folder, simple files.** No proprietary binary formats in the contract: YAML for inputs written by people, JSON and JSONL for outputs written by the runtime, PNG for images. A zip of the folder is the unit of exchange.
+- **One folder, simple files.** No proprietary binary formats in the contract: YAML for inputs written by people, JSON and JSONL for outputs written by the runtime, PNG or JPEG for images, MP4 (H.264) for video. A zip of the folder is the unit of exchange.
 - **The viewer recomputes nothing.** Everything needed to draw is written in the episode: robot pose over time, object positions, events. No physics in the browser.
 - **Versioned.** `manifest.json` declares `format_version`; a viewer rejects versions it does not know with a clear message.
 - **Extended by the runtime, not by the viewer.** The runtime may add fields; the viewer ignores the ones it does not know.
@@ -23,6 +23,7 @@ An **episode** is the result of a runtime run, packaged so that anyone can repla
 ├── terrain.json         # the ground, for scenes that have one (optional)
 ├── frames/              # camera images, named after the frame_id field of the events (optional)
 │   └── sim-1.png        # or sim-1.jpg, from a camera with noise (ADR-0016)
+├── head.mp4             # what the head camera saw, continuously, only with `spingi run --camera-video` (optional, ADR-0017)
 └── run.mp4              # third-person video, only with `spingi run --record` (optional; the viewer ignores it)
 ```
 
@@ -59,6 +60,7 @@ The zip produced by `--zip` (`runs/<run_id>.zip`) contains the `<run_id>/` folde
 | `sim_time_s` | Total simulated time, when the adapter has a simulated clock (optional). |
 | `sample_rate_hz` | Nominal rate of `trajectory.jsonl`, when the adapter samples at a fixed rate (optional). |
 | `config` | Optional. The run settings needed to run the episode again with `spingi replay`: `perception_noise` (false-negative rate of the perceiver), `position_sigma_m` (Gaussian noise on perceived positions, metres), `seed`, `perception` (`truth`: the simulator's ground truth; `markers`: AprilTags read from the rendered frames), `locomotion` (`kinematic`: the base glides; `physics`: the robot walks with learned controllers, ADR-0015), `odometry` (`truth`: the robot knows its pose; `drift`: its estimate drifts, ADR-0016) and `camera_noise` (true: blurred, noisy, JPEG-compressed frames). Episodes written before it existed do not have it; replay then uses no noise, seed 0, ground truth and the kinematic base. |
+| `camera_video` | Optional, with `spingi run --camera-video`: the head camera recorded continuously (see [head.mp4](#headmp4)). `file` (`head.mp4`), `camera` (the camera's name in the robot model, `head`), `fps` (frames per second of simulated time, 10), `start_t` (simulated time of the first frame), `frames`, `width`, `height`. |
 | `files` | Sorted list of the other entries in the folder; directories end with `/`. |
 
 ## trajectory.jsonl
@@ -137,7 +139,8 @@ Runtime events carry `ts` in wall-clock time. To align them with the trajectory,
 - `SimAdapter` samples the trajectory at 10 Hz of simulated time; `FakeAdapter` samples the start and end of every move with an "as if" time computed from the applied walking speed. Both expose `sim_time_s`, and the event log adds `sim_t` to every event.
 - The JSON schemas in [schemas/](schemas/) are generated from the pydantic models in `runtime/spingi/episode.py` (`make schemas` in `runtime/`); a test fails if they diverge.
 - The first reader is the viewer in `viewer/` (`src/episode.ts` reads zip, YAML and JSONL and interpolates the trajectory). It refuses archives over 200 MB or expanding beyond 500 MB, and trajectories with a missing or non-finite `t`, `x`, `y` or `yaw`.
-- `SimAdapter` streams `run.mp4` to disk while recording instead of keeping the frames in memory.
+- `SimAdapter` streams `run.mp4` and `head.mp4` to disk while recording instead of keeping the frames in memory.
+- The viewer plays `head.mp4` in an inset over the 3D view ("robot's view"), on the replay's time; it refuses a malformed `camera_video` entry and replays without the video when the archive does not contain it.
 - The viewer draws the scene's landmarks as tags on posts or walls, and the `estimate` of each trajectory line as an orange outline tied to the robot by a dashed line, with the gap in the overlay.
 - The viewer draws `terrain.json` as a coloured mesh and stands the obstacles on it; it moves the robot's legs from `joints` with the joint table next to each robot model (`models/<robot>.joints.json`: which node each joint turns, about which axis, and the standing angles shown when an episode has no joint angles).
 - `spingi export lerobot` refuses folders without a `manifest.json` and trajectories that end outside 0 to 24 hours.
@@ -146,6 +149,10 @@ Runtime events carry `ts` in wall-clock time. To align them with the trajectory,
 
 A frame is written by the adapter as `frames/<frame_id>.png`, or `frames/<frame_id>.jpg` from a camera with noise (the JPEG the robot sent, ADR-0016), and referenced by the event that produced it: `perception.result` and `robot.relocalized` carry `frame_id` and `frame_ref`, the path relative to the episode folder (never an absolute path of the machine that ran it). A reader places frames on the timeline through those events. The viewer ignores frames that no event references, except when no event references any frame: then it shows all of them at t = 0. `detect` and `inspect` take a frame each; `navigate` takes three at every stop where a landmark should be in view and references the first. No frames are written when the adapter cannot render (headless machines without OpenGL, `FakeAdapter`).
 
+## head.mp4
+
+Written with `spingi run --camera-video` (ADR-0017): the head camera rendered every 5 ticks of the simulation, 10 frames per second of simulated time, at 640 × 480, H.264 in MP4 with a keyframe every 2 s. Frame i was taken at `start_t + i / fps` (`manifest.camera_video`), on the axis of `t` and `sim_t`; frames come at a fixed rate, so a frame that cannot be rendered ends the video instead of leaving a gap. A reader shows, at time t, the last frame taken at or before t, the first frame before it was taken and the last one after the end. The video is the clean render from where the camera really was: the camera noise of `--camera-noise` is in the frames of `frames/`, which the robot analysed, not in the video.
+
 ## Compatibility
 
-A viewer that reads `0.1` must tolerate: extra fields in the manifest and in trajectory lines; `objects` missing in lines after the first; `frames/` missing; `sim_t` missing in events (use `ts`); a `status` it does not know (`estop` and `error` were added on 2026-10-04 without a version change); `terrain.json`, `joints` and the base's `z`, `roll`, `pitch` missing (added on 2026-11-01: a flat floor, a standing robot); `estimate` missing in trajectory lines, `landmarks` missing in the scene and frames in JPEG (added on 2026-11-01 too: the robot knew its pose, no tags, a clean camera). Episodes written before that date may carry an absolute `frame_ref`; readers should locate frames by `frame_id`. A change that breaks any of these points increments `format_version`.
+A viewer that reads `0.1` must tolerate: extra fields in the manifest and in trajectory lines; `objects` missing in lines after the first; `frames/` missing; `sim_t` missing in events (use `ts`); a `status` it does not know (`estop` and `error` were added on 2026-10-04 without a version change); `terrain.json`, `joints` and the base's `z`, `roll`, `pitch` missing (added on 2026-11-01: a flat floor, a standing robot); `estimate` missing in trajectory lines, `landmarks` missing in the scene and frames in JPEG (added on 2026-11-01 too: the robot knew its pose, no tags, a clean camera); `camera_video` and `head.mp4` missing (added on 2026-11-02: no video of the head camera), or `camera_video` present without its file (an archive that left the video out). Episodes written before that date may carry an absolute `frame_ref`; readers should locate frames by `frame_id`. A change that breaks any of these points increments `format_version`.

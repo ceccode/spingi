@@ -1,5 +1,53 @@
 {
   "$defs": {
+    "CameraVideo": {
+      "description": "A camera recorded continuously (`spingi run --camera-video`): frame i was taken at `start_t + i / fps`.",
+      "properties": {
+        "file": {
+          "description": "the video, relative to the episode folder: head.mp4 (H.264)",
+          "title": "File",
+          "type": "string"
+        },
+        "camera": {
+          "description": "the camera's name in the robot model: head",
+          "title": "Camera",
+          "type": "string"
+        },
+        "fps": {
+          "description": "frames per second of simulated time",
+          "title": "Fps",
+          "type": "number"
+        },
+        "start_t": {
+          "description": "simulated time of the first frame, on the axis of `t` and `sim_t`",
+          "title": "Start T",
+          "type": "number"
+        },
+        "frames": {
+          "title": "Frames",
+          "type": "integer"
+        },
+        "width": {
+          "title": "Width",
+          "type": "integer"
+        },
+        "height": {
+          "title": "Height",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "file",
+        "camera",
+        "fps",
+        "start_t",
+        "frames",
+        "width",
+        "height"
+      ],
+      "title": "CameraVideo",
+      "type": "object"
+    },
     "RobotInfo": {
       "properties": {
         "model": {
@@ -147,6 +195,18 @@
       ],
       "default": null,
       "description": "run settings, for replay"
+    },
+    "camera_video": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CameraVideo"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "the head camera, recorded continuously"
     },
     "files": {
       "items": {

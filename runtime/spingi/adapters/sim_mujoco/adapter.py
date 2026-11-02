@@ -7,7 +7,8 @@
   (asphalt, gravel, grass and their grip), the pose is whatever the physics gives, an obstacle is a real contact and
   the robot can fall. `walk_to` turns the target pose into velocity commands, as it will on the real robot.
 
-Both: battery, e-stop, watchdog, rendered head camera, third-person video. Not simulated: arm dynamics (an object
+Both: battery, e-stop, watchdog, rendered head camera, and two videos: third person (`record_video`) and the head
+camera's view, continuously (`record_camera`). Not simulated: arm dynamics (an object
 is carried kinematically, ADR-0007). Which model is loaded and how it is moved comes from a `RobotProfile` (ADR-0012).
 
 What the robot knows (ADR-0016): `pose` is the truth, which the simulator uses; `get_pose` returns the robot's
@@ -41,6 +42,7 @@ from spingi.adapters.sim_mujoco.locomotion import (
 from spingi.adapters.sim_mujoco.odometry import Odometry, OdometryErrors, as_pose, compose, inverse, planar
 from spingi.adapters.sim_mujoco.scene import OFFSCREEN_SIZE, write_scene
 from spingi.adapters.sim_mujoco.terrain import fill_heights
+from spingi.adapters.sim_mujoco.video import VideoStream
 from spingi.core.ports import (
     Arm,
     CameraModel,
@@ -69,7 +71,8 @@ class WatchdogExpired(RuntimeError):
 class SimAdapter:
     YIELD_EVERY = 10  # ticks between cooperative yields in fast mode (0.2 s of simulated time)
     IMAGE_CACHE = 4  # rendered head-camera images kept in memory for the perceiver, by frame id
-    VIDEO_SIZE = (640, 480)
+    VIDEO_SIZE = (640, 480)  # the third-person video and the head camera's
+    VIDEO_QUALITY, CAMERA_VIDEO_QUALITY = 7, 3  # imageio's 0 to 10: x264 rate factors 15 and 35
     ZNEAR_M, ZFAR_M = 0.03, 200.0  # what the cameras draw: from 3 cm to 200 m
     # physics locomotion
     SETTLE_S = 0.5  # standing still after the reset, before the run starts: the feet find the ground
@@ -94,6 +97,7 @@ class SimAdapter:
         viewer: bool = False,
         record_dir: Path | None = None,
         record_video: bool = False,
+        record_camera: bool = False,
         record_every: int = 5,
         sample_every: int = 5,
         battery_pct: float = 100.0,
@@ -148,9 +152,8 @@ class SimAdapter:
         self.speed_cap = speed_cap
         self.yaw_rate = yaw_rate
         self.realtime = realtime
-        self.record_dir = record_dir  # where head-camera frames (and the video, if requested) are written
-        self.record_video = record_video
-        self.record_every = record_every
+        self.record_dir = record_dir  # where head-camera frames (and the videos, if requested) are written
+        self.record_every = record_every  # ticks between video frames: 5 at 20 ms = 10 frames per second
         self.sample_every = sample_every  # 5 ticks at 20 ms = 10 Hz
         self.battery_pct = battery_pct
         self.battery_drain_per_m = battery_drain_per_m
@@ -200,7 +203,18 @@ class SimAdapter:
         self.joint_names = [self.model.joint(j).name for j in range(self.model.njnt) if self.model.jnt_type[j] != free]
         self._renderers: dict[tuple[int, int], mujoco.Renderer] = {}  # one per (height, width): frames and video
         self.render_error: str | None = None
-        self._video_writer = None  # frames are streamed to disk, never accumulated in memory
+        fps = 1.0 / (dt * record_every)
+        recording = record_dir is not None
+        self._video = (
+            VideoStream(record_dir / "run.mp4", fps, self.VIDEO_QUALITY) if record_video and recording else None
+        )
+        # What the head camera sees, continuously, for people watching the episode: the clean render, where the camera
+        # really is. The runtime takes its own frames (get_camera), which carry the camera noise.
+        self.camera_video = (
+            VideoStream(record_dir / "head.mp4", fps, self.CAMERA_VIDEO_QUALITY)
+            if record_camera and recording
+            else None
+        )
         self._frame_counter = 0
         self._viewer = None
         if viewer:
@@ -481,15 +495,13 @@ class SimAdapter:
 
     # --- lifecycle ---------------------------------------------------------
     def close(self) -> Path | None:
-        """Closes viewer and renderer; if it was recording, writes the video and returns its path."""
+        """Closes viewer and renderer and finishes the videos; returns the third-person video's path, if any."""
         if self._viewer is not None:
             self._viewer.close()
             self._viewer = None
-        video = None
-        if self._video_writer is not None:
-            self._video_writer.close()
-            self._video_writer = None
-            video = self.record_dir / "run.mp4" if self.record_dir is not None else None
+        video = self._video.close() if self._video is not None else None
+        if self.camera_video is not None:
+            self.camera_video.close()
         for renderer in self._renderers.values():
             renderer.close()
         self._renderers.clear()
@@ -659,25 +671,16 @@ class SimAdapter:
             self._sample(include_objects=self.held_object is not None)
         if self._viewer is not None:
             self._viewer.sync()
-        if self.record_video and self.record_dir is not None and self.ticks % self.record_every == 0:
-            img = self._render("track", self.VIDEO_SIZE[1], self.VIDEO_SIZE[0])
-            if img is not None:
-                self._write_video_frame(img)
+        if self.ticks % self.record_every == 0:
+            width, height = self.VIDEO_SIZE
+            if self._video is not None:
+                self._video.add(self._render("track", height, width), self.sim_time_s)
+            if self.camera_video is not None:
+                self.camera_video.add(self._render("head", height, width), self.sim_time_s)
         if self.realtime:
             await asyncio.sleep(self.dt)
         elif self.ticks % self.YIELD_EVERY == 0:
             await asyncio.sleep(0)  # lets independent tasks (safety monitor, console) run in fast mode
-
-    def _write_video_frame(self, img: np.ndarray) -> None:
-        if self._video_writer is None:
-            import imageio.v2 as iio
-
-            self.record_dir.mkdir(parents=True, exist_ok=True)
-            fps = max(1, round(1.0 / (self.dt * self.record_every)))
-            self._video_writer = iio.get_writer(
-                self.record_dir / "run.mp4", fps=fps, codec="libx264", quality=7, macro_block_size=1
-            )
-        self._video_writer.append_data(img)
 
     def _sample(self, include_objects: bool = False) -> None:
         robot = {
@@ -699,6 +702,21 @@ class SimAdapter:
                 n: round(float(q[self.model.jnt_qposadr[self.model.joint(n).id]]), 3) for n in self.joint_names
             }
         self.trajectory.append(row)
+
+    def camera_video_for_viewer(self) -> dict | None:
+        """The head-camera video as the episode's manifest describes it, or None if none was written."""
+        video = self.camera_video
+        if video is None or video.frames == 0 or video.size is None:
+            return None
+        return {
+            "file": video.path.name,
+            "camera": "head",
+            "fps": round(video.fps, 3),
+            "start_t": round(video.start_t, 3),
+            "frames": video.frames,
+            "width": video.size[0],
+            "height": video.size[1],
+        }
 
     def terrain_for_viewer(self) -> dict | None:
         """The ground as the episode's `terrain.json`, or None on a flat floor."""

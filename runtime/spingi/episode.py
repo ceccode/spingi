@@ -38,6 +38,18 @@ class RunConfig(BaseModel):
     camera_noise: bool = Field(default=False, description="blurred, noisy, JPEG-compressed head-camera frames")
 
 
+class CameraVideo(BaseModel):
+    """A camera recorded continuously (`spingi run --camera-video`): frame i was taken at `start_t + i / fps`."""
+
+    file: str = Field(description="the video, relative to the episode folder: head.mp4 (H.264)")
+    camera: str = Field(description="the camera's name in the robot model: head")
+    fps: float = Field(description="frames per second of simulated time")
+    start_t: float = Field(description="simulated time of the first frame, on the axis of `t` and `sim_t`")
+    frames: int
+    width: int
+    height: int
+
+
 class Manifest(BaseModel):
     format_version: Literal["0.1"] = FORMAT_VERSION
     run_id: str
@@ -51,6 +63,7 @@ class Manifest(BaseModel):
     sim_time_s: float | None = Field(default=None, description="total simulated time, if the adapter provides it")
     sample_rate_hz: float | None = Field(default=None, description="nominal sample rate of trajectory.jsonl")
     config: RunConfig | None = Field(default=None, description="run settings, for replay")
+    camera_video: CameraVideo | None = Field(default=None, description="the head camera, recorded continuously")
     files: list[str]
 
 
@@ -120,6 +133,7 @@ def write_episode(
             for e in log.events:
                 fh.write(e.to_jsonl() + "\n")
 
+    camera = adapter.camera_video_for_viewer() if hasattr(adapter, "camera_video_for_viewer") else None
     ts = [e.ts for e in log.events]
     files = sorted(p.name + ("/" if p.is_dir() else "") for p in run_dir.iterdir() if p.name != "manifest.json")
     sample_rate = None
@@ -139,6 +153,7 @@ def write_episode(
         sim_time_s=round(float(getattr(adapter, "sim_time_s", 0.0)), 3) if hasattr(adapter, "sim_time_s") else None,
         sample_rate_hz=sample_rate,
         config=config,
+        camera_video=CameraVideo.model_validate(camera) if camera else None,
         files=files,
     )
     (run_dir / "manifest.json").write_text(manifest.model_dump_json(indent=2) + "\n", encoding="utf-8")

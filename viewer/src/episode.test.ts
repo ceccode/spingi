@@ -1,8 +1,9 @@
 import { strToU8 } from "fflate";
 import { describe, expect, it } from "vitest";
 import {
-  checkTrajectory, DEFAULT_ROBOT_MODEL, describeEvent, estimateAt, eventTime, jointsAt, landmarksOf, normalizePaths,
-  objectsAt, parseEpisodeFiles, parseJsonl, poseAt, robotJointsUrl, robotModelUrl, wrapAngle, type Sample,
+  cameraVideoOf, checkTrajectory, DEFAULT_ROBOT_MODEL, describeEvent, estimateAt, eventTime, jointsAt, landmarksOf,
+  normalizePaths, objectsAt, parseEpisodeFiles, parseJsonl, poseAt, robotJointsUrl, robotModelUrl, videoTimeAt,
+  wrapAngle, type Manifest, type Sample,
 } from "./episode";
 
 describe("robotModelUrl", () => {
@@ -170,5 +171,35 @@ describe("what the robot believed (drifting odometry)", () => {
     });
     expect([...ep.frames.keys()].sort()).toEqual(["sim-1", "sim-2"]);
     expect(ep.frames.get("sim-1")!.type).toBe("image/jpeg");
+  });
+});
+
+describe("the head camera's video", () => {
+  const entry = { file: "head.mp4", camera: "head", fps: 10, start_t: 0.1, frames: 1084, width: 640, height: 480 };
+  const manifest = (video: unknown) => ({ camera_video: video }) as unknown as Manifest;
+  const files = { "head.mp4": strToU8("mp4") };
+  it("reads the entry and the video it names", () => {
+    const v = cameraVideoOf(manifest(entry), files)!;
+    expect(v.blob.type).toBe("video/mp4");
+    expect([v.camera, v.fps, v.start, v.frames, v.width, v.height]).toEqual(["head", 10, 0.1, 1084, 640, 480]);
+  });
+  it("has none when the manifest names none, or the archive left the file out", () => {
+    expect(cameraVideoOf(manifest(undefined), files)).toBeNull();
+    expect(cameraVideoOf(manifest(entry), {})).toBeNull();
+  });
+  it("refuses a path for a file name, and counts or rates that are not numbers it can play", () => {
+    for (const bad of [{ file: "../head.mp4" }, { file: "frames/x.mp4" }, { file: "head.webm" }, { fps: 0 }, { fps: "10" },
+      { start_t: -1 }, { frames: 0 }, { frames: 1.5 }, { width: 1e6 }, { camera: 7 }]) {
+      expect(() => cameraVideoOf(manifest({ ...entry, ...bad }), files)).toThrow(/camera_video/);
+    }
+    expect(() => cameraVideoOf(manifest("head.mp4"), files)).toThrow(/camera_video/);
+  });
+  it("shows the last frame taken at or before the replay's time", () => {
+    const v = { fps: 10, start: 0.1, frames: 1084 };
+    expect(videoTimeAt(v, 0)).toBeCloseTo(0.05);  // before the first frame: the first one
+    expect(videoTimeAt(v, 0.1)).toBeCloseTo(0.05);  // frame 0 was taken at 0.1 s
+    expect(videoTimeAt(v, 0.29)).toBeCloseTo(0.15);
+    expect(videoTimeAt(v, 0.3)).toBeCloseTo(0.25);  // frame 2, exactly on time despite floating point
+    expect(videoTimeAt(v, 500)).toBeCloseTo(108.35);  // after the last frame: the last one
   });
 });
