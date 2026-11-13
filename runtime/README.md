@@ -285,7 +285,8 @@ spingi/skills      one file per skill
 spingi/safety      SafetyMonitor and limits
 spingi/perception  FakePerceiver, SimPerceiver (ground truth from the scene), MarkerPerceiver (AprilTags in frames)
 spingi/adapters    FakeAdapter, sim_mujoco/ (the G1 or the Go2 in MuJoCo, from the profile: scene and terrain generation, the
-                   kinematic base, and locomotion.py for walking with learned policies)
+                   kinematic base, locomotion.py for walking with learned policies, and the parts SimAdapter delegates
+                   to: contacts.py, objects.py for the kinematic grasp, rendering.py for frames and videos)
 spingi/planner     StaticPlanner (YAML), LLMPlanner (Claude, structured output), schema, evaluation
 spingi/console     terminal operator console (reporter + HumanGateway)
 spingi/export      LeRobot v3.0 exporter

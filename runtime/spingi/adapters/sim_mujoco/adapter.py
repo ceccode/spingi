@@ -29,7 +29,7 @@ from typing import Literal
 import mujoco
 import numpy as np
 
-from spingi.adapters.sim_mujoco.camera import CameraNoise, degrade
+from spingi.adapters.sim_mujoco.contacts import ground_geoms, pushed_obstacle, subtree_geoms, touched_obstacle
 from spingi.adapters.sim_mujoco.locomotion import (
     FollowGains,
     FollowState,
@@ -39,13 +39,13 @@ from spingi.adapters.sim_mujoco.locomotion import (
     make_walker,
     ramp,
 )
+from spingi.adapters.sim_mujoco.objects import SceneObjects
 from spingi.adapters.sim_mujoco.odometry import Odometry, OdometryErrors, as_pose, compose, inverse, planar
+from spingi.adapters.sim_mujoco.rendering import HeadCamera, Renderers, Videos
 from spingi.adapters.sim_mujoco.scene import OFFSCREEN_SIZE, CompiledScene, write_scene
 from spingi.adapters.sim_mujoco.terrain import fill_heights
-from spingi.adapters.sim_mujoco.video import VideoStream
 from spingi.core.ports import (
     Arm,
-    CameraModel,
     CapabilityMissing,
     EventSink,
     Frame,
@@ -70,9 +70,6 @@ class WatchdogExpired(RuntimeError):
 
 class SimAdapter:
     YIELD_EVERY = 10  # ticks between cooperative yields in fast mode (0.2 s of simulated time)
-    IMAGE_CACHE = 4  # rendered head-camera images kept in memory for the perceiver, by frame id
-    VIDEO_SIZE = (640, 480)  # the third-person video and the head camera's
-    VIDEO_QUALITY, CAMERA_VIDEO_QUALITY = 7, 3  # imageio's 0 to 10: x264 rate factors 15 and 35
     ZNEAR_M, ZFAR_M = 0.03, 200.0  # what the cameras draw: from 3 cm to 200 m
     # physics locomotion
     SETTLE_S = 0.5  # standing still after the reset, before the run starts: the feet find the ground
@@ -117,6 +114,10 @@ class SimAdapter:
         self.scene_path = Path(scene_path)
         self.model_dir = Path(model_dir) if model_dir is not None else self.profile.sim.path
         self.model, self.data, self.scene = self._load_model()
+        self._root_body = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, self.profile.sim.root_body)
+        self._robot_geoms = subtree_geoms(self.model, self._root_body)  # the whole robot collides, not just its base
+        self._ground_geoms = ground_geoms(self.model)
+        self._objects = SceneObjects(self.model, self.data, self.scene, self.profile)
         _check_modes(locomotion, odometry)
         self.locomotion: Locomotion = locomotion
         self.walker: Walker | None = self._make_walker(dt) if locomotion == "physics" else None
@@ -136,21 +137,19 @@ class SimAdapter:
         self.grasp_range_m = grasp_range_m  # an object within this distance of the base can be grasped
         if camera_size[0] > OFFSCREEN_SIZE[0] or camera_size[1] > OFFSCREEN_SIZE[1]:
             raise ValueError(f"camera_size {camera_size} exceeds the offscreen buffer {OFFSCREEN_SIZE}")
-        self.camera_size = camera_size  # (width, height) of the head-camera frames
-        self._images: dict[str, np.ndarray] = {}
+        self._renderers = Renderers(self.model, self.data)
+        self._head_camera = HeadCamera(
+            self._renderers, self.model, self.data, camera_size, camera_noise, seed, record_dir
+        )
         self.sim_time_s = 0.0
         self.clock = SimClock(self)  # robot time = simulated time; the watchdog counts it too
         self._last_heartbeat = 0.0
-        self.held_object: str | None = None  # kinematic grasp (ADR-0007): the object follows the hand
         self._objects_dirty = False
 
         self.pose = start or Pose2D(x=float(self.data.qpos[0]), y=float(self.data.qpos[1]), yaw=0.0)
         told = self.pose  # where the robot is told it starts; with drift that is all it knows
         self.log = log
         self.odometry = Odometry(OdometryErrors() if odometry == "drift" else None, np.random.default_rng([seed, 1]))
-        self.camera_noise = CameraNoise() if camera_noise else None
-        self._camera_rng = np.random.default_rng([seed, 2])  # its own stream: frames taken do not change the drift
-        self._focal_scale = 1.0 + (self._camera_rng.normal(0.0, self.camera_noise.focal_error) if camera_noise else 0.0)
         if self.walker is not None:
             self.pose = self._off_its_mark(self.pose, seed)
         self.mode: Literal["idle", "walking", "manipulating", "estop"] = "idle"
@@ -167,26 +166,9 @@ class SimAdapter:
         self.ticks = 0
         self.calls: list[tuple[str, dict]] = []
 
-        self._robot_geoms = self._subtree_geoms(self.profile.sim.root_body)
-        geom_names = [mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_GEOM, g) or "" for g in range(self.model.ngeom)]
-        self._ground_geoms = {g for g, n in enumerate(geom_names) if n == "floor" or n.startswith("ter_")}
         free = mujoco.mjtJoint.mjJNT_FREE
         self.joint_names = [self.model.joint(j).name for j in range(self.model.njnt) if self.model.jnt_type[j] != free]
-        self._renderers: dict[tuple[int, int], mujoco.Renderer] = {}  # one per (height, width): frames and video
-        self.render_error: str | None = None
-        fps = 1.0 / (dt * record_every)
-        recording = record_dir is not None
-        self._video = (
-            VideoStream(record_dir / "run.mp4", fps, self.VIDEO_QUALITY) if record_video and recording else None
-        )
-        # What the head camera sees, continuously, for people watching the episode: the clean render, where the camera
-        # really is. The runtime takes its own frames (get_camera), which carry the camera noise.
-        self.camera_video = (
-            VideoStream(record_dir / "head.mp4", fps, self.CAMERA_VIDEO_QUALITY)
-            if record_camera and recording
-            else None
-        )
-        self._frame_counter = 0
+        self._videos = Videos(self._renderers, record_dir, 1.0 / (dt * record_every), record_video, record_camera)
         self._viewer = None
         if viewer:
             self._open_viewer()
@@ -302,7 +284,7 @@ class SimAdapter:
             self._wanted = self.walker.clip_command(*wanted)
             await self._tick()
             self._raise_if_fallen()
-            hit = self._pushing_obstacle()
+            hit = pushed_obstacle(self.model, self.data, self._robot_geoms, self._ground_geoms, self.CONTACT_FORCE_N)
             touching = touching + 1 if hit is not None else 0
             if touching >= self.CONTACT_TICKS:
                 self.blocked_by = hit
@@ -400,84 +382,27 @@ class SimAdapter:
         self._guard()
         released_at = None
         if action == "close" and self.held_object is None:
-            self.held_object = self._nearest_object(self.grasp_range_m)
-            if self.held_object is not None:
+            if self._objects.grasp(self.pose, self.grasp_range_m):
                 self._objects_dirty = True
-                self._move_held_object()  # into the hand; the robot itself stays where it is
-                mujoco.mj_forward(self.model, self.data)
         elif action == "open" and self.held_object is not None:
-            released = self.held_object
-            self._release(released)
-            self.held_object = None
+            released_at = self._objects.release(self.pose)
             self._objects_dirty = True
-            p = self.object_positions()[released]
-            released_at = Pose3D(x=p["x"], y=p["y"], z=p["z"])
         self._sample(include_objects=self._objects_dirty)
         self._objects_dirty = False
         return GripResult(holding=self.held_object is not None, object_id=self.held_object, released_at=released_at)
 
     # --- sensors -----------------------------------------------------------
     async def get_camera(self, name: str = "head") -> Frame:
-        self._frame_counter += 1
-        width, height = self.camera_size
-        frame = Frame(
-            id=f"sim-{self._frame_counter}",
-            ts=self.sim_time_s,
-            camera=name,
-            width=width,
-            height=height,
-            camera_model=self._camera_model(name, width, height),
-        )
-        img = self._render(name, height, width)
-        if img is not None:
-            jpeg = None
-            if self.camera_noise is not None:
-                img, jpeg = degrade(img, self._camera_rng, self.camera_noise)
-            self._images[frame.id] = img
-            while len(self._images) > self.IMAGE_CACHE:
-                del self._images[next(iter(self._images))]
-            if self.record_dir is not None:
-                # Relative to the episode folder, no local paths in episodes. A noisy camera writes the JPEG it sent,
-                # as the robot streams it; a clean render stays a lossless PNG.
-                frame.data_ref = f"frames/{frame.id}.{'jpg' if jpeg is not None else 'png'}"
-                out = self.record_dir / frame.data_ref
-                out.parent.mkdir(parents=True, exist_ok=True)
-                if jpeg is not None:
-                    out.write_bytes(jpeg)
-                else:
-                    import imageio.v3 as iio
-
-                    iio.imwrite(out, img)
-        return frame
+        return self._head_camera.take(name, self.sim_time_s, self.odometry.offset)
 
     def image(self, frame_id: str) -> np.ndarray | None:
         """The rendered image of a recent frame (RGB, height x width x 3), for a perceiver that reads pixels."""
-        return self._images.get(frame_id)
+        return self._head_camera.image(frame_id)
 
-    def _camera_model(self, name: str, width: int, height: int) -> CameraModel | None:
-        """The camera as the robot believes it is: placed by the pose estimate (the IMU gives the true tilt), with
-        the focal length of its calibration."""
-        cam = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_CAMERA, name)
-        if cam < 0:
-            return None
-        fovy = math.radians(float(self.model.cam_fovy[cam]))
-        f = (height / 2) / math.tan(fovy / 2) * self._focal_scale  # square pixels, vertical field of view
-        ox, oy, oyaw = self.odometry.offset
-        c, s = math.cos(oyaw), math.sin(oyaw)
-        turn = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
-        # MuJoCo camera axes: x right, y up, looking along -z. OpenCV: x right, y down, looking along +z.
-        rot = turn @ self.data.cam_xmat[cam].reshape(3, 3) @ np.diag([1.0, -1.0, -1.0])
-        pos = turn @ self.data.cam_xpos[cam] + np.array([ox, oy, 0.0])
-        return CameraModel(
-            fx=f,
-            fy=f,
-            cx=width / 2,
-            cy=height / 2,
-            width=width,
-            height=height,
-            position=tuple(float(v) for v in pos),
-            rotation=tuple(float(v) for v in rot.ravel()),
-        )
+    @property
+    def render_error(self) -> str | None:
+        """Why the last render failed (no OpenGL context, for one), or None."""
+        return self._renderers.error
 
     async def get_joint_state(self) -> JointState:
         names = [self.model.joint(i).name for i in range(1, self.model.njnt)]
@@ -510,12 +435,8 @@ class SimAdapter:
         if self._viewer is not None:
             self._viewer.close()
             self._viewer = None
-        video = self._video.close() if self._video is not None else None
-        if self.camera_video is not None:
-            self.camera_video.close()
-        for renderer in self._renderers.values():
-            renderer.close()
-        self._renderers.clear()
+        video = self._videos.close()
+        self._renderers.close()
         return video
 
     # --- internals ---------------------------------------------------------
@@ -524,7 +445,7 @@ class SimAdapter:
         old = self.pose
         self.pose = new
         self._apply_pose()
-        hit = self._collision()
+        hit = touched_obstacle(self.model, self.data, self._robot_geoms, self._ground_geoms)
         if hit is not None:
             self.pose = old
             self._apply_pose()
@@ -545,13 +466,13 @@ class SimAdapter:
         q[3], q[4], q[5], q[6] = math.cos(self.pose.yaw / 2), 0.0, 0.0, math.sin(self.pose.yaw / 2)
         self.base_z = float(q[2])
         self.data.qvel[:] = 0.0
-        self._move_held_object()
+        self._objects.follow_hand(self.pose)
         mujoco.mj_forward(self.model, self.data)
 
     def _ground_decides_grip(self) -> None:
         """The robot models give their feet contact priority, so the feet's friction would apply on any ground. Here
         the feet keep their softness but take a negligible friction: the surface's friction applies (terrain.py)."""
-        for g in self._subtree_geoms(self.profile.sim.root_body):
+        for g in self._robot_geoms:
             if self.model.geom_priority[g] > 0:
                 self.model.geom_priority[g] = 0
                 self.model.geom_friction[g][0] = FOOT_FRICTION
@@ -561,13 +482,7 @@ class SimAdapter:
         x, y, z, roll, pitch, yaw = base_pose(self.data)
         self.pose = Pose2D(x=x, y=y, yaw=yaw)
         self.base_z, self.roll, self.pitch = z, roll, pitch
-        self._move_held_object()
-
-    def _move_held_object(self) -> None:
-        if self.held_object is not None:
-            x, y = self._hand_xy()
-            z = self.scene.ground_height(self.pose.x, self.pose.y) + self.profile.sim.hand_height_m
-            self.model.body_pos[self._object_body(self.held_object)] = (x, y, z)
+        self._objects.follow_hand(self.pose)
 
     def _check_fall(self) -> None:
         cfg = self.walker.config
@@ -583,82 +498,6 @@ class SimAdapter:
     def _need_arm(self) -> None:
         if "arm" not in self.capabilities:
             raise CapabilityMissing(f"{self.profile.name} has no arm")
-
-    def _hand_xy(self) -> tuple[float, float]:
-        """Where the hand is, in the world: in front of the base, by the profile's distance."""
-        forward = self.profile.sim.hand_forward_m
-        if forward is None:
-            raise CapabilityMissing(f"{self.profile.name} has no arm")
-        return self.pose.x + forward * math.cos(self.pose.yaw), self.pose.y + forward * math.sin(self.pose.yaw)
-
-    def _object_geom(self, object_id: str) -> int:
-        return mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, f"obj_{object_id}")
-
-    def _object_body(self, object_id: str) -> int:
-        """The static body that carries the object's box and its tag decals; moving it moves them together."""
-        return mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, f"objb_{object_id}")
-
-    def _nearest_object(self, max_dist: float) -> str | None:
-        best, best_d = None, max_dist
-        for oid, pos in self.object_positions().items():
-            d = math.hypot(pos["x"] - self.pose.x, pos["y"] - self.pose.y)
-            if d < best_d:
-                best, best_d = oid, d
-        return best
-
-    def _release(self, object_id: str) -> None:
-        """Puts the object down in front of the robot, on the highest obstacle top below the hand, else on the floor."""
-        x, y = self._hand_xy()
-        half_h = float(self.model.geom_size[self._object_geom(object_id)][2])
-        z = self._surface_height(x, y) + half_h
-        self.model.body_pos[self._object_body(object_id)] = (x, y, z)
-        mujoco.mj_forward(self.model, self.data)
-
-    def _surface_height(self, x: float, y: float) -> float:
-        top = self.scene.ground_height(x, y)
-        for g in range(self.model.ngeom):
-            name = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_GEOM, g) or ""
-            if not name.startswith("obs_"):
-                continue
-            cx, cy, cz = (float(v) for v in self.data.geom_xpos[g])
-            hx, hy, hz = (float(v) for v in self.model.geom_size[g])
-            if abs(x - cx) <= hx and abs(y - cy) <= hy:
-                top = max(top, cz + hz)
-        return top
-
-    def _pushing_obstacle(self) -> str | None:
-        """Physics: the obstacle the robot pushes on with more than CONTACT_FORCE_N in total, if any."""
-        force: dict[int, float] = {}
-        f = np.zeros(6)
-        for i in range(self.data.ncon):
-            c = self.data.contact[i]
-            a_robot, b_robot = c.geom1 in self._robot_geoms, c.geom2 in self._robot_geoms
-            if a_robot == b_robot:
-                continue
-            other = c.geom2 if a_robot else c.geom1
-            if other in self._ground_geoms:
-                continue
-            mujoco.mj_contactForce(self.model, self.data, i, f)
-            force[other] = force.get(other, 0.0) + abs(float(f[0]))
-        if not force:
-            return None
-        other, total = max(force.items(), key=lambda kv: kv[1])
-        if total < self.CONTACT_FORCE_N:
-            return None
-        return mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_GEOM, other) or f"geom{other}"
-
-    def _collision(self) -> str | None:
-        for i in range(self.data.ncon):
-            c = self.data.contact[i]
-            a, b = c.geom1, c.geom2
-            a_robot, b_robot = a in self._robot_geoms, b in self._robot_geoms
-            if a_robot == b_robot:
-                continue  # robot-robot or world-world
-            other = b if a_robot else a
-            if other in self._ground_geoms:
-                continue
-            return mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_GEOM, other) or f"geom{other}"
-        return None
 
     async def _tick(self) -> None:
         if self.walker is not None:
@@ -683,11 +522,7 @@ class SimAdapter:
         if self._viewer is not None:
             self._viewer.sync()
         if self.ticks % self.record_every == 0:
-            width, height = self.VIDEO_SIZE
-            if self._video is not None:
-                self._video.add(self._render("track", height, width), self.sim_time_s)
-            if self.camera_video is not None:
-                self.camera_video.add(self._render("head", height, width), self.sim_time_s)
+            self._videos.add(self.sim_time_s)
         if self.realtime:
             await asyncio.sleep(self.dt)
         elif self.ticks % self.YIELD_EVERY == 0:
@@ -716,18 +551,7 @@ class SimAdapter:
 
     def camera_video_for_viewer(self) -> dict | None:
         """The head-camera video as the episode's manifest describes it, or None if none was written."""
-        video = self.camera_video
-        if video is None or video.frames == 0 or video.size is None:
-            return None
-        return {
-            "file": video.path.name,
-            "camera": "head",
-            "fps": round(video.fps, 3),
-            "start_t": round(video.start_t, 3),
-            "frames": video.frames,
-            "width": video.size[0],
-            "height": video.size[1],
-        }
+        return self._videos.head_for_manifest()
 
     def terrain_for_viewer(self) -> dict | None:
         """The ground as the episode's `terrain.json`, or None on a flat floor."""
@@ -735,24 +559,12 @@ class SimAdapter:
 
     def object_positions(self) -> dict[str, dict[str, float]]:
         """Ground-truth world positions of the scene objects, keyed by object id (used by SimPerceiver)."""
-        out = {}
-        for g in range(self.model.ngeom):
-            name = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_GEOM, g) or ""
-            if name.startswith("obj_"):
-                x, y, z = (float(v) for v in self.data.geom_xpos[g])
-                out[name[4:]] = {"x": round(x, 4), "y": round(y, 4), "z": round(z, 4)}
-        return out
+        return self._objects.positions()
 
-    def _render(self, camera: str, height: int, width: int) -> np.ndarray | None:
-        try:
-            renderer = self._renderers.get((height, width))
-            if renderer is None:
-                renderer = self._renderers[(height, width)] = mujoco.Renderer(self.model, height, width)
-            renderer.update_scene(self.data, camera=camera)
-            return renderer.render().copy()
-        except Exception as exc:  # noqa: BLE001 - no OpenGL context (headless CI): perception gets no image
-            self.render_error = repr(exc)  # kept for diagnosis instead of being swallowed
-            return None
+    @property
+    def held_object(self) -> str | None:
+        """The object in the robot's hand, by id (kinematic grasp, ADR-0007): it follows the hand."""
+        return self._objects.held
 
     def _open_viewer(self) -> None:
         import mujoco.viewer
@@ -761,19 +573,6 @@ class SimAdapter:
             self._viewer = mujoco.viewer.launch_passive(self.model, self.data)
         except RuntimeError as exc:
             raise RuntimeError("viewer unavailable: on macOS launch with `uv run mjpython -m spingi.cli ...`") from exc
-
-    def _subtree_geoms(self, root_body: str) -> set[int]:
-        root = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, root_body)
-        self._root_body = root
-        bodies = set()
-        for b in range(self.model.nbody):
-            cur = b
-            while cur > 0:
-                if cur == root:
-                    bodies.add(b)
-                    break
-                cur = self.model.body_parentid[cur]
-        return {g for g in range(self.model.ngeom) if self.model.geom_bodyid[g] in bodies}
 
     def _record(self, name: str, **kw) -> None:
         self.calls.append((name, kw))
