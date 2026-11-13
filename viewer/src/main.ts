@@ -142,13 +142,14 @@ function renderTransport(t: number): void {
   ui.play.textContent = player.playing ? "❚❚" : "▶";
 }
 
-let robotModel = ""; // the GLB currently loaded, so that episodes of the same robot do not reload it
-
-/** Draws the robot the episode was recorded on (manifest.robot.model); a failed load keeps the previous model. */
+/** Draws the robot the episode was recorded on (manifest.robot.model); a failed load keeps the previous model. The
+ *  canvas says which robot it shows. */
 async function showRobot(url: string): Promise<void> {
-  if (url === robotModel) return;
-  await world.loadRobot(url, robotJointsUrl(url));
-  robotModel = url;
+  try {
+    await world.loadRobot(url, robotJointsUrl(url));
+  } finally {
+    canvas.dataset.robot = world.robotUrl;
+  }
 }
 
 async function show(ep: Episode): Promise<void> {

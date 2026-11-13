@@ -22,9 +22,12 @@ function watchErrors(page: Page): string[] {
   return errors;
 }
 
+/** Chooses a sample and waits until it is shown. The menu goes back to its prompt only once the episode and its
+ *  robot model are loaded: the play button is no signal, it stays enabled from the episode before. */
 async function loadSample(page: Page, name: string): Promise<void> {
   await page.locator("#sample").selectOption(name);
-  await expect(page.locator("#play")).toBeEnabled({ timeout: 20_000 });
+  await expect(page.locator("#sample")).toHaveValue("", { timeout: 20_000 });
+  await expect(page.locator("#play")).toBeEnabled();
   await expect(page.locator("#title")).not.toContainText("error");
 }
 
@@ -105,6 +108,20 @@ test("the robot's view follows the replay, and a second episode replaces the fir
   await expect(page.locator("#events > li")).toHaveCount(56);
   await expect(page.locator("#clock")).toHaveText("0.0 s");
   expect(errors).toEqual([]);
+});
+
+test("an episode chosen while the default robot is still loading shows its own robot", async ({ page }) => {
+  let g1Loads = 0;
+  await page.route("**/models/g1.glb", async (route) => {
+    g1Loads += 1;
+    if (g1Loads === 1) await new Promise((r) => setTimeout(r, 3000)); // the default model, loaded at startup, comes late
+    await route.continue();
+  });
+  await page.goto("/");
+  await loadSample(page, "demo_inspection_round_go2");
+  await expect(page.locator("#canvas")).toHaveAttribute("data-robot", "/models/go2.glb");
+  await page.waitForTimeout(4000); // past the default model's arrival
+  await expect(page.locator("#canvas")).toHaveAttribute("data-robot", "/models/go2.glb");
 });
 
 test("clicking an event jumps to its time", async ({ page }) => {

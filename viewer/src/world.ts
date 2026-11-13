@@ -80,6 +80,13 @@ function tagTexture(markerId: number): THREE.CanvasTexture {
   return tex;
 }
 
+/** The joint table next to a GLB, unchecked; null when the server has none. */
+type JointTable = { root?: unknown; base_z?: unknown; joints?: unknown };
+async function jointTable(url: string): Promise<JointTable | null> {
+  const res = await fetch(url);
+  return res.ok ? ((await res.json()) as JointTable) : null;
+}
+
 interface JointNode {
   node: THREE.Object3D;
   axis: THREE.Vector3;
@@ -94,6 +101,9 @@ export class World {
   private readonly labels: THREE.Sprite[] = [];
   private readonly objects = new Map<string, { mesh: THREE.Mesh; label: THREE.Sprite }>();
   private joints = new Map<string, JointNode>();
+  /** The GLB of the robot shown; empty before the first one is loaded. */
+  robotUrl = "";
+  private requests = 0; // robot loads asked for: only the latest may replace the robot shown
   private base: THREE.Object3D | null = null; // the robot's root body: carries height and tilt
   private baseZ = 0;
   private terrain: Terrain | null = null;
@@ -234,12 +244,20 @@ export class World {
     }
   }
 
-  /** Loads the robot's GLB and its joint table (which node each joint turns). Without the table the robot is shown
-   *  rigid, in the pose the GLB has. */
+  /** Shows the robot of the GLB at `url`, with its joint table (which node each joint turns) when there is one;
+   *  without the table the robot is shown rigid, in the pose the GLB has. Loads may overlap, as when an episode is
+   *  chosen while the default robot is still loading: the last request wins, whichever load ends last, and a load it
+   *  replaced is discarded. A failed load keeps the robot shown. */
   async loadRobot(url: string, jointsUrl?: string): Promise<void> {
+    const ticket = ++this.requests;
+    if (url === this.robotUrl) return; // already shown; a load still under way is now out of date
     const loader = new GLTFLoader();
     loader.setMeshoptDecoder(MeshoptDecoder);
-    const gltf = await loader.loadAsync(url);
+    const [gltf, table] = await Promise.all([loader.loadAsync(url), jointsUrl ? jointTable(jointsUrl) : null]);
+    if (ticket !== this.requests) {
+      dispose(gltf.scene); // a later request replaced this one
+      return;
+    }
     gltf.scene.traverse((o) => {
       if ((o as THREE.Mesh).isMesh) {
         const m = o as THREE.Mesh;
@@ -254,12 +272,11 @@ export class World {
     dispose(this.robot);
     this.robot.clear();
     this.robot.add(gltf.scene);
+    this.robotUrl = url;
     this.joints = new Map();
     this.base = null;
-    if (!jointsUrl) return;
-    const res = await fetch(jointsUrl);
-    if (!res.ok) return;
-    const table = (await res.json()) as { root?: unknown; base_z?: unknown; joints?: unknown };
+    this.baseZ = 0;
+    if (!table) return;
     if (typeof table.root === "string") this.base = gltf.scene.getObjectByName(table.root) ?? null;
     this.baseZ = typeof table.base_z === "number" && Number.isFinite(table.base_z) ? table.base_z : 0;
     for (const j of Array.isArray(table.joints) ? table.joints.slice(0, MAX_JOINTS) : []) {
