@@ -31,6 +31,12 @@ npm test
 runs the unit tests (episode reading, joint angles and the base's height, the ground, the head camera's video and which frame to show when, the replay clock, loading limits and handling of untrusted episodes) with Vitest.
 
 ```bash
+npm run e2e
+```
+
+builds the site, serves it as Netlify does and replays every sample in Chromium with Playwright (`e2e/`, ADR-0022): the panels follow the replay, the robot's view follows the video, clicking an event jumps to it, a link to another site says where the episode came from, and the page logs no error. WebGL runs in software, so no GPU is needed. Run `npx playwright install chromium` once first.
+
+```bash
 npm run lint
 ```
 

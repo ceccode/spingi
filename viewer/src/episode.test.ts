@@ -21,9 +21,7 @@ import {
   type Sample,
   type Scene,
 } from "./episode";
-import {
-  eventTime,
-} from "./timeline";
+import { eventTime } from "./timeline";
 
 describe("robotModelUrl", () => {
   it("maps the robot profile of the manifest to a bundled model", () => {

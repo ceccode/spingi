@@ -7,7 +7,17 @@
     "root": ".."
   },
   "files": {
-    "includes": ["src/**", "index.html", "*.json", "*.ts", "!package-lock.json", "!public"]
+    "includes": [
+      "src/**",
+      "e2e/**",
+      "index.html",
+      "*.json",
+      "*.ts",
+      "!package-lock.json",
+      "!public",
+      "!test-results",
+      "!playwright-report"
+    ]
   },
   "formatter": {
     "indentStyle": "space",

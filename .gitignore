@@ -25,3 +25,5 @@ runtime/sim/models/*/_gen_*.xml
 viewer/node_modules/
 viewer/dist/
 viewer/.netlify/
+test-results/
+playwright-report/

@@ -43,7 +43,7 @@ jobs:
 
   viewer:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: viewer
@@ -66,3 +66,7 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
+      - name: Install Chromium for the browser tests
+        run: npx playwright install --with-deps chromium
+      - name: Browser tests (the samples replayed in Chromium, WebGL in software)
+        run: npm run e2e
