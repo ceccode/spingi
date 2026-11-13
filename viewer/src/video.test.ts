@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { videoSync } from "./video";
+import { videoSync, videoTimeAt } from "./video";
 
 const cam = { fps: 10, start: 2, frames: 50 }; // taken from t = 2 s to t = 6.9 s
 const settled = { seeking: false, starting: false };
@@ -37,5 +37,16 @@ describe("the head camera's video following the replay", () => {
     const after = videoSync(cam, { t: 6.95, playing: true, speed: 1 }, { ...settled, currentTime: 0 });
     expect(after.run).toBe(false);
     expect(after.seekTo).toBeCloseTo(4.95);
+  });
+});
+
+describe("which frame of the head camera's video to show", () => {
+  it("shows the last frame taken at or before the replay's time", () => {
+    const v = { fps: 10, start: 0.1, frames: 1084 };
+    expect(videoTimeAt(v, 0)).toBeCloseTo(0.05); // before the first frame: the first one
+    expect(videoTimeAt(v, 0.1)).toBeCloseTo(0.05); // frame 0 was taken at 0.1 s
+    expect(videoTimeAt(v, 0.29)).toBeCloseTo(0.15);
+    expect(videoTimeAt(v, 0.3)).toBeCloseTo(0.25); // frame 2, exactly on time despite floating point
+    expect(videoTimeAt(v, 500)).toBeCloseTo(108.35); // after the last frame: the last one
   });
 });
