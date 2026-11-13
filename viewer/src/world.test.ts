@@ -24,7 +24,9 @@ describe("GPU memory", () => {
     texture.addEventListener("dispose", () => (textureFreed = true));
     const group = new THREE.Group();
     group.add(new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial({ map: texture })));
-    group.add(new THREE.Mesh(new THREE.PlaneGeometry(), [new THREE.MeshBasicMaterial(), new THREE.MeshBasicMaterial()]));
+    group.add(
+      new THREE.Mesh(new THREE.PlaneGeometry(), [new THREE.MeshBasicMaterial(), new THREE.MeshBasicMaterial()]),
+    );
     const { freed, all } = watchDisposal(group);
     dispose(group);
     expect(all.size).toBe(5);
@@ -33,10 +35,17 @@ describe("GPU memory", () => {
   });
   it("is freed for the previous episode's scene when a new one is built, and the robot's belief marker is kept", () => {
     const world = new World(new THREE.Scene());
-    world.build({ obstacles: [{ x: 1, y: 1 }, { x: 2, y: 2, color: "#ff0000" }] });
+    world.build({
+      obstacles: [
+        { x: 1, y: 1 },
+        { x: 2, y: 2, color: "#ff0000" },
+      ],
+    });
     const boxes = (): THREE.Mesh[] => {
       const found: THREE.Mesh[] = [];
-      world.root.traverse((o) => { if ((o as THREE.Mesh).geometry instanceof THREE.BoxGeometry) found.push(o as THREE.Mesh); });
+      world.root.traverse((o) => {
+        if ((o as THREE.Mesh).geometry instanceof THREE.BoxGeometry) found.push(o as THREE.Mesh);
+      });
       return found;
     };
     const first = boxes();
@@ -57,10 +66,17 @@ describe("GPU memory", () => {
 describe("a scene from a stranger", () => {
   it("is built without what is malformed in it, never half-way", () => {
     const world = new World(new THREE.Scene());
-    const odd = { locations: { a: {}, b: "here" }, obstacles: [null, { x: "far", y: 0 }, { x: 1, y: 1 }], objects: { c: { pose: 3 } }, landmarks: [{}] };
+    const odd = {
+      locations: { a: {}, b: "here" },
+      obstacles: [null, { x: "far", y: 0 }, { x: 1, y: 1 }],
+      objects: { c: { pose: 3 } },
+      landmarks: [{}],
+    };
     expect(() => world.build(odd as never)).not.toThrow();
     let boxes = 0;
-    world.root.traverse((o) => { if ((o as THREE.Mesh).geometry instanceof THREE.BoxGeometry) boxes++; });
+    world.root.traverse((o) => {
+      if ((o as THREE.Mesh).geometry instanceof THREE.BoxGeometry) boxes++;
+    });
     expect(boxes).toBe(1);
   });
 });

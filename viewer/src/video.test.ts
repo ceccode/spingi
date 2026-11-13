@@ -26,7 +26,9 @@ describe("the head camera's video following the replay", () => {
   });
   it("leaves a paused video on the frame it already shows, and waits for a seek under way", () => {
     expect(videoSync(cam, { t: 4.03, playing: false, speed: 1 }, { ...settled, currentTime: 2.05 }).seekTo).toBeNull();
-    expect(videoSync(cam, { t: 4.03, playing: false, speed: 1 }, { seeking: true, starting: false, currentTime: 0 }).seekTo).toBeNull();
+    expect(
+      videoSync(cam, { t: 4.03, playing: false, speed: 1 }, { seeking: true, starting: false, currentTime: 0 }).seekTo,
+    ).toBeNull();
   });
   it("holds the first frame before the camera started and the last one after it stopped, even while playing", () => {
     const before = videoSync(cam, { t: 1, playing: true, speed: 1 }, { ...settled, currentTime: 3 });

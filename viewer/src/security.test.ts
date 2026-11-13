@@ -1,8 +1,8 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
 import { strToU8, zipSync } from "fflate";
+import { describe, expect, it } from "vitest";
 import { describeEvent, manifestRows } from "./describe";
-import { loadEpisodeFromZip, MAX_UNZIPPED_BYTES, safeEpisodeUrl, type Episode } from "./episode";
+import { type Episode, loadEpisodeFromZip, MAX_UNZIPPED_BYTES, safeEpisodeUrl } from "./episode";
 
 const EVIL = '<img src=x onerror="alert(1)">';
 
@@ -18,9 +18,23 @@ describe("untrusted episode content", () => {
   it("is passed through as plain text by the describers", () => {
     expect(describeEvent({ ts: 0, run_id: "r", kind: "say", text: EVIL })).toBe(`"${EVIL}"`);
     const ep = {
-      manifest: { format_version: "0.1", run_id: "r", created_at: EVIL, robot: { model: EVIL, adapter: "a" },
-        plan_id: EVIL, status: "success", steps_completed: 1, steps_total: 1, duration_s: "nan", files: [] },
-      scene: {}, plan: { id: "p", description: EVIL, steps: [] }, events: [], trajectory: [], frames: new Map(),
+      manifest: {
+        format_version: "0.1",
+        run_id: "r",
+        created_at: EVIL,
+        robot: { model: EVIL, adapter: "a" },
+        plan_id: EVIL,
+        status: "success",
+        steps_completed: 1,
+        steps_total: 1,
+        duration_s: "nan",
+        files: [],
+      },
+      scene: {},
+      plan: { id: "p", description: EVIL, steps: [] },
+      events: [],
+      trajectory: [],
+      frames: new Map(),
     } as unknown as Episode;
     const rows = Object.fromEntries(manifestRows(ep));
     expect(rows.Plan).toBe(EVIL);
@@ -30,7 +44,7 @@ describe("untrusted episode content", () => {
 
 describe("episode loading limits", () => {
   it("refuses archives that expand beyond the limit (zip bomb)", () => {
-    const zeros = new Uint8Array(4 * 1024 * 1024);  // compresses to a few KB
+    const zeros = new Uint8Array(4 * 1024 * 1024); // compresses to a few KB
     const bomb = zipSync({ "a.bin": zeros, "b.bin": zeros }, { level: 9 });
     expect(bomb.byteLength).toBeLessThan(100 * 1024);
     const limits = { zipBytes: 1024 * 1024, unzippedBytes: 6 * 1024 * 1024 };
@@ -48,7 +62,7 @@ describe("episode loading limits", () => {
     expect(safeEpisodeUrl("javascript:alert(1)", base)).toBeNull();
     expect(safeEpisodeUrl("data:application/zip;base64,AAAA", base)).toBeNull();
     expect(safeEpisodeUrl("file:///etc/passwd", base)).toBeNull();
-    expect(safeEpisodeUrl("http://example.org/e.zip", base)).toBeNull();  // http only from our own origin
+    expect(safeEpisodeUrl("http://example.org/e.zip", base)).toBeNull(); // http only from our own origin
     expect(safeEpisodeUrl("http://localhost:5173/s.zip", "http://localhost:5173/")).toBe("http://localhost:5173/s.zip");
   });
 });
@@ -62,9 +76,20 @@ describe("malformed episodes", () => {
   });
   it("stops reading a response that grows beyond the cap", async () => {
     const { readCapped } = await import("./episode");
-    const body = new ReadableStream({ start(c) { c.enqueue(new Uint8Array(600)); c.enqueue(new Uint8Array(600)); c.close(); } });
+    const body = new ReadableStream({
+      start(c) {
+        c.enqueue(new Uint8Array(600));
+        c.enqueue(new Uint8Array(600));
+        c.close();
+      },
+    });
     await expect(readCapped(new Response(body), 1000)).rejects.toThrow(/refused/);
-    const small = new ReadableStream({ start(c) { c.enqueue(new Uint8Array(10)); c.close(); } });
+    const small = new ReadableStream({
+      start(c) {
+        c.enqueue(new Uint8Array(10));
+        c.close();
+      },
+    });
     expect((await readCapped(new Response(small), 1000)).byteLength).toBe(10);
   });
 });

@@ -24,7 +24,10 @@ describe("Player", () => {
   });
   it("respects the speed", () => {
     const p = new Player();
-    p.reset(10); p.speed = 4; p.toggle(); p.advance(1);
+    p.reset(10);
+    p.speed = 4;
+    p.toggle();
+    p.advance(1);
     expect(p.t).toBeCloseTo(4);
   });
 });

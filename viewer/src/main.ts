@@ -2,8 +2,14 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { hudText } from "./describe";
 import {
-  DEFAULT_ROBOT_MODEL, loadEpisodeFromZip, MAX_ZIP_BYTES, readCapped, robotJointsUrl, robotModelUrl, safeEpisodeUrl,
+  DEFAULT_ROBOT_MODEL,
   type Episode,
+  loadEpisodeFromZip,
+  MAX_ZIP_BYTES,
+  readCapped,
+  robotJointsUrl,
+  robotModelUrl,
+  safeEpisodeUrl,
 } from "./episode";
 import { EventList, FrameStrip, HeadCamera, showManifest } from "./panels";
 import { Player } from "./player";
@@ -32,10 +38,17 @@ sun.shadow.camera.right = sun.shadow.camera.top = 12;
 scene.add(sun);
 
 const ui = {
-  title: $("title"), drop: $("drop"), hud: $("hud"), manifest: $("manifest"),
-  play: $<HTMLButtonElement>("play"), scrub: $<HTMLInputElement>("scrub"), clock: $("clock"),
-  speed: $<HTMLSelectElement>("speed"), follow: $<HTMLInputElement>("follow"),
-  file: $<HTMLInputElement>("file"), sample: $<HTMLSelectElement>("sample"),
+  title: $("title"),
+  drop: $("drop"),
+  hud: $("hud"),
+  manifest: $("manifest"),
+  play: $<HTMLButtonElement>("play"),
+  scrub: $<HTMLInputElement>("scrub"),
+  clock: $("clock"),
+  speed: $<HTMLSelectElement>("speed"),
+  follow: $<HTMLInputElement>("follow"),
+  file: $<HTMLInputElement>("file"),
+  sample: $<HTMLSelectElement>("sample"),
 };
 
 const world = new World(scene);
@@ -43,10 +56,17 @@ const player = new Player();
 const seek = (t: number): void => player.seek(t);
 const eventList = new EventList($("events"), seek);
 const frameStrip = new FrameStrip(
-  { card: $("framesCard"), strip: $("frames"), large: $<HTMLImageElement>("frameLarge"), caption: $("frameCaption") }, seek,
+  { card: $("framesCard"), strip: $("frames"), large: $<HTMLImageElement>("frameLarge"), caption: $("frameCaption") },
+  seek,
 );
 const headCamera = new HeadCamera(
-  { box: $("fpv"), video: $<HTMLVideoElement>("fpvVideo"), label: $("fpvLabel"), toggle: $<HTMLInputElement>("robotView") }, player,
+  {
+    box: $("fpv"),
+    video: $<HTMLVideoElement>("fpvVideo"),
+    label: $("fpvLabel"),
+    toggle: $<HTMLInputElement>("robotView"),
+  },
+  player,
 );
 let episode: Episode | null = null;
 
@@ -94,7 +114,8 @@ player.onTick((t) => {
   if (!episode) return;
   try {
     render(episode, t);
-  } catch (err) {  // a bad episode must stop the replay with a message, not freeze the animation loop
+  } catch (err) {
+    // a bad episode must stop the replay with a message, not freeze the animation loop
     player.playing = false;
     renderTransport(t);
     ui.title.textContent = `error while replaying: ${(err as Error).message}`;
@@ -121,7 +142,7 @@ function renderTransport(t: number): void {
   ui.play.textContent = player.playing ? "❚❚" : "▶";
 }
 
-let robotModel = "";  // the GLB currently loaded, so that episodes of the same robot do not reload it
+let robotModel = ""; // the GLB currently loaded, so that episodes of the same robot do not reload it
 
 /** Draws the robot the episode was recorded on (manifest.robot.model); a failed load keeps the previous model. */
 async function showRobot(url: string): Promise<void> {
@@ -175,7 +196,7 @@ async function loadFromLink(): Promise<void> {
     await loadZip(await readCapped(res, MAX_ZIP_BYTES));
     const source = new URL(target);
     if (source.origin !== location.origin && episode) {
-      ui.title.textContent += ` · loaded from ${source.host}`;  // never let a shared link pass as ours
+      ui.title.textContent += ` · loaded from ${source.host}`; // never let a shared link pass as ours
     }
   } catch (err) {
     ui.title.textContent = `error: cannot load ${target}: ${(err as Error).message}`;
@@ -197,7 +218,10 @@ ui.play.addEventListener("click", () => player.toggle());
 ui.scrub.addEventListener("input", () => player.seek(Number(ui.scrub.value) * player.duration));
 ui.speed.addEventListener("change", () => (player.speed = Number(ui.speed.value)));
 addEventListener("keydown", (e) => {
-  if (e.code === "Space" && episode) { e.preventDefault(); player.toggle(); }
+  if (e.code === "Space" && episode) {
+    e.preventDefault();
+    player.toggle();
+  }
   if (e.code === "ArrowRight") player.seek(player.t + 1);
   if (e.code === "ArrowLeft") player.seek(player.t - 1);
 });

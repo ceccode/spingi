@@ -11,10 +11,18 @@ function encode(bytes: Uint8Array): string {
 function raw(over: Record<string, unknown> = {}): Record<string, unknown> {
   const mm = new Int16Array([0, 100, 200, 0, 100, 400]);
   return {
-    format: 1, x0: 0, y0: 0, cell_m: 1, rows: 2, cols: 3,
+    format: 1,
+    x0: 0,
+    y0: 0,
+    cell_m: 1,
+    rows: 2,
+    cols: 3,
     heights_mm: encode(new Uint8Array(mm.buffer)),
     surface_ids: encode(new Uint8Array([0, 0, 1, 0, 1, 1])),
-    surfaces: [{ name: "asphalt", rgb: [0.2, 0.2, 0.2], speck: [0.3, 0.3, 0.3] }, { name: "grass", rgb: [0.3, 0.5, 0.2], speck: [0.2, 0.3, 0.1] }],
+    surfaces: [
+      { name: "asphalt", rgb: [0.2, 0.2, 0.2], speck: [0.3, 0.3, 0.3] },
+      { name: "grass", rgb: [0.3, 0.5, 0.2], speck: [0.2, 0.3, 0.1] },
+    ],
     obstacles_z: [0.45],
     ...over,
   };

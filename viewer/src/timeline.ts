@@ -66,7 +66,9 @@ function poseIn([a, b, u]: Bracket): RobotPose {
     yaw: a.robot.yaw + wrapAngle(b.robot.yaw - a.robot.yaw) * u,
     mode: a.robot.mode,
   };
-  const z = lerp(a.robot.z, b.robot.z, u), roll = lerp(a.robot.roll, b.robot.roll, u), pitch = lerp(a.robot.pitch, b.robot.pitch, u);
+  const z = lerp(a.robot.z, b.robot.z, u),
+    roll = lerp(a.robot.roll, b.robot.roll, u),
+    pitch = lerp(a.robot.pitch, b.robot.pitch, u);
   if (z !== undefined) Object.assign(pose, { z, roll: roll ?? 0, pitch: pitch ?? 0 });
   return pose;
 }
@@ -127,7 +129,10 @@ export function eventTimes(events: Event[]): number[] {
 }
 
 /** A camera frame of the episode and the replay time it is shown from. */
-export interface TimedFrame { id: string; t: number }
+export interface TimedFrame {
+  id: string;
+  t: number;
+}
 
 /** The frames in the order they are shown, each from the time of the event that names it. An episode whose events
  *  name none of its frames shows them all from the start. */

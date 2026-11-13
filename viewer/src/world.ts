@@ -1,12 +1,20 @@
 /** Three.js scene built from scene.yaml (and terrain.json outdoors). MuJoCo coordinates (Z up) inside a rotated group. */
 import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import {
-  landmarksOf, locationsOf, MAX_JOINTS, objectsOf, obstaclesOf,
-  type BaseLift, type Landmark, type Pose2D, type Position, type Scene,
+  type BaseLift,
+  type Landmark,
+  landmarksOf,
+  locationsOf,
+  MAX_JOINTS,
+  objectsOf,
+  obstaclesOf,
+  type Pose2D,
+  type Position,
+  type Scene,
 } from "./episode";
-import { heightAt, terrainGeometry, type Terrain } from "./terrain";
+import { heightAt, type Terrain, terrainGeometry } from "./terrain";
 
 const OBSTACLE_COLOR = 0x8a8f9c;
 const LABEL_LIFT = 0.25; // metres from an object's centre up to its label
@@ -47,7 +55,8 @@ function grainTexture(): THREE.DataTexture {
 /** An AprilTag-like face for a landmark: the black square, its border and 6x6 cells from the id, in a white margin.
  *  Not the real code of the tag, only its look; the runtime reads the real ones. */
 function tagTexture(markerId: number): THREE.CanvasTexture {
-  const cells = 12, px = 8;
+  const cells = 12,
+    px = 8;
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = cells * px;
   const ctx = canvas.getContext("2d")!;
@@ -59,7 +68,10 @@ function tagTexture(markerId: number): THREE.CanvasTexture {
   for (let r = 0; r < 6; r++) {
     for (let c = 0; c < 6; c++) {
       h = Math.imul(h ^ (h >>> 15), 2246822519) >>> 0;
-      if (h & 1) { ctx.fillStyle = "#ffffff"; ctx.fillRect((3 + c) * px, (3 + r) * px, px, px); }
+      if (h & 1) {
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect((3 + c) * px, (3 + r) * px, px, px);
+      }
     }
   }
   const tex = new THREE.CanvasTexture(canvas);
@@ -68,7 +80,12 @@ function tagTexture(markerId: number): THREE.CanvasTexture {
   return tex;
 }
 
-interface JointNode { node: THREE.Object3D; axis: THREE.Vector3; rest: THREE.Quaternion; stand: number }
+interface JointNode {
+  node: THREE.Object3D;
+  axis: THREE.Vector3;
+  rest: THREE.Quaternion;
+  stand: number;
+}
 
 export class World {
   readonly root = new THREE.Group(); // Z-up → Y-up
@@ -89,13 +106,22 @@ export class World {
     three.add(this.root);
     this.root.add(this.robot, this.scenery);
     const orange = 0xff9f1c;
-    const ring = new THREE.Mesh(new THREE.RingGeometry(0.26, 0.32, 48), new THREE.MeshBasicMaterial({ color: orange, transparent: true, opacity: 0.85, depthTest: false }));
-    const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.3, 16), new THREE.MeshBasicMaterial({ color: orange, depthTest: false }));
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.26, 0.32, 48),
+      new THREE.MeshBasicMaterial({ color: orange, transparent: true, opacity: 0.85, depthTest: false }),
+    );
+    const arrow = new THREE.Mesh(
+      new THREE.ConeGeometry(0.09, 0.3, 16),
+      new THREE.MeshBasicMaterial({ color: orange, depthTest: false }),
+    );
     arrow.rotation.z = -Math.PI / 2; // the cone points along +x, the heading
     arrow.position.x = 0.38;
     this.belief.add(ring, arrow);
     this.belief.renderOrder = 2;
-    this.beliefLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), new THREE.LineDashedMaterial({ color: orange, dashSize: 0.08, gapSize: 0.05, depthTest: false }));
+    this.beliefLine = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
+      new THREE.LineDashedMaterial({ color: orange, dashSize: 0.08, gapSize: 0.05, depthTest: false }),
+    );
     this.belief.visible = this.beliefLine.visible = false;
     this.root.add(this.belief, this.beliefLine);
   }
@@ -129,11 +155,17 @@ export class World {
     geom.setAttribute("uv", new THREE.BufferAttribute(g.uvs, 2));
     geom.setIndex(new THREE.BufferAttribute(g.indices, 1));
     geom.computeVertexNormals();
-    const mesh = new THREE.Mesh(geom, new THREE.MeshStandardMaterial({ vertexColors: true, map: grainTexture(), roughness: 0.95 }));
+    const mesh = new THREE.Mesh(
+      geom,
+      new THREE.MeshStandardMaterial({ vertexColors: true, map: grainTexture(), roughness: 0.95 }),
+    );
     mesh.receiveShadow = true;
     let low = Infinity;
     for (const h of terrain.heights) low = Math.min(low, h);
-    const field = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshStandardMaterial({ color: 0x5f6b48, roughness: 1 }));
+    const field = new THREE.Mesh(
+      new THREE.PlaneGeometry(400, 400),
+      new THREE.MeshStandardMaterial({ color: 0x5f6b48, roughness: 1 }),
+    );
     field.position.z = low - 0.05;
     field.receiveShadow = true;
     this.scenery.add(mesh, field);
@@ -141,7 +173,10 @@ export class World {
 
   /** The indoor floor, with a grid of one metre. */
   private addFloor(): void {
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), new THREE.MeshStandardMaterial({ color: 0x3a3d47, roughness: 1 }));
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(60, 60),
+      new THREE.MeshStandardMaterial({ color: 0x3a3d47, roughness: 1 }),
+    );
     floor.receiveShadow = true;
     const grid = new THREE.GridHelper(60, 60, 0x50545f, 0x2b2f3a);
     grid.rotation.x = Math.PI / 2;
@@ -153,16 +188,29 @@ export class World {
   private addLocations(scene: Scene): void {
     for (const { name, x, y, yaw, tolerance } of locationsOf(scene)) {
       const z = this.groundAt(x, y);
-      const disc = new THREE.Mesh(new THREE.CircleGeometry(Math.max(0.25, tolerance), 48), new THREE.MeshBasicMaterial({ color: 0x5b7cfa, transparent: true, opacity: 0.45 }));
+      const disc = new THREE.Mesh(
+        new THREE.CircleGeometry(Math.max(0.25, tolerance), 48),
+        new THREE.MeshBasicMaterial({ color: 0x5b7cfa, transparent: true, opacity: 0.45 }),
+      );
       disc.position.set(x, y, z + 0.01);
-      const arrow = new THREE.ArrowHelper(new THREE.Vector3(Math.cos(yaw), Math.sin(yaw), 0), new THREE.Vector3(x, y, z + 0.02), 0.35, 0x8fa4ff, 0.12, 0.08);
+      const arrow = new THREE.ArrowHelper(
+        new THREE.Vector3(Math.cos(yaw), Math.sin(yaw), 0),
+        new THREE.Vector3(x, y, z + 0.02),
+        0.35,
+        0x8fa4ff,
+        0.12,
+        0.08,
+      );
       this.scenery.add(disc, arrow, this.label(name, x, y, z + 0.5));
     }
   }
 
   private addObstacles(scene: Scene): void {
     for (const { index, x, y, w, d, h, color } of obstaclesOf(scene)) {
-      const box = new THREE.Mesh(new THREE.BoxGeometry(w, d, h), new THREE.MeshStandardMaterial({ color: color ?? OBSTACLE_COLOR, roughness: 0.85 }));
+      const box = new THREE.Mesh(
+        new THREE.BoxGeometry(w, d, h),
+        new THREE.MeshStandardMaterial({ color: color ?? OBSTACLE_COLOR, roughness: 0.85 }),
+      );
       box.position.set(x, y, (this.terrain?.obstaclesZ[index] ?? 0) + h / 2);
       box.castShadow = true;
       box.receiveShadow = true;
@@ -173,7 +221,10 @@ export class World {
   /** The things the robot can pick up, each with its id above; `setObjectPositions` moves them. */
   private addObjects(scene: Scene): void {
     for (const { id, x, y, z, size } of objectsOf(scene)) {
-      const box = new THREE.Mesh(new THREE.BoxGeometry(...size), new THREE.MeshStandardMaterial({ color: 0xd9473f, roughness: 0.6 }));
+      const box = new THREE.Mesh(
+        new THREE.BoxGeometry(...size),
+        new THREE.MeshStandardMaterial({ color: 0xd9473f, roughness: 0.6 }),
+      );
       box.position.set(x, y, z);
       box.castShadow = true;
       box.name = `obj_${id}`;
@@ -194,7 +245,10 @@ export class World {
         const m = o as THREE.Mesh;
         m.castShadow = true;
         const mat = m.material as THREE.MeshStandardMaterial;
-        if (mat && "roughness" in mat) { mat.roughness = 0.55; mat.metalness = 0.25; }
+        if (mat && "roughness" in mat) {
+          mat.roughness = 0.55;
+          mat.metalness = 0.25;
+        }
       }
     });
     dispose(this.robot);
@@ -214,7 +268,12 @@ export class World {
       if (!Array.isArray(axis) || axis.length !== 3 || !axis.every((v) => typeof v === "number")) continue;
       const node = gltf.scene.getObjectByName(body);
       if (!node) continue;
-      this.joints.set(name, { node, axis: new THREE.Vector3(...(axis as [number, number, number])).normalize(), rest: node.quaternion.clone(), stand });
+      this.joints.set(name, {
+        node,
+        axis: new THREE.Vector3(...(axis as [number, number, number])).normalize(),
+        rest: node.quaternion.clone(),
+        stand,
+      });
     }
     this.setJoints(null);
   }
@@ -259,7 +318,8 @@ export class World {
     this.belief.position.set(estimate.x, estimate.y, z(estimate.x, estimate.y));
     this.belief.rotation.set(0, 0, estimate.yaw);
     this.beliefLine.geometry.setFromPoints([
-      new THREE.Vector3(truth.x, truth.y, z(truth.x, truth.y)), new THREE.Vector3(estimate.x, estimate.y, z(estimate.x, estimate.y)),
+      new THREE.Vector3(truth.x, truth.y, z(truth.x, truth.y)),
+      new THREE.Vector3(estimate.x, estimate.y, z(estimate.x, estimate.y)),
     ]);
     this.beliefLine.computeLineDistances();
   }
@@ -279,16 +339,25 @@ export class World {
     const g = new THREE.Group();
     g.position.set(lm.x, lm.y, groundZ + lm.height);
     g.rotation.z = lm.facing;
-    const plate = new THREE.Mesh(new THREE.BoxGeometry(0.02, 2 * half + 0.04, 2 * half + 0.04), new THREE.MeshStandardMaterial({ color: 0xedede8, roughness: 0.8 }));
+    const plate = new THREE.Mesh(
+      new THREE.BoxGeometry(0.02, 2 * half + 0.04, 2 * half + 0.04),
+      new THREE.MeshStandardMaterial({ color: 0xedede8, roughness: 0.8 }),
+    );
     plate.position.x = -0.011;
     plate.castShadow = true;
-    const face = new THREE.Mesh(new THREE.PlaneGeometry(2 * half, 2 * half), new THREE.MeshBasicMaterial({ map: tagTexture(lm.markerId) }));
+    const face = new THREE.Mesh(
+      new THREE.PlaneGeometry(2 * half, 2 * half),
+      new THREE.MeshBasicMaterial({ map: tagTexture(lm.markerId) }),
+    );
     face.rotation.set(Math.PI / 2, Math.PI / 2, 0); // the plane's face looks along +x, upright
     face.position.x = 0.001;
     g.add(plate, face);
     const pole = lm.height - half - 0.02;
     if (lm.post && pole > 0) {
-      const post = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, pole), new THREE.MeshStandardMaterial({ color: 0x6b7078, roughness: 0.7 }));
+      const post = new THREE.Mesh(
+        new THREE.BoxGeometry(0.05, 0.05, pole),
+        new THREE.MeshStandardMaterial({ color: 0x6b7078, roughness: 0.7 }),
+      );
       post.position.set(-0.045, 0, -(half + 0.02) - pole / 2);
       post.castShadow = true;
       g.add(post);
@@ -298,15 +367,19 @@ export class World {
 
   private label(text: string, x: number, y: number, z: number): THREE.Sprite {
     const canvas = document.createElement("canvas");
-    canvas.width = 256; canvas.height = 64;
+    canvas.width = 256;
+    canvas.height = 64;
     const ctx = canvas.getContext("2d")!;
     ctx.fillStyle = "rgba(20,22,28,0.7)";
     ctx.fillRect(0, 0, 256, 64);
     ctx.font = "600 28px system-ui, sans-serif";
     ctx.fillStyle = "#e8eaf0";
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
     ctx.fillText(text, 128, 32);
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false, sizeAttenuation: false }));
+    const sprite = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false, sizeAttenuation: false }),
+    );
     sprite.scale.set(0.16, 0.04, 1); // constant on-screen size
     sprite.position.set(x, y, z);
     this.labels.push(sprite);

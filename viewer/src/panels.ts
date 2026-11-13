@@ -4,7 +4,7 @@
 import { describeEvent, eventTone, manifestRows } from "./describe";
 import type { CameraVideo, Episode } from "./episode";
 import { eventTimes, frameTimeline, reached, type TimedFrame } from "./timeline";
-import { videoSync, type ReplayClock } from "./video";
+import { type ReplayClock, videoSync } from "./video";
 
 /** Creates an element whose text is set with textContent: never parsed as HTML. */
 function el(tag: string, text?: string, className?: string): HTMLElement {
@@ -28,28 +28,34 @@ export class EventList {
   private times: number[] = [];
   private marked = -1; // how many events were marked as happened at the last render; -1: not rendered yet
 
-  constructor(private readonly list: HTMLElement, private readonly seek: Seek) {}
+  constructor(
+    private readonly list: HTMLElement,
+    private readonly seek: Seek,
+  ) {}
 
   show(ep: Episode): void {
     this.times = eventTimes(ep.events);
     this.marked = -1;
-    this.list.replaceChildren(...ep.events.map((e, i) => {
-      const time = this.times[i]!;
-      const li = el("li");
-      const tone = eventTone(e.kind);
-      if (tone) li.classList.add(tone);
-      const body = el("span");
-      body.append(el("b", e.kind), ` ${describeEvent(e)}`);
-      li.append(el("span", `${time.toFixed(1)}s`, "t"), body);
-      li.addEventListener("click", () => this.seek(time));
-      return li;
-    }));
+    this.list.replaceChildren(
+      ...ep.events.map((e, i) => {
+        const time = this.times[i]!;
+        const li = el("li");
+        const tone = eventTone(e.kind);
+        if (tone) li.classList.add(tone);
+        const body = el("span");
+        body.append(el("b", e.kind), ` ${describeEvent(e)}`);
+        li.append(el("span", `${time.toFixed(1)}s`, "t"), body);
+        li.addEventListener("click", () => this.seek(time));
+        return li;
+      }),
+    );
   }
 
   render(t: number): void {
     const { count, last } = reached(this.times, t);
     const items = this.list.children;
-    if (count !== this.marked) { // otherwise the same events as at the last render: their marks are already right
+    if (count !== this.marked) {
+      // otherwise the same events as at the last render: their marks are already right
       this.marked = count;
       for (let i = 0; i < items.length; i++) {
         items[i]!.classList.toggle("past", this.times[i]! <= t);
@@ -80,13 +86,15 @@ export class FrameStrip {
     this.urls = this.frames.map((f) => URL.createObjectURL(ep.frames.get(f.id)!));
     this.visible = -1;
     this.ui.large.removeAttribute("src");
-    this.ui.strip.replaceChildren(...this.frames.map((f, i) => {
-      const img = document.createElement("img");
-      img.src = this.urls[i]!;
-      img.title = caption(f);
-      img.addEventListener("click", () => this.seek(f.t));
-      return img;
-    }));
+    this.ui.strip.replaceChildren(
+      ...this.frames.map((f, i) => {
+        const img = document.createElement("img");
+        img.src = this.urls[i]!;
+        img.title = caption(f);
+        img.addEventListener("click", () => this.seek(f.t));
+        return img;
+      }),
+    );
     this.ui.card.hidden = this.frames.length === 0;
   }
 
@@ -122,12 +130,15 @@ export class HeadCamera {
       this.sync();
     });
     ui.box.addEventListener("click", () => ui.box.classList.toggle("large"));
-    ui.video.addEventListener("seeked", () => { if (!this.replay.playing) this.sync(); }); // the last scrub may have come mid-seek
+    ui.video.addEventListener("seeked", () => {
+      if (!this.replay.playing) this.sync();
+    }); // the last scrub may have come mid-seek
   }
 
   show(ep: Episode): void {
     const { box, video, label, toggle } = this.ui;
-    const cam = this.cam = ep.cameraVideo;
+    const cam = ep.cameraVideo;
+    this.cam = cam;
     video.pause();
     if (this.url) URL.revokeObjectURL(this.url);
     this.url = cam ? URL.createObjectURL(cam.blob) : "";
@@ -150,13 +161,20 @@ export class HeadCamera {
       if (!video.paused) video.pause();
       return;
     }
-    const { run, rate, seekTo } = videoSync(this.cam, this.replay, { currentTime: video.currentTime, seeking: video.seeking, starting: this.starting });
+    const { run, rate, seekTo } = videoSync(this.cam, this.replay, {
+      currentTime: video.currentTime,
+      seeking: video.seeking,
+      starting: this.starting,
+    });
     if (rate !== null && video.playbackRate !== rate) video.playbackRate = rate;
     if (!run && !video.paused) video.pause();
     if (seekTo !== null) video.currentTime = seekTo;
     if (run && video.paused && !this.starting) {
       this.starting = true;
-      video.play().catch(() => undefined).finally(() => (this.starting = false));
+      video
+        .play()
+        .catch(() => undefined)
+        .finally(() => (this.starting = false));
     }
   }
 

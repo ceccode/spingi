@@ -31,6 +31,12 @@ npm test
 runs the unit tests (episode reading, joint angles and the base's height, the ground, the head camera's video and which frame to show when, the replay clock, loading limits and handling of untrusted episodes) with Vitest.
 
 ```bash
+npm run lint
+```
+
+checks formatting, import order and lint rules with Biome (`biome.json`, ADR-0019); `npm run format` applies the fixes. CI runs the check.
+
+```bash
 npm run build
 ```
 

@@ -60,6 +60,8 @@ jobs:
         run: npm ci
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
+      - name: Lint and format
+        run: npm run lint
       - name: Tests
         run: npm test
       - name: Build
