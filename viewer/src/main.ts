@@ -1,21 +1,17 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { hudText } from "./describe";
 import {
-  DEFAULT_ROBOT_MODEL, describeEvent, episodeDuration, estimateAt, eventTime, jointsAt, loadEpisodeFromZip, manifestRows,
-  MAX_ZIP_BYTES, objectsAt, poseAt, readCapped, robotJointsUrl, robotModelUrl, safeEpisodeUrl, videoTimeAt, type Episode,
+  DEFAULT_ROBOT_MODEL, loadEpisodeFromZip, MAX_ZIP_BYTES, readCapped, robotJointsUrl, robotModelUrl, safeEpisodeUrl,
+  type Episode,
 } from "./episode";
+import { EventList, FrameStrip, HeadCamera, showManifest } from "./panels";
 import { Player } from "./player";
+import { episodeDuration, stateAt } from "./timeline";
 import { World } from "./world";
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
-/** Creates an element whose text is set with textContent: never parsed as HTML. */
-function el(tag: string, text?: string, className?: string): HTMLElement {
-  const node = document.createElement(tag);
-  if (text !== undefined) node.textContent = text;
-  if (className) node.className = className;
-  return node;
-}
 const canvas = $<HTMLCanvasElement>("canvas");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -35,21 +31,24 @@ sun.shadow.camera.left = sun.shadow.camera.bottom = -12;
 sun.shadow.camera.right = sun.shadow.camera.top = 12;
 scene.add(sun);
 
+const ui = {
+  title: $("title"), drop: $("drop"), hud: $("hud"), manifest: $("manifest"),
+  play: $<HTMLButtonElement>("play"), scrub: $<HTMLInputElement>("scrub"), clock: $("clock"),
+  speed: $<HTMLSelectElement>("speed"), follow: $<HTMLInputElement>("follow"),
+  file: $<HTMLInputElement>("file"), sample: $<HTMLSelectElement>("sample"),
+};
+
 const world = new World(scene);
 const player = new Player();
+const seek = (t: number): void => player.seek(t);
+const eventList = new EventList($("events"), seek);
+const frameStrip = new FrameStrip(
+  { card: $("framesCard"), strip: $("frames"), large: $<HTMLImageElement>("frameLarge"), caption: $("frameCaption") }, seek,
+);
+const headCamera = new HeadCamera(
+  { box: $("fpv"), video: $<HTMLVideoElement>("fpvVideo"), label: $("fpvLabel"), toggle: $<HTMLInputElement>("robotView") }, player,
+);
 let episode: Episode | null = null;
-let eventTimes: number[] = [];
-let frameTimes: { id: string; t: number }[] = [];
-let frameUrls: string[] = [];
-let videoUrl = "";
-
-const ui = {
-  title: $("title"), drop: $("drop"), hud: $("hud"), manifest: $("manifest"), events: $<HTMLOListElement>("events"),
-  framesCard: $("framesCard"), frames: $("frames"), frameLarge: $<HTMLImageElement>("frameLarge"), frameCaption: $("frameCaption"), play: $<HTMLButtonElement>("play"), scrub: $<HTMLInputElement>("scrub"),
-  clock: $("clock"), speed: $<HTMLSelectElement>("speed"), follow: $<HTMLInputElement>("follow"),
-  file: $<HTMLInputElement>("file"), sample: $<HTMLSelectElement>("sample"),
-  fpv: $("fpv"), fpvVideo: $<HTMLVideoElement>("fpvVideo"), fpvLabel: $("fpvLabel"), robotView: $<HTMLInputElement>("robotView"),
-};
 
 function resize(): void {
   const { clientWidth: w, clientHeight: h } = canvas.parentElement!;
@@ -60,21 +59,30 @@ function resize(): void {
 addEventListener("resize", resize);
 resize();
 
-const robotPos = new THREE.Vector3();
-const lastTarget = new THREE.Vector3();
+const followed = new THREE.Vector3(); // the point the camera looked at last
+const robotNow = new THREE.Vector3();
+
+/** Moves the camera with the robot, keeping the angle and the distance the user chose. */
+function followRobot(): void {
+  world.robotWorldPosition(robotNow).y += 0.8; // look at the robot's middle, not at its feet
+  camera.position.add(robotNow.clone().sub(followed));
+  controls.target.copy(robotNow);
+  followed.copy(robotNow);
+}
+
+/** A new episode's first view: looking down at the robot, over containers and racks. */
+function frameRobot(): void {
+  world.robotWorldPosition(followed);
+  controls.target.copy(followed);
+  camera.position.set(followed.x - 3.5, followed.y + 6, followed.z + 4);
+}
+
 let lastWall = performance.now();
 function loop(now: number): void {
   const dt = Math.min(0.1, (now - lastWall) / 1000);
   lastWall = now;
   player.advance(dt);
-  if (episode && ui.follow.checked) {
-    world.robotWorldPosition(robotPos);
-    robotPos.y += 0.8;
-    const delta = robotPos.clone().sub(lastTarget);
-    controls.target.copy(robotPos);
-    camera.position.add(delta);
-    lastTarget.copy(robotPos);
-  }
+  if (episode && ui.follow.checked) followRobot();
   controls.update();
   world.faceCamera(camera);
   renderer.render(scene, camera);
@@ -88,94 +96,29 @@ player.onTick((t) => {
     render(episode, t);
   } catch (err) {  // a bad episode must stop the replay with a message, not freeze the animation loop
     player.playing = false;
+    renderTransport(t);
     ui.title.textContent = `error while replaying: ${(err as Error).message}`;
   }
 });
 
 function render(episode: Episode, t: number): void {
-  const pose = poseAt(episode.trajectory, t);
-  world.setRobotPose(pose);
-  const belief = estimateAt(episode.trajectory, t);
-  world.setEstimate(belief, pose);
-  world.setJoints(jointsAt(episode.trajectory, t));
-  world.setObjectPositions(objectsAt(episode.trajectory, t));
-  syncVideo(t);
+  const state = stateAt(episode.trajectory, t);
+  world.setRobotPose(state.pose);
+  world.setEstimate(state.estimate, state.pose);
+  world.setJoints(state.joints);
+  world.setObjectPositions(state.objects);
+  headCamera.sync();
+  renderTransport(t);
+  ui.hud.textContent = hudText(t, state.pose, state.estimate);
+  eventList.render(t);
+  frameStrip.render(t);
+}
+
+/** The play button, the scrub bar and the clock. */
+function renderTransport(t: number): void {
   ui.scrub.value = String(t / player.duration);
   ui.clock.textContent = `${t.toFixed(1)} s`;
   ui.play.textContent = player.playing ? "❚❚" : "▶";
-  const height = pose.z !== undefined ? `  z ${pose.z.toFixed(2)}` : "";
-  const off = belief ? `\nbelieves it is ${Math.hypot(belief.x - pose.x, belief.y - pose.y).toFixed(2)} m away (orange)` : "";
-  ui.hud.textContent = `t ${t.toFixed(2)} s\nx ${pose.x.toFixed(2)}  y ${pose.y.toFixed(2)}${height}  yaw ${pose.yaw.toFixed(2)}\n${pose.mode}${off}`;
-  let current = -1;
-  const items = ui.events.children;
-  for (let i = 0; i < items.length; i++) {
-    const past = eventTimes[i]! <= t;
-    items[i]!.classList.toggle("past", past);
-    if (past) current = i;
-  }
-  for (let i = 0; i < items.length; i++) items[i]!.classList.toggle("current", i === current);
-  if (current >= 0) (items[current] as HTMLElement).scrollIntoView({ block: "nearest" });
-  const imgs = ui.frames.children;
-  let latest = -1;
-  for (let i = 0; i < imgs.length; i++) {
-    const visible = (frameTimes[i]?.t ?? Infinity) <= t;
-    imgs[i]!.classList.toggle("visible", visible);
-    if (visible) latest = i;
-  }
-  if (latest >= 0) {
-    const src = (imgs[latest] as HTMLImageElement).src;
-    if (ui.frameLarge.src !== src) ui.frameLarge.src = src;
-    ui.frameLarge.hidden = false;
-    ui.frameCaption.textContent = `${frameTimes[latest]!.id} · ${frameTimes[latest]!.t.toFixed(1)} s`;
-  } else {
-    ui.frameLarge.hidden = true;
-    ui.frameCaption.textContent = "no frame yet";
-  }
-}
-
-const DRIFT_S = 0.3;  // video seconds the camera may run ahead of or behind the replay before it is put back
-let starting = false;  // play() was called and has not started yet
-
-/** Keeps the head camera's video on the replay's time: it plays along at the replay's speed and is sought only when
- *  it drifts; paused or scrubbing, it shows the frame taken last at or before t. */
-function syncVideo(t: number): void {
-  const cam = episode?.cameraVideo;
-  const video = ui.fpvVideo;
-  if (!cam || ui.fpv.hidden) {
-    if (!video.paused) video.pause();
-    return;
-  }
-  const along = t - cam.start;  // where the video is if it runs with the replay
-  if (player.playing && along >= 0 && along < (cam.frames - 1) / cam.fps) {
-    if (video.playbackRate !== player.speed) video.playbackRate = player.speed;
-    if (!starting && Math.abs(video.currentTime - along) > DRIFT_S * Math.max(1, player.speed)) video.currentTime = along;
-    if (video.paused && !starting) {
-      starting = true;
-      video.play().catch(() => undefined).finally(() => (starting = false));
-    }
-    return;
-  }
-  if (!video.paused) video.pause();  // never left to end: play() after the end would restart it from the beginning
-  const still = videoTimeAt(cam, t);
-  if (!video.seeking && Math.abs(video.currentTime - still) > 0.5 / cam.fps) video.currentTime = still;
-}
-
-/** The video of a new episode, or none: the robot's view is offered only when the episode has one. */
-function showVideo(ep: Episode): void {
-  const cam = ep.cameraVideo;
-  ui.fpvVideo.pause();
-  if (videoUrl) URL.revokeObjectURL(videoUrl);
-  videoUrl = cam ? URL.createObjectURL(cam.blob) : "";
-  if (cam) {
-    ui.fpvVideo.src = videoUrl;
-    ui.fpv.style.aspectRatio = `${cam.width} / ${cam.height}`;
-    ui.fpvLabel.textContent = `${cam.camera} camera · ${cam.fps} fps`;
-  } else {
-    ui.fpvVideo.removeAttribute("src");
-    ui.fpvVideo.load();
-  }
-  ui.robotView.disabled = !cam;
-  ui.fpv.hidden = !cam || !ui.robotView.checked;
 }
 
 let robotModel = "";  // the GLB currently loaded, so that episodes of the same robot do not reload it
@@ -198,52 +141,13 @@ async function show(ep: Episode): Promise<void> {
     ui.title.textContent += ` · robot model not loaded: ${(err as Error).message}`;
   }
   ui.drop.classList.add("hidden");
-  showVideo(ep);
-  // Episode content is untrusted (a shared zip, a ?url= link): it only ever reaches the page as text.
-  const dl = el("dl");
-  for (const [label, value] of manifestRows(ep)) dl.append(el("dt", label), el("dd", value));
-  ui.manifest.replaceChildren(el("h3", "Episode"), dl);
-
-  eventTimes = ep.events.map((e) => eventTime(e, ep.events));
-  ui.events.replaceChildren();
-  ep.events.forEach((e, i) => {
-    const li = document.createElement("li");
-    if (e.kind.startsWith("safety")) li.classList.add("safety");
-    if (e.kind.startsWith("human") || e.kind === "operator.stop") li.classList.add("human");
-    const body = el("span");
-    body.append(el("b", e.kind), ` ${describeEvent(e)}`);
-    li.append(el("span", `${eventTimes[i]!.toFixed(1)}s`, "t"), body);
-    li.addEventListener("click", () => player.seek(eventTimes[i]!));
-    ui.events.appendChild(li);
-  });
-
-  for (const u of frameUrls) URL.revokeObjectURL(u);  // release the previous episode's images
-  frameUrls = [];
-  ui.frameLarge.removeAttribute("src");
-  ui.frames.replaceChildren();
-  frameTimes = [];
-  for (const e of ep.events) {
-    const id = (e as Record<string, unknown>).frame_id as string | undefined;
-    if (id && ep.frames.has(id)) frameTimes.push({ id, t: eventTime(e, ep.events) });
-  }
-  if (frameTimes.length === 0) for (const id of ep.frames.keys()) frameTimes.push({ id, t: 0 });
-  for (const f of frameTimes) {
-    const img = document.createElement("img");
-    img.src = URL.createObjectURL(ep.frames.get(f.id)!);
-    frameUrls.push(img.src);
-    img.title = `${f.id} · ${f.t.toFixed(1)} s`;
-    img.addEventListener("click", () => player.seek(f.t));
-    ui.frames.appendChild(img);
-  }
-  ui.framesCard.hidden = frameTimes.length === 0;
-
+  headCamera.show(ep);
+  showManifest(ui.manifest, ep);
+  eventList.show(ep);
+  frameStrip.show(ep);
   ui.play.disabled = ui.scrub.disabled = false;
   player.reset(episodeDuration(ep));
-  const start = poseAt(ep.trajectory, 0);
-  world.setRobotPose(start);
-  world.robotWorldPosition(lastTarget);
-  controls.target.copy(lastTarget);
-  camera.position.set(lastTarget.x - 3.5, lastTarget.y + 6, lastTarget.z + 4); // looking down over containers and racks
+  frameRobot();
 }
 
 async function loadZip(buf: ArrayBuffer): Promise<void> {
@@ -251,6 +155,30 @@ async function loadZip(buf: ArrayBuffer): Promise<void> {
     await show(loadEpisodeFromZip(buf));
   } catch (err) {
     ui.title.textContent = `error: ${(err as Error).message}`;
+  }
+}
+
+/** The episode named by `?url=`, if any; `#url=` also works in development (Vite rejects queries that look like paths). */
+async function loadFromLink(): Promise<void> {
+  const url = new URLSearchParams(location.search).get("url") ?? new URLSearchParams(location.hash.slice(1)).get("url");
+  if (!url) return;
+  const target = safeEpisodeUrl(url, location.href);
+  if (!target) {
+    ui.title.textContent = "error: the episode URL must be http or https";
+    return;
+  }
+  try {
+    const res = await fetch(target);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const declared = Number(res.headers.get("content-length") ?? 0);
+    if (declared > MAX_ZIP_BYTES) throw new Error("episode archive too large");
+    await loadZip(await readCapped(res, MAX_ZIP_BYTES));
+    const source = new URL(target);
+    if (source.origin !== location.origin && episode) {
+      ui.title.textContent += ` · loaded from ${source.host}`;  // never let a shared link pass as ours
+    }
+  } catch (err) {
+    ui.title.textContent = `error: cannot load ${target}: ${(err as Error).message}`;
   }
 }
 
@@ -266,12 +194,6 @@ ui.sample.addEventListener("change", async () => {
   ui.sample.value = "";
 });
 ui.play.addEventListener("click", () => player.toggle());
-ui.robotView.addEventListener("change", () => {
-  ui.fpv.hidden = !episode?.cameraVideo || !ui.robotView.checked;
-  syncVideo(player.t);
-});
-ui.fpv.addEventListener("click", () => ui.fpv.classList.toggle("large"));
-ui.fpvVideo.addEventListener("seeked", () => { if (!player.playing) syncVideo(player.t); });  // the last scrub may have come mid-seek
 ui.scrub.addEventListener("input", () => player.seek(Number(ui.scrub.value) * player.duration));
 ui.speed.addEventListener("change", () => (player.speed = Number(ui.speed.value)));
 addEventListener("keydown", (e) => {
@@ -279,9 +201,17 @@ addEventListener("keydown", (e) => {
   if (e.code === "ArrowRight") player.seek(player.t + 1);
   if (e.code === "ArrowLeft") player.seek(player.t - 1);
 });
-for (const ev of ["dragenter", "dragover"]) canvas.parentElement!.addEventListener(ev, (e) => { e.preventDefault(); ui.drop.classList.remove("hidden"); ui.drop.classList.add("active"); });
-canvas.parentElement!.addEventListener("dragleave", () => ui.drop.classList.remove("active"));
-canvas.parentElement!.addEventListener("drop", async (e) => {
+
+const stage = canvas.parentElement!;
+for (const ev of ["dragenter", "dragover"]) {
+  stage.addEventListener(ev, (e) => {
+    e.preventDefault();
+    ui.drop.classList.remove("hidden");
+    ui.drop.classList.add("active");
+  });
+}
+stage.addEventListener("dragleave", () => ui.drop.classList.remove("active"));
+stage.addEventListener("drop", async (e) => {
   e.preventDefault();
   ui.drop.classList.remove("active");
   const f = (e as DragEvent).dataTransfer?.files?.[0];
@@ -295,26 +225,5 @@ canvas.parentElement!.addEventListener("drop", async (e) => {
   } catch (err) {
     ui.title.textContent = `robot model not loaded: ${(err as Error).message}`;
   }
-  // `?url=` in production; `#url=` also works in development (Vite rejects queries that look like paths).
-  const url = new URLSearchParams(location.search).get("url") ?? new URLSearchParams(location.hash.slice(1)).get("url");
-  if (url) {
-    const target = safeEpisodeUrl(url, location.href);
-    if (!target) {
-      ui.title.textContent = "error: the episode URL must be http or https";
-      return;
-    }
-    try {
-      const res = await fetch(target);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const declared = Number(res.headers.get("content-length") ?? 0);
-      if (declared > MAX_ZIP_BYTES) throw new Error("episode archive too large");
-      await loadZip(await readCapped(res, MAX_ZIP_BYTES));
-      const source = new URL(target);
-      if (source.origin !== location.origin && episode) {
-        ui.title.textContent += ` · loaded from ${source.host}`;  // never let a shared link pass as ours
-      }
-    } catch (err) {
-      ui.title.textContent = `error: cannot load ${target}: ${(err as Error).message}`;
-    }
-  }
+  await loadFromLink();
 })();

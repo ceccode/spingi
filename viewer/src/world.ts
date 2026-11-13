@@ -2,11 +2,26 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
-import { landmarksOf, MAX_JOINTS, type BaseLift, type Landmark, type Pose2D, type Scene } from "./episode";
+import {
+  landmarksOf, locationsOf, MAX_JOINTS, objectsOf, obstaclesOf,
+  type BaseLift, type Landmark, type Pose2D, type Position, type Scene,
+} from "./episode";
 import { heightAt, terrainGeometry, type Terrain } from "./terrain";
 
 const OBSTACLE_COLOR = 0x8a8f9c;
-const HEX = /^#[0-9a-fA-F]{6}$/;
+const LABEL_LIFT = 0.25; // metres from an object's centre up to its label
+
+/** Frees the GPU memory of everything under `root`: three.js keeps geometries, materials and textures until told. */
+export function dispose(root: THREE.Object3D): void {
+  root.traverse((o) => {
+    const { geometry, material } = o as Partial<THREE.Mesh>;
+    if (geometry && !(o instanceof THREE.Sprite)) geometry.dispose(); // every sprite shares one geometry
+    for (const m of material ? [material].flat() : []) {
+      for (const value of Object.values(m)) if (value instanceof THREE.Texture) value.dispose();
+      m.dispose();
+    }
+  });
+}
 
 /** Fine grain multiplied over the surface colours: stones, asphalt aggregate, blades of grass at a glance. 1 m per tile. */
 function grainTexture(): THREE.DataTexture {
@@ -58,8 +73,9 @@ interface JointNode { node: THREE.Object3D; axis: THREE.Vector3; rest: THREE.Qua
 export class World {
   readonly root = new THREE.Group(); // Z-up → Y-up
   readonly robot = new THREE.Group();
+  private readonly scenery = new THREE.Group(); // what `build` draws from the episode's scene, replaced at each one
   private readonly labels: THREE.Sprite[] = [];
-  private readonly objects = new Map<string, { mesh: THREE.Mesh; label: THREE.Sprite; halfHeight: number }>();
+  private readonly objects = new Map<string, { mesh: THREE.Mesh; label: THREE.Sprite }>();
   private joints = new Map<string, JointNode>();
   private base: THREE.Object3D | null = null; // the robot's root body: carries height and tilt
   private baseZ = 0;
@@ -68,10 +84,10 @@ export class World {
   private readonly belief = new THREE.Group();
   private readonly beliefLine: THREE.Line;
 
-  constructor(readonly three: THREE.Scene) {
+  constructor(three: THREE.Scene) {
     this.root.rotation.x = -Math.PI / 2;
     three.add(this.root);
-    this.root.add(this.robot);
+    this.root.add(this.robot, this.scenery);
     const orange = 0xff9f1c;
     const ring = new THREE.Mesh(new THREE.RingGeometry(0.26, 0.32, 48), new THREE.MeshBasicMaterial({ color: orange, transparent: true, opacity: 0.85, depthTest: false }));
     const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.3, 16), new THREE.MeshBasicMaterial({ color: orange, depthTest: false }));
@@ -81,78 +97,89 @@ export class World {
     this.belief.renderOrder = 2;
     this.beliefLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), new THREE.LineDashedMaterial({ color: orange, dashSize: 0.08, gapSize: 0.05, depthTest: false }));
     this.belief.visible = this.beliefLine.visible = false;
+    this.root.add(this.belief, this.beliefLine);
   }
 
   build(scene: Scene, terrain: Terrain | null = null): void {
-    for (const child of [...this.root.children]) if (child !== this.robot) this.root.remove(child);
-    this.root.add(this.belief, this.beliefLine);
+    dispose(this.scenery);
+    this.scenery.clear();
     this.belief.visible = this.beliefLine.visible = false;
     this.labels.length = 0;
     this.objects.clear();
     this.terrain = terrain;
-    const ground = (x: number, y: number): number => (terrain ? heightAt(terrain, x, y) : 0);
+    if (terrain) this.addTerrain(terrain);
+    else this.addFloor();
+    this.addLocations(scene);
+    this.addObstacles(scene);
+    for (const lm of landmarksOf(scene)) this.scenery.add(this.landmark(lm, this.groundAt(lm.x, lm.y)));
+    this.addObjects(scene);
+  }
 
-    if (terrain) {
-      const g = terrainGeometry(terrain);
-      const geom = new THREE.BufferGeometry();
-      geom.setAttribute("position", new THREE.BufferAttribute(g.positions, 3));
-      geom.setAttribute("color", new THREE.BufferAttribute(g.colors, 3));
-      geom.setAttribute("uv", new THREE.BufferAttribute(g.uvs, 2));
-      geom.setIndex(new THREE.BufferAttribute(g.indices, 1));
-      geom.computeVertexNormals();
-      const mesh = new THREE.Mesh(geom, new THREE.MeshStandardMaterial({ vertexColors: true, map: grainTexture(), roughness: 0.95 }));
-      mesh.receiveShadow = true;
-      this.root.add(mesh);
-      let low = Infinity;
-      for (const h of terrain.heights) low = Math.min(low, h);
-      const field = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshStandardMaterial({ color: 0x5f6b48, roughness: 1 }));
-      field.position.z = low - 0.05; // around the terrain, like the simulator's backstop
-      field.receiveShadow = true;
-      this.root.add(field);
-    } else {
-      const floor = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), new THREE.MeshStandardMaterial({ color: 0x3a3d47, roughness: 1 }));
-      floor.receiveShadow = true;
-      this.root.add(floor);
-      const grid = new THREE.GridHelper(60, 60, 0x50545f, 0x2b2f3a);
-      grid.rotation.x = Math.PI / 2;
-      grid.position.z = 0.002;
-      this.root.add(grid);
+  /** Ground height under a point: the terrain's outdoors, zero on a flat floor. */
+  private groundAt(x: number, y: number): number {
+    return this.terrain ? heightAt(this.terrain, x, y) : 0;
+  }
+
+  /** The outdoor ground, and a field around it like the simulator's backstop. */
+  private addTerrain(terrain: Terrain): void {
+    const g = terrainGeometry(terrain);
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute("position", new THREE.BufferAttribute(g.positions, 3));
+    geom.setAttribute("color", new THREE.BufferAttribute(g.colors, 3));
+    geom.setAttribute("uv", new THREE.BufferAttribute(g.uvs, 2));
+    geom.setIndex(new THREE.BufferAttribute(g.indices, 1));
+    geom.computeVertexNormals();
+    const mesh = new THREE.Mesh(geom, new THREE.MeshStandardMaterial({ vertexColors: true, map: grainTexture(), roughness: 0.95 }));
+    mesh.receiveShadow = true;
+    let low = Infinity;
+    for (const h of terrain.heights) low = Math.min(low, h);
+    const field = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshStandardMaterial({ color: 0x5f6b48, roughness: 1 }));
+    field.position.z = low - 0.05;
+    field.receiveShadow = true;
+    this.scenery.add(mesh, field);
+  }
+
+  /** The indoor floor, with a grid of one metre. */
+  private addFloor(): void {
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), new THREE.MeshStandardMaterial({ color: 0x3a3d47, roughness: 1 }));
+    floor.receiveShadow = true;
+    const grid = new THREE.GridHelper(60, 60, 0x50545f, 0x2b2f3a);
+    grid.rotation.x = Math.PI / 2;
+    grid.position.z = 0.002;
+    this.scenery.add(floor, grid);
+  }
+
+  /** Each named place: a disc as wide as its tolerance, an arrow for its heading and its name above. */
+  private addLocations(scene: Scene): void {
+    for (const { name, x, y, yaw, tolerance } of locationsOf(scene)) {
+      const z = this.groundAt(x, y);
+      const disc = new THREE.Mesh(new THREE.CircleGeometry(Math.max(0.25, tolerance), 48), new THREE.MeshBasicMaterial({ color: 0x5b7cfa, transparent: true, opacity: 0.45 }));
+      disc.position.set(x, y, z + 0.01);
+      const arrow = new THREE.ArrowHelper(new THREE.Vector3(Math.cos(yaw), Math.sin(yaw), 0), new THREE.Vector3(x, y, z + 0.02), 0.35, 0x8fa4ff, 0.12, 0.08);
+      this.scenery.add(disc, arrow, this.label(name, x, y, z + 0.5));
     }
+  }
 
-    for (const [name, loc] of Object.entries(scene.locations ?? {})) {
-      const r = loc.tolerance_m ? Math.max(0.25, loc.tolerance_m) : 0.25;
-      const z = ground(loc.pose.x, loc.pose.y);
-      const disc = new THREE.Mesh(new THREE.CircleGeometry(r, 48), new THREE.MeshBasicMaterial({ color: 0x5b7cfa, transparent: true, opacity: 0.45 }));
-      disc.position.set(loc.pose.x, loc.pose.y, z + 0.01);
-      this.root.add(disc);
-      const arrow = new THREE.ArrowHelper(new THREE.Vector3(Math.cos(loc.pose.yaw), Math.sin(loc.pose.yaw), 0), new THREE.Vector3(loc.pose.x, loc.pose.y, z + 0.02), 0.35, 0x8fa4ff, 0.12, 0.08);
-      this.root.add(arrow);
-      this.root.add(this.label(name, loc.pose.x, loc.pose.y, z + 0.5));
-    }
-
-    (scene.obstacles ?? []).forEach((obs, i) => {
-      const w = obs.w ?? 0.5, d = obs.d ?? 0.5, h = obs.h ?? 1;
-      const color = typeof obs.color === "string" && HEX.test(obs.color) ? obs.color : OBSTACLE_COLOR;
-      const box = new THREE.Mesh(new THREE.BoxGeometry(w, d, h), new THREE.MeshStandardMaterial({ color, roughness: 0.85 }));
-      box.position.set(obs.x, obs.y, (terrain?.obstaclesZ[i] ?? 0) + h / 2);
+  private addObstacles(scene: Scene): void {
+    for (const { index, x, y, w, d, h, color } of obstaclesOf(scene)) {
+      const box = new THREE.Mesh(new THREE.BoxGeometry(w, d, h), new THREE.MeshStandardMaterial({ color: color ?? OBSTACLE_COLOR, roughness: 0.85 }));
+      box.position.set(x, y, (this.terrain?.obstaclesZ[index] ?? 0) + h / 2);
       box.castShadow = true;
       box.receiveShadow = true;
-      this.root.add(box);
-    });
+      this.scenery.add(box);
+    }
+  }
 
-    for (const lm of landmarksOf(scene)) this.root.add(this.landmark(lm, ground(lm.x, lm.y)));
-
-    for (const [id, obj] of Object.entries(scene.objects ?? {})) {
-      const size = obj.size ?? [0.15, 0.1, 0.1];
-      const box = new THREE.Mesh(new THREE.BoxGeometry(size[0]!, size[1]!, size[2]!), new THREE.MeshStandardMaterial({ color: 0xd9473f, roughness: 0.6 }));
-      const p = obj.pose ?? { x: 0, y: 0, z: size[2]! / 2 };
-      box.position.set(p.x, p.y, p.z);
+  /** The things the robot can pick up, each with its id above; `setObjectPositions` moves them. */
+  private addObjects(scene: Scene): void {
+    for (const { id, x, y, z, size } of objectsOf(scene)) {
+      const box = new THREE.Mesh(new THREE.BoxGeometry(...size), new THREE.MeshStandardMaterial({ color: 0xd9473f, roughness: 0.6 }));
+      box.position.set(x, y, z);
       box.castShadow = true;
       box.name = `obj_${id}`;
-      this.root.add(box);
-      const label = this.label(id, p.x, p.y, p.z + 0.25);
-      this.root.add(label);
-      this.objects.set(id, { mesh: box, label, halfHeight: size[2]! / 2 });
+      const label = this.label(id, x, y, z + LABEL_LIFT);
+      this.scenery.add(box, label);
+      this.objects.set(id, { mesh: box, label });
     }
   }
 
@@ -170,6 +197,7 @@ export class World {
         if (mat && "roughness" in mat) { mat.roughness = 0.55; mat.metalness = 0.25; }
       }
     });
+    dispose(this.robot);
     this.robot.clear();
     this.robot.add(gltf.scene);
     this.joints = new Map();
@@ -201,12 +229,12 @@ export class World {
   }
 
   /** Moves the objects whose position the episode reports (carried or placed); the others stay where the scene put them. */
-  setObjectPositions(positions: Record<string, { x: number; y: number; z: number }>): void {
+  setObjectPositions(positions: Record<string, Position>): void {
     for (const [id, p] of Object.entries(positions)) {
       const entry = this.objects.get(id);
       if (!entry) continue;
       entry.mesh.position.set(p.x, p.y, p.z);
-      entry.label.position.set(p.x, p.y, p.z + 0.25);
+      entry.label.position.set(p.x, p.y, p.z + LABEL_LIFT);
     }
   }
 
@@ -215,7 +243,7 @@ export class World {
     this.robot.rotation.set(0, 0, pose.yaw);
     if (this.base) {
       // The base's height and tilt when the episode has them; otherwise standing on the ground under it.
-      const z = pose.z ?? (this.terrain ? heightAt(this.terrain, pose.x, pose.y) : 0) + this.baseZ;
+      const z = pose.z ?? this.groundAt(pose.x, pose.y) + this.baseZ;
       this.base.position.set(0, 0, z);
       this.base.rotation.set(pose.roll ?? 0, pose.pitch ?? 0, 0, "YXZ");
     } else if (pose.z !== undefined) {
@@ -227,7 +255,7 @@ export class World {
   setEstimate(estimate: Pose2D | null, truth: Pose2D): void {
     this.belief.visible = this.beliefLine.visible = estimate !== null;
     if (!estimate) return;
-    const z = (x: number, y: number): number => (this.terrain ? heightAt(this.terrain, x, y) : 0) + 0.03;
+    const z = (x: number, y: number): number => this.groundAt(x, y) + 0.03;
     this.belief.position.set(estimate.x, estimate.y, z(estimate.x, estimate.y));
     this.belief.rotation.set(0, 0, estimate.yaw);
     this.beliefLine.geometry.setFromPoints([

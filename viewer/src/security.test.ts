@@ -1,7 +1,8 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { strToU8, zipSync } from "fflate";
-import { describeEvent, loadEpisodeFromZip, manifestRows, MAX_UNZIPPED_BYTES, safeEpisodeUrl, type Episode } from "./episode";
+import { describeEvent, manifestRows } from "./describe";
+import { loadEpisodeFromZip, MAX_UNZIPPED_BYTES, safeEpisodeUrl, type Episode } from "./episode";
 
 const EVIL = '<img src=x onerror="alert(1)">';
 

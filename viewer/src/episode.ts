@@ -1,9 +1,14 @@
-/** Reading an episode (docs/episode-format.md). No dependency on rendering. */
+/** Reading an episode (docs/episode-format.md) and checking it: episodes come from strangers too. What the replay
+ *  cannot do without is refused when the episode is loaded, with a message that names it (the archive's size, the
+ *  format's version, a line of the trajectory or of the event log, the head camera's video). What is only drawn
+ *  around the robot (a place, an obstacle, an object, a landmark of the scene) is skipped when it is malformed.
+ *  No dependency on rendering. */
 import { strFromU8, unzipSync } from "fflate";
 import YAML from "yaml";
 import { parseTerrain, type Terrain } from "./terrain";
 
 export interface Pose2D { x: number; y: number; yaw: number }
+
 export interface Manifest {
   format_version: string; run_id: string; created_at: string;
   robot: { model: string; adapter: string };
@@ -11,27 +16,52 @@ export interface Manifest {
   duration_s: number; sim_time_s?: number | null; sample_rate_hz?: number | null; files: string[];
   camera_video?: unknown; // checked by `cameraVideoOf` before it is played
 }
+
 /** Base height and tilt: present when the robot left the flat floor (outdoor ground, physics walking). */
 export interface BaseLift { z?: number; roll?: number; pitch?: number }
+
+/** Where the robot really was, and what it was doing. */
+export type RobotPose = Pose2D & BaseLift & { mode: string };
+
+export interface Position { x: number; y: number; z: number }
+
 export interface Sample {
-  t: number; robot: Pose2D & BaseLift & { mode: string }; battery_pct?: number;
+  t: number; robot: RobotPose; battery_pct?: number;
   estimate?: Pose2D; // where the robot believed it was, when its odometry had drifted (ADR-0016)
-  objects?: Record<string, { x: number; y: number; z: number }>;
+  objects?: Record<string, Position>;
   joints?: Record<string, number>; // joint angles in radians (physics walking)
 }
+
 export interface Event { ts: number; run_id: string; kind: string; sim_t?: number; [k: string]: unknown }
+
+/** scene.yaml as the format describes it. An episode from a stranger may hold anything here: what is drawn is read
+ *  through `locationsOf`, `obstaclesOf`, `objectsOf` and `landmarksOf`, which skip a malformed entry. */
 export interface Scene {
   robot?: { pose?: Pose2D; battery_pct?: number };
   locations?: Record<string, { pose: Pose2D; tolerance_m?: number }>;
   obstacles?: { x: number; y: number; w?: number; d?: number; h?: number; color?: string }[];
   objects?: Record<string, { cls: string; pose?: { x: number; y: number; z: number }; size?: number[] }>;
-  landmarks?: unknown; // checked by `landmarksOf` before anything is drawn
+  landmarks?: unknown;
 }
+
+/** A named place: where the robot stands there, and how far from it still counts as there (0: not said). */
+export interface Place { name: string; x: number; y: number; yaw: number; tolerance: number }
+
+/** A box in the robot's way. `index` is its place in the scene's list, the order of the terrain's `obstaclesZ`;
+ *  `color` is a #rrggbb colour, or null for the default one. */
+export interface Obstacle { index: number; x: number; y: number; w: number; d: number; h: number; color: string | null }
+
+/** Something the robot can pick up: its centre and its size along x, y and z. */
+export interface SceneObject { id: string; x: number; y: number; z: number; size: [number, number, number] }
+
 /** A tag at a known place (scene.yaml `landmarks`): x, y on the ground, the direction its face looks, its height. */
 export interface Landmark { markerId: number; x: number; y: number; facing: number; height: number; size: number; post: boolean }
+
 export interface Plan { id: string; description?: string; steps: { skill: string; params: Record<string, unknown> }[] }
+
 /** The head camera recorded continuously (`spingi run --camera-video`): frame i was taken at start + i / fps. */
 export interface CameraVideo { blob: Blob; camera: string; fps: number; start: number; frames: number; width: number; height: number }
+
 export interface Episode {
   manifest: Manifest; scene: Scene; plan: Plan; events: Event[]; trajectory: Sample[];
   frames: Map<string, Blob>;
@@ -40,22 +70,39 @@ export interface Episode {
 }
 
 export const SUPPORTED_FORMAT = "0.1";
+
 /** The GLB drawn for each robot profile (runtime/spingi/robots.py). The model name comes from the episode, so it is
  *  looked up in this table and never used as a path: an unknown robot is drawn as the G1. */
 export const ROBOT_MODELS: Record<string, string> = { unitree_g1: "/models/g1.glb", unitree_go2: "/models/go2.glb" };
+
 export const DEFAULT_ROBOT_MODEL = ROBOT_MODELS.unitree_g1!;
+
 export function robotModelUrl(model: unknown): string {
   return (typeof model === "string" && Object.hasOwn(ROBOT_MODELS, model) ? ROBOT_MODELS[model] : undefined) ?? DEFAULT_ROBOT_MODEL;
 }
+
 /** The joint table next to each GLB (which node each joint turns, about which axis, the standing angles). */
 export function robotJointsUrl(modelUrl: string): string {
   return modelUrl.replace(/\.glb$/, ".joints.json");
 }
+
 export const MAX_JOINTS = 64;
+
 export const MAX_LANDMARKS = 256;
+
+export const MAX_SCENE_ENTRIES = 1024; // places, obstacles and objects drawn, each
+
 /** Episodes come from strangers too: refuse archives that would exhaust the browser's memory (zip bombs). */
 export const MAX_ZIP_BYTES = 200 * 1024 * 1024;
+
 export const MAX_UNZIPPED_BYTES = 500 * 1024 * 1024;
+
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+const isNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+
+/** The mapping a YAML file holds, or an empty one when it holds something else. */
+const mapping = (v: unknown): Record<string, unknown> => (isRecord(v) ? v : {});
 
 export function parseJsonl<T>(text: string): T[] {
   return text.split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l) as T);
@@ -94,9 +141,9 @@ export function parseEpisodeFiles(raw: Record<string, Uint8Array>): Episode {
   }
   return {
     manifest,
-    scene: YAML.parse(text("scene.yaml")) as Scene,
-    plan: YAML.parse(text("plan.yaml")) as Plan,
-    events: parseJsonl<Event>(text("events.jsonl")),
+    scene: mapping(YAML.parse(text("scene.yaml"))) as Scene,
+    plan: mapping(YAML.parse(text("plan.yaml"))) as unknown as Plan,
+    events: checkEvents(parseJsonl<Event>(text("events.jsonl"))),
     trajectory: files["trajectory.jsonl"] ? checkTrajectory(parseJsonl<Sample>(text("trajectory.jsonl"))) : [],
     frames,
     terrain: files["terrain.json"] ? parseTerrain(JSON.parse(text("terrain.json"))) : null,
@@ -124,13 +171,6 @@ export function cameraVideoOf(manifest: Manifest, files: Record<string, Uint8Arr
   };
 }
 
-/** The video time that shows what the camera saw at replay time t: the middle of the last frame taken at or before
- *  t, safe from rounding at the frame's edges. The first frame is held before it was taken, the last one after. */
-export function videoTimeAt(video: Pick<CameraVideo, "fps" | "start" | "frames">, t: number): number {
-  const frame = Math.min(Math.max(Math.floor((t - video.start) * video.fps + 1e-6), 0), video.frames - 1);
-  return (frame + 0.5) / video.fps;
-}
-
 /** A malformed trajectory is refused at load time instead of breaking the replay loop later. */
 export function checkTrajectory(samples: Sample[]): Sample[] {
   samples.forEach((s, i) => {
@@ -144,9 +184,21 @@ export function checkTrajectory(samples: Sample[]): Sample[] {
       const values = typeof s.joints === "object" && s.joints !== null ? Object.values(s.joints) : null;
       ok = values !== null && values.length <= MAX_JOINTS && values.every((v) => Number.isFinite(v));
     }
+    if (ok && s.objects !== undefined) {
+      ok = isRecord(s.objects) && Object.values(s.objects).every((p) => isRecord(p) && [p.x, p.y, p.z].every(isNumber));
+    }
     if (!ok) throw new Error(`malformed trajectory line ${i + 1}`);
   });
   return samples;
+}
+
+/** A line of the event log that is not an event is refused at load time, like a malformed trajectory line. */
+export function checkEvents(events: Event[]): Event[] {
+  events.forEach((e, i) => {
+    const ok = isRecord(e) && typeof e.kind === "string" && isNumber(e.ts) && (typeof e.sim_t !== "number" || isNumber(e.sim_t));
+    if (!ok) throw new Error(`malformed events line ${i + 1}`);
+  });
+  return events;
 }
 
 export function loadEpisodeFromZip(
@@ -208,61 +260,53 @@ function mb(bytes: number): number {
   return Math.round(bytes / 1024 / 1024);
 }
 
-export function wrapAngle(a: number): number {
-  return ((((a + Math.PI) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)) - Math.PI;
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+
+/** The entries of one of the scene's mappings, as many as are drawn; none when it is not a mapping. */
+function sceneEntries(v: unknown): [string, unknown][] {
+  return isRecord(v) ? Object.entries(v).slice(0, MAX_SCENE_ENTRIES) : [];
 }
 
-/** The two samples around time t and how far between them t is (0..1); outside the range, the end sample twice. */
-function bracket(trajectory: Sample[], t: number): [Sample, Sample, number] | null {
-  const first = trajectory[0];
-  if (!first) return null;
-  if (t <= first.t) return [first, first, 0];
-  const last = trajectory[trajectory.length - 1]!;
-  if (t >= last.t) return [last, last, 0];
-  let lo = 0;
-  let hi = trajectory.length - 1;
-  while (hi - lo > 1) {
-    const mid = (lo + hi) >> 1;
-    if (trajectory[mid]!.t <= t) lo = mid;
-    else hi = mid;
+/** The scene's named places, checked: a malformed entry is skipped, never drawn half-way. */
+export function locationsOf(scene: Scene): Place[] {
+  const out: Place[] = [];
+  for (const [name, raw] of sceneEntries(scene.locations)) {
+    if (!isRecord(raw) || !isRecord(raw.pose)) continue;
+    const { x, y, yaw } = raw.pose;
+    const tolerance = raw.tolerance_m ?? 0;
+    if (isNumber(x) && isNumber(y) && isNumber(yaw) && isNumber(tolerance)) out.push({ name, x, y, yaw, tolerance });
   }
-  const a = trajectory[lo]!;
-  const b = trajectory[hi]!;
-  return [a, b, b.t === a.t ? 0 : (t - a.t) / (b.t - a.t)];
+  return out;
 }
 
-const lerp = (a: number | undefined, b: number | undefined, u: number): number | undefined =>
-  a === undefined || b === undefined ? a : a + (b - a) * u;
-
-/** Pose linearly interpolated at time t; outside the range it holds the first or last sample. */
-export function poseAt(trajectory: Sample[], t: number): Pose2D & BaseLift & { mode: string } {
-  const br = bracket(trajectory, t);
-  if (!br) return { x: 0, y: 0, yaw: 0, mode: "idle" };
-  const [a, b, u] = br;
-  if (a === b) return { ...a.robot };
-  const pose: Pose2D & BaseLift & { mode: string } = {
-    x: a.robot.x + (b.robot.x - a.robot.x) * u,
-    y: a.robot.y + (b.robot.y - a.robot.y) * u,
-    yaw: a.robot.yaw + wrapAngle(b.robot.yaw - a.robot.yaw) * u,
-    mode: u < 1 ? a.robot.mode : b.robot.mode,
-  };
-  const z = lerp(a.robot.z, b.robot.z, u), roll = lerp(a.robot.roll, b.robot.roll, u), pitch = lerp(a.robot.pitch, b.robot.pitch, u);
-  if (z !== undefined) Object.assign(pose, { z, roll: roll ?? 0, pitch: pitch ?? 0 });
-  return pose;
+/** The scene's obstacles, checked like its places. One left out leaves the others at their place in the list. */
+export function obstaclesOf(scene: Scene): Obstacle[] {
+  if (!Array.isArray(scene.obstacles)) return [];
+  const out: Obstacle[] = [];
+  const isSize = (v: unknown): v is number => isNumber(v) && v >= 0;
+  scene.obstacles.slice(0, MAX_SCENE_ENTRIES).forEach((raw: unknown, index) => {
+    if (!isRecord(raw)) return;
+    const { x, y, w = 0.5, d = 0.5, h = 1 } = raw;
+    if (!isNumber(x) || !isNumber(y) || !isSize(w) || !isSize(d) || !isSize(h)) return;
+    out.push({ index, x, y, w, d, h, color: typeof raw.color === "string" && HEX_COLOR.test(raw.color) ? raw.color : null });
+  });
+  return out;
 }
 
-/** Where the robot believed it was at time t, interpolated; null while its belief matched the truth. */
-export function estimateAt(trajectory: Sample[], t: number): Pose2D | null {
-  const br = bracket(trajectory, t);
-  if (!br) return null;
-  const [a, b, u] = br;
-  if (!a.estimate) return null;
-  if (!b.estimate || a === b) return { ...a.estimate };
-  return {
-    x: a.estimate.x + (b.estimate.x - a.estimate.x) * u,
-    y: a.estimate.y + (b.estimate.y - a.estimate.y) * u,
-    yaw: a.estimate.yaw + wrapAngle(b.estimate.yaw - a.estimate.yaw) * u,
-  };
+/** The scene's objects, checked like its places. Without a pose an object rests on the floor at the origin. */
+export function objectsOf(scene: Scene): SceneObject[] {
+  const out: SceneObject[] = [];
+  const isSize = (v: unknown): v is number => isNumber(v) && v >= 0;
+  for (const [id, raw] of sceneEntries(scene.objects)) {
+    if (!isRecord(raw)) continue;
+    const [sx, sy, sz] = raw.size === undefined ? [0.15, 0.1, 0.1] : Array.isArray(raw.size) ? (raw.size as unknown[]) : [];
+    if (!isSize(sx) || !isSize(sy) || !isSize(sz)) continue;
+    const pose = raw.pose ?? { x: 0, y: 0, z: sz / 2 };
+    if (!isRecord(pose)) continue;
+    const { x, y, z } = pose;
+    if (isNumber(x) && isNumber(y) && isNumber(z)) out.push({ id, x, y, z, size: [sx, sy, sz] });
+  }
+  return out;
 }
 
 /** The scene's landmarks, checked: a malformed entry is skipped, never drawn half-way. */
@@ -281,99 +325,4 @@ export function landmarksOf(scene: Scene): Landmark[] {
     if (ok) out.push(lm);
   }
   return out;
-}
-
-/** Joint angles at time t, interpolated; null when the episode has none (kinematic runs: the robot stands). */
-export function jointsAt(trajectory: Sample[], t: number): Record<string, number> | null {
-  const br = bracket(trajectory, t);
-  if (!br) return null;
-  const [a, b, u] = br;
-  if (!a.joints) return null;
-  if (!b.joints || a === b) return a.joints;
-  const out: Record<string, number> = {};
-  for (const [name, qa] of Object.entries(a.joints)) {
-    const qb = b.joints[name];
-    out[name] = qb === undefined ? qa : qa + (qb - qa) * u;
-  }
-  return out;
-}
-
-/** The rows of the episode card, as plain strings. */
-export function manifestRows(ep: Episode): [string, string][] {
-  const m = ep.manifest;
-  const seconds = Number(m.sim_time_s ?? m.duration_s);
-  return [
-    ["Outcome", `${m.status} · ${m.steps_completed}/${m.steps_total} steps`],
-    ["Robot", `${m.robot?.model} · ${m.robot?.adapter}`],
-    ["Duration", Number.isFinite(seconds) ? `${seconds.toFixed(1)} s simulated` : "unknown"],
-    ["Created", String(m.created_at ?? "").replace("T", " ").replace("Z", " UTC")],
-    ["Plan", String(ep.plan.description ?? ep.plan.id)],
-  ];
-}
-
-/** Object positions at time t: the latest sample at or before t that carries `objects`, merged over earlier ones. */
-export function objectsAt(trajectory: Sample[], t: number): Record<string, { x: number; y: number; z: number }> {
-  const out: Record<string, { x: number; y: number; z: number }> = {};
-  for (const s of trajectory) {
-    if (s.t > t) break;
-    if (s.objects) Object.assign(out, s.objects);
-  }
-  return out;
-}
-
-/** Time of an event on the trajectory axis: sim_t if present, otherwise wall-clock time since run.start. */
-export function eventTime(ev: Event, events: Event[]): number {
-  if (typeof ev.sim_t === "number") return ev.sim_t;
-  const t0 = events[0]?.ts ?? ev.ts;
-  return ev.ts - t0;
-}
-
-export function episodeDuration(ep: Episode): number {
-  const last = ep.trajectory[ep.trajectory.length - 1];
-  const lastEvent = ep.events[ep.events.length - 1];
-  return Math.max(last?.t ?? 0, lastEvent ? eventTime(lastEvent, ep.events) : 0, 0.1);
-}
-
-export function describeEvent(ev: Event): string {
-  const d = ev as Record<string, unknown>;
-  switch (ev.kind) {
-    case "step.start": return `step ${d.index}: ${d.skill} ${JSON.stringify(d.params)}`;
-    case "skill.end": return `${d.skill} → ${d.outcome}${d.reason ? ` (${d.reason})` : ""}`;
-    case "say": return `"${d.text}"`;
-    case "human.request": return `operator: ${d.skill} — ${d.reason}${Array.isArray(d.options) ? ` [${(d.options as string[]).join(" / ")}]` : ""}`;
-    case "operator.stop": return "operator stop: e-stop engaged";
-    case "human.response": return `operator responds: ${d.action}`;
-    case "run.end": return `run end: ${d.status}`;
-    case "skill.postcondition_failed": case "skill.precondition_failed": return `${d.skill}: ${d.reason}`;
-    case "adapter.call": return `${d.op}${d.to ? ` → ${d.to}` : ""}${d.max_speed ? ` @ ${d.max_speed} m/s` : ""}`;
-    case "state.delta": {
-      const delta = d.delta as Record<string, unknown> | undefined;
-      const pose = delta?.robot_pose as { x: number; y: number } | undefined;
-      return pose ? `pose (${pose.x.toFixed(2)}, ${pose.y.toFixed(2)})${delta?.battery_pct ? ` · battery ${Number(delta.battery_pct).toFixed(0)}%` : ""}` : "state updated";
-    }
-    case "perception.result": {
-      if (d.cls !== undefined) {
-        const found = (d.found as string[] | undefined) ?? [];
-        return `looking for ${d.cls}: ${found.length ? `found ${found.join(", ")}` : "nothing found"}`;
-      }
-      const anomalies = (d.anomalies as string[] | undefined) ?? [];
-      const checks = Object.keys((d.checks as Record<string, unknown> | undefined) ?? {});
-      return `${d.target}: ${checks.length} check(s), ${anomalies.length ? `anomalies: ${anomalies.join(", ")}` : "all passed"}`;
-    }
-    case "robot.relocalized": return `tag ${d.marker_id} seen at ${d.at}: pose corrected by ${Number(d.correction_m).toFixed(2)} m, ${(Number(d.correction_rad) * 180 / Math.PI).toFixed(1)}°`;
-    case "localization.missed": return `at ${d.at}: tag ${Array.isArray(d.markers) ? (d.markers as unknown[]).join(", ") : "?"} expected, not seen`;
-    case "localization.rejected": return `at ${d.at}: tag ${d.marker_id} read ${Number(d.jump_m).toFixed(2)} m off, ignored`;
-    case "sim.arrival": return `simulator: stopped ${Number(d.miss_m).toFixed(2)} m from the target, belief off by ${Number(d.error_m).toFixed(2)} m${d.blocked_by ? ` (${d.blocked_by})` : ""}`;
-    case "safety.geofence": { const p = d.pose as { x: number; y: number } | undefined; return `outside the working area at (${p?.x.toFixed(2)}, ${p?.y.toFixed(2)})`; }
-    case "safety.battery_low": return `battery ${d.battery_pct}% below ${d.min_pct}%`;
-    case "safety.speed_capped": return `speed cap ${d.applied} m/s`;
-    case "safety.armed": return "safety monitor armed";
-    case "safety.disarmed": return `safety monitor disarmed after ${d.checks} checks`;
-    case "skill.start": return `${d.skill}${Number(d.attempt) > 0 ? ` (attempt ${d.attempt})` : ""}`;
-    case "step.end": return `step ${d.index}: ${d.skill} → ${d.outcome}`;
-    default: {
-      const rest = Object.fromEntries(Object.entries(d).filter(([k]) => !["ts", "run_id", "kind", "sim_t"].includes(k)));
-      return Object.keys(rest).length ? JSON.stringify(rest) : "";
-    }
-  }
 }

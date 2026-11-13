@@ -1,10 +1,15 @@
 import { strToU8 } from "fflate";
 import { describe, expect, it } from "vitest";
+import { describeEvent, eventTone, manifestRows } from "./describe";
 import {
-  cameraVideoOf, checkTrajectory, DEFAULT_ROBOT_MODEL, describeEvent, estimateAt, eventTime, jointsAt, landmarksOf,
-  normalizePaths, objectsAt, parseEpisodeFiles, parseJsonl, poseAt, robotJointsUrl, robotModelUrl, videoTimeAt,
-  wrapAngle, type Manifest, type Sample,
+  cameraVideoOf, checkEvents, checkTrajectory, DEFAULT_ROBOT_MODEL, landmarksOf, locationsOf, MAX_SCENE_ENTRIES,
+  normalizePaths, objectsOf, obstaclesOf, parseEpisodeFiles, parseJsonl, robotJointsUrl, robotModelUrl,
+  type Event, type Manifest, type Sample, type Scene,
 } from "./episode";
+import {
+  estimateAt, eventTime, eventTimes, frameTimeline, jointsAt, objectsAt, poseAt, reached, stateAt, wrapAngle,
+} from "./timeline";
+import { videoTimeAt } from "./video";
 
 describe("robotModelUrl", () => {
   it("maps the robot profile of the manifest to a bundled model", () => {
@@ -201,5 +206,153 @@ describe("the head camera's video", () => {
     expect(videoTimeAt(v, 0.29)).toBeCloseTo(0.15);
     expect(videoTimeAt(v, 0.3)).toBeCloseTo(0.25);  // frame 2, exactly on time despite floating point
     expect(videoTimeAt(v, 500)).toBeCloseTo(108.35);  // after the last frame: the last one
+  });
+});
+
+describe("the episode at one time", () => {
+  it("has the pose, the belief, the joints and the objects that the single questions give", () => {
+    const samples: Sample[] = [
+      { t: 0, robot: { x: 0, y: 0, yaw: 0, mode: "walking", z: 0.7 }, estimate: { x: 0.2, y: 0, yaw: 0 }, joints: { knee: 0 }, objects: { box: { x: 1, y: 1, z: 0.1 } } },
+      { t: 2, robot: { x: 2, y: 0, yaw: 0, mode: "idle", z: 0.9 }, estimate: { x: 2.4, y: 0, yaw: 0 }, joints: { knee: 1 } },
+    ];
+    const state = stateAt(samples, 1);
+    expect(state).toEqual({ pose: poseAt(samples, 1), estimate: estimateAt(samples, 1), joints: jointsAt(samples, 1), objects: objectsAt(samples, 1) });
+    expect(state.pose).toMatchObject({ x: 1, z: 0.8, mode: "walking" });
+    expect(state.estimate?.x).toBeCloseTo(1.3);
+    expect(state.joints?.knee).toBeCloseTo(0.5);
+    expect(state.objects.box?.x).toBe(1);
+  });
+  it("stands idle at the origin, with nothing else, when the episode has no trajectory", () => {
+    expect(stateAt([], 3)).toEqual({ pose: { x: 0, y: 0, yaw: 0, mode: "idle" }, estimate: null, joints: null, objects: {} });
+  });
+});
+
+describe("the event list and the frames along the replay", () => {
+  const events = [
+    { ts: 10, run_id: "r", kind: "run.start", sim_t: 0 },
+    { ts: 11, run_id: "r", kind: "perception.result", sim_t: 4, frame_id: "f2" },
+    { ts: 12, run_id: "r", kind: "perception.result", sim_t: 6, frame_id: "gone" },
+    { ts: 13, run_id: "r", kind: "perception.result", sim_t: 9, frame_id: "f1" },
+  ];
+  const blob = new Blob([]);
+  it("times every event on the replay's axis", () => {
+    expect(eventTimes(events)).toEqual([0, 4, 6, 9]);
+  });
+  it("shows each frame from the event that names it, and skips events whose frame is not in the episode", () => {
+    const frames = new Map([["f1", blob], ["f2", blob]]);
+    expect(frameTimeline({ events, frames })).toEqual([{ id: "f2", t: 4 }, { id: "f1", t: 9 }]);
+  });
+  it("shows every frame from the start when no event names one", () => {
+    const frames = new Map([["a", blob], ["b", blob]]);
+    expect(frameTimeline({ events: events.slice(0, 1), frames })).toEqual([{ id: "a", t: 0 }, { id: "b", t: 0 }]);
+    expect(frameTimeline({ events, frames: new Map() })).toEqual([]);
+  });
+  it("counts what the replay has reached and names the last of it", () => {
+    expect(reached([0, 4, 6, 9], -1)).toEqual({ count: 0, last: -1 });
+    expect(reached([0, 4, 6, 9], 4)).toEqual({ count: 2, last: 1 });
+    expect(reached([0, 4, 6, 9], 99)).toEqual({ count: 4, last: 3 });
+    expect(reached([], 1)).toEqual({ count: 0, last: -1 });
+  });
+  it("takes the last in the list, not the latest in time, when the times are out of order", () => {
+    expect(reached([0, 5, 3], 4)).toEqual({ count: 2, last: 2 });
+  });
+  it("sets apart the safety monitor's and the operator's events", () => {
+    expect(eventTone("safety.geofence")).toBe("safety");
+    expect(eventTone("human.request")).toBe("human");
+    expect(eventTone("operator.stop")).toBe("human");
+    expect(eventTone("skill.end")).toBeNull();
+  });
+});
+
+describe("the scene of an episode from a stranger", () => {
+  const scene = (raw: unknown): Scene => raw as Scene;
+  it("reads the named places with their tolerance", () => {
+    const places = locationsOf(scene({ locations: { dock: { pose: { x: 1, y: 2, yaw: 0.5 } }, gate: { pose: { x: 3, y: 4, yaw: 0 }, tolerance_m: 0.3 } } }));
+    expect(places).toEqual([{ name: "dock", x: 1, y: 2, yaw: 0.5, tolerance: 0 }, { name: "gate", x: 3, y: 4, yaw: 0, tolerance: 0.3 }]);
+  });
+  it("skips a place without a pose, or with a pose or a tolerance that is not numbers", () => {
+    const places = locationsOf(scene({ locations: {
+      ok: { pose: { x: 0, y: 0, yaw: 0 } }, bare: {}, text: "here", none: null, half: { pose: { x: 1, y: 2 } },
+      words: { pose: { x: "1", y: 2, yaw: 0 } }, wide: { pose: { x: 0, y: 0, yaw: 0 }, tolerance_m: "wide" },
+    } }));
+    expect(places.map((p) => p.name)).toEqual(["ok"]);
+  });
+  it("reads the obstacles with their default size, and keeps each one's place in the list when one is skipped", () => {
+    const obstacles = obstaclesOf(scene({ obstacles: [{ x: 1, y: 2 }, { x: "far" }, null, { x: 3, y: 4, w: 2, d: 1, h: 0.5, color: "#12abEF" }] }));
+    expect(obstacles).toEqual([
+      { index: 0, x: 1, y: 2, w: 0.5, d: 0.5, h: 1, color: null },
+      { index: 3, x: 3, y: 4, w: 2, d: 1, h: 0.5, color: "#12abEF" },
+    ]);
+  });
+  it("draws an obstacle in the default colour when its colour is not a hex colour, and skips one with a size that is not a number", () => {
+    expect(obstaclesOf(scene({ obstacles: [{ x: 0, y: 0, color: "red; background: url(x)" }] }))[0]?.color).toBeNull();
+    expect(obstaclesOf(scene({ obstacles: [{ x: 0, y: 0, color: 7 }] }))[0]?.color).toBeNull();
+    expect(obstaclesOf(scene({ obstacles: [{ x: 0, y: 0, h: "tall" }, { x: 0, y: 0, w: -1 }] }))).toEqual([]);
+  });
+  it("reads the objects, resting on the floor at the origin when the scene gives no pose", () => {
+    const objects = objectsOf(scene({ objects: { box: { cls: "red_box", pose: { x: 1, y: 2, z: 0.9 } }, crate: { cls: "crate", size: [0.4, 0.3, 0.2] } } }));
+    expect(objects).toEqual([
+      { id: "box", x: 1, y: 2, z: 0.9, size: [0.15, 0.1, 0.1] },
+      { id: "crate", x: 0, y: 0, z: 0.1, size: [0.4, 0.3, 0.2] },
+    ]);
+  });
+  it("skips an object whose pose or size is not numbers", () => {
+    const objects = objectsOf(scene({ objects: { a: null, b: { pose: { x: 1 } }, c: { size: [1, 2] }, d: { size: "big" }, e: { pose: "there" }, ok: {} } }));
+    expect(objects.map((o) => o.id)).toEqual(["ok"]);
+  });
+  it("has nothing to draw when the scene's lists are missing or of the wrong kind", () => {
+    for (const odd of [{}, { locations: [1, 2], obstacles: { a: 1 }, objects: "many" }, { locations: null, obstacles: null, objects: null }]) {
+      expect(locationsOf(scene(odd))).toEqual([]);
+      expect(obstaclesOf(scene(odd))).toEqual([]);
+      expect(objectsOf(scene(odd))).toEqual([]);
+    }
+  });
+  it("draws no more than a bounded number of each", () => {
+    const many = Array.from({ length: MAX_SCENE_ENTRIES + 50 }, (_, i) => i);
+    const pose = { x: 0, y: 0, yaw: 0 };
+    expect(locationsOf(scene({ locations: Object.fromEntries(many.map((i) => [`p${i}`, { pose }])) }))).toHaveLength(MAX_SCENE_ENTRIES);
+    expect(obstaclesOf(scene({ obstacles: many.map(() => ({ x: 0, y: 0 })) }))).toHaveLength(MAX_SCENE_ENTRIES);
+    expect(objectsOf(scene({ objects: Object.fromEntries(many.map((i) => [`o${i}`, {}])) }))).toHaveLength(MAX_SCENE_ENTRIES);
+  });
+});
+
+describe("the events of an episode from a stranger", () => {
+  const base = { ts: 0, run_id: "r" };
+  it("are refused when a line is not an event: no kind, no time, or not an object", () => {
+    expect(checkEvents([{ ...base, kind: "run.start" }, { ...base, kind: "say", sim_t: 2 }])).toHaveLength(2);
+    for (const bad of [null, 5, "run.start", [], { ts: 0 }, { ts: 0, kind: 7 }, { kind: "say" }, { ts: "now", kind: "say" }, { ts: 0, kind: "say", sim_t: Infinity }]) {
+      expect(() => checkEvents([{ ...base, kind: "run.start" }, bad as unknown as Event])).toThrow(/malformed events line 2/);
+    }
+  });
+  it("are shown as they were written when their fields are not what their kind promises", () => {
+    expect(describeEvent({ ...base, kind: "safety.geofence", pose: {} })).toBe('{"pose":{}}');
+    expect(describeEvent({ ...base, kind: "state.delta", delta: { robot_pose: { x: "a", y: 1 } } })).toBe('{"delta":{"robot_pose":{"x":"a","y":1}}}');
+    expect(describeEvent({ ...base, kind: "perception.result", cls: "box", found: 3 })).toBe('{"cls":"box","found":3}');
+    expect(describeEvent({ ...base, kind: "perception.result", target: "shelf", checks: null, anomalies: 4 })).toBe('{"target":"shelf","checks":null,"anomalies":4}');
+  });
+});
+
+describe("an episode whose scene or plan is not what the format says", () => {
+  const manifest = { format_version: "0.1", run_id: "r", created_at: "", robot: { model: "fake", adapter: "fake" }, plan_id: "p", status: "success", steps_completed: 0, steps_total: 0, duration_s: 0, files: [] };
+  const files = (scene: string, plan: string, events = '{"ts": 1, "run_id": "r", "kind": "run.start"}\n'): Record<string, Uint8Array> => ({
+    "manifest.json": strToU8(JSON.stringify(manifest)), "scene.yaml": strToU8(scene), "plan.yaml": strToU8(plan), "events.jsonl": strToU8(events),
+  });
+  it("is read with an empty scene and an unnamed plan when those files hold no mapping", () => {
+    for (const odd of ["", "just text\n", "- a\n- b\n", "42\n"]) {
+      const ep = parseEpisodeFiles(files(odd, odd));
+      expect(ep.scene).toEqual({});
+      expect(ep.plan).toEqual({});
+      expect(Object.fromEntries(manifestRows(ep)).Plan).toBe("");
+    }
+  });
+  it("is refused when its event log has a line that is not an event", () => {
+    expect(() => parseEpisodeFiles(files("{}", "{}", '{"ts": 1, "run_id": "r", "kind": "run.start"}\n7\n'))).toThrow(/malformed events line 2/);
+  });
+  it("is refused when a trajectory line gives an object a position that is not three numbers", () => {
+    const robot = { x: 0, y: 0, yaw: 0, mode: "idle" };
+    expect(checkTrajectory([{ t: 0, robot, objects: { box: { x: 1, y: 2, z: 3 } } }])).toHaveLength(1);
+    for (const bad of [{ box: null }, { box: { x: 1, y: 2 } }, "boxes", [1], { box: { x: 1, y: 2, z: "up" } }]) {
+      expect(() => checkTrajectory([{ t: 0, robot, objects: bad } as unknown as Sample])).toThrow(/malformed trajectory line 1/);
+    }
   });
 });

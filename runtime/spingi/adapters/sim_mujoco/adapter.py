@@ -40,7 +40,7 @@ from spingi.adapters.sim_mujoco.locomotion import (
     ramp,
 )
 from spingi.adapters.sim_mujoco.odometry import Odometry, OdometryErrors, as_pose, compose, inverse, planar
-from spingi.adapters.sim_mujoco.scene import OFFSCREEN_SIZE, write_scene
+from spingi.adapters.sim_mujoco.scene import OFFSCREEN_SIZE, CompiledScene, write_scene
 from spingi.adapters.sim_mujoco.terrain import fill_heights
 from spingi.adapters.sim_mujoco.video import VideoStream
 from spingi.core.ports import (
@@ -116,37 +116,12 @@ class SimAdapter:
         self.capabilities = self.profile.capabilities
         self.scene_path = Path(scene_path)
         self.model_dir = Path(model_dir) if model_dir is not None else self.profile.sim.path
-        xml_path, self.scene = write_scene(self.scene_path, self.model_dir, robot_file=self.profile.sim.file)
-        try:
-            self.model = mujoco.MjModel.from_xml_path(str(xml_path))
-        finally:
-            xml_path.unlink(missing_ok=True)  # compiled into the model; the file is no longer needed
-        if self.scene.terrain is not None:
-            fill_heights(self.model, self.scene.terrain, self.scene.terrain_spec)
-        # MJCF gives the cameras' clipping planes relative to the model's size: in a 40 m yard the head camera would
-        # not draw anything nearer than half a metre, such as the cabinet it inspects. In metres instead.
-        self.model.vis.map.znear = self.ZNEAR_M / self.model.stat.extent
-        self.model.vis.map.zfar = self.ZFAR_M / self.model.stat.extent
-        self.data = mujoco.MjData(self.model)
-        if self.model.nkey > 0:
-            mujoco.mj_resetDataKeyframe(self.model, self.data, 0)
-        if locomotion not in ("kinematic", "physics"):
-            raise ValueError(f"unknown locomotion {locomotion!r}: kinematic or physics")
-        if odometry not in ("truth", "drift"):
-            raise ValueError(f"unknown odometry {odometry!r}: truth or drift")
-        if odometry == "drift" and locomotion != "physics":
-            raise ValueError("odometry drift needs physics locomotion: the kinematic base moves exactly")
+        self.model, self.data, self.scene = self._load_model()
+        _check_modes(locomotion, odometry)
         self.locomotion: Locomotion = locomotion
-        self.walker: Walker | None = None
-        if locomotion == "physics":
-            if self.profile.sim.policy is None:
-                raise ValueError(f"{self.profile.name} has no walking policy: physics locomotion is not available")
-            self.walker = make_walker(self.model, self.profile.sim.policy, self.profile.sim.maneuver_policy)
-            if abs(dt - self.walker.config.control_dt) > 1e-9:
-                raise ValueError(f"physics locomotion runs at the policy's period, {self.walker.config.control_dt} s")
-            self._ground_decides_grip()
-            if sample_every == 5:
-                sample_every = 2  # 25 Hz: enough to replay the legs' motion
+        self.walker: Walker | None = self._make_walker(dt) if locomotion == "physics" else None
+        if self.walker is not None and sample_every == 5:
+            sample_every = 2  # 25 Hz: enough to replay the legs' motion
 
         self.dt = dt
         self.speed_cap = speed_cap
@@ -177,11 +152,7 @@ class SimAdapter:
         self._camera_rng = np.random.default_rng([seed, 2])  # its own stream: frames taken do not change the drift
         self._focal_scale = 1.0 + (self._camera_rng.normal(0.0, self.camera_noise.focal_error) if camera_noise else 0.0)
         if self.walker is not None:
-            # A real robot never starts exactly on its mark: a few centimetres and degrees, different per seed, so
-            # that repeated physics runs (bench) differ the way repeated real runs do.
-            rng = np.random.default_rng(seed)
-            jx, jy, jyaw = rng.uniform(-1, 1, 3) * (self.START_JITTER_M, self.START_JITTER_M, self.START_JITTER_RAD)
-            self.pose = Pose2D(x=self.pose.x + jx, y=self.pose.y + jy, yaw=_wrap(self.pose.yaw + jyaw))
+            self.pose = self._off_its_mark(self.pose, seed)
         self.mode: Literal["idle", "walking", "manipulating", "estop"] = "idle"
         self.estopped = False
         self.fell: str | None = None  # why and where the robot fell (physics only)
@@ -221,13 +192,53 @@ class SimAdapter:
             self._open_viewer()
         self._apply_pose()
         if self.walker is not None:
-            for _ in range(round(self.SETTLE_S / dt)):  # before the run: not counted in its time
-                self.walker.step(self.data, np.zeros(3))
-            self._read_physics_pose()
+            self._settle()
         if odometry == "drift":  # the start jitter and the settling are errors the robot does not know about
             self.odometry.relocalize(planar(self.pose), planar(told))
         self.trajectory: list[dict] = []
         self._sample(include_objects=True)
+
+    # --- setting up ------------------------------------------------------
+    def _load_model(self) -> tuple[mujoco.MjModel, mujoco.MjData, CompiledScene]:
+        """The scene and the robot compiled into one MuJoCo model, and its state at the model's first keyframe."""
+        xml_path, scene = write_scene(self.scene_path, self.model_dir, robot_file=self.profile.sim.file)
+        try:
+            model = mujoco.MjModel.from_xml_path(str(xml_path))
+        finally:
+            xml_path.unlink(missing_ok=True)  # compiled into the model; the file is no longer needed
+        if scene.terrain is not None:
+            fill_heights(model, scene.terrain, scene.terrain_spec)
+        # MJCF gives the cameras' clipping planes relative to the model's size: in a 40 m yard the head camera would
+        # not draw anything nearer than half a metre, such as the cabinet it inspects. In metres instead.
+        model.vis.map.znear = self.ZNEAR_M / model.stat.extent
+        model.vis.map.zfar = self.ZFAR_M / model.stat.extent
+        data = mujoco.MjData(model)
+        if model.nkey > 0:
+            mujoco.mj_resetDataKeyframe(model, data, 0)
+        return model, data, scene
+
+    def _make_walker(self, dt: float) -> Walker:
+        """The profile's walking controller on this model (physics locomotion), with the ground deciding the grip."""
+        if self.profile.sim.policy is None:
+            raise ValueError(f"{self.profile.name} has no walking policy: physics locomotion is not available")
+        walker = make_walker(self.model, self.profile.sim.policy, self.profile.sim.maneuver_policy)
+        if abs(dt - walker.config.control_dt) > 1e-9:
+            raise ValueError(f"physics locomotion runs at the policy's period, {walker.config.control_dt} s")
+        self._ground_decides_grip()
+        return walker
+
+    def _off_its_mark(self, mark: Pose2D, seed: int) -> Pose2D:
+        """A real robot never starts exactly on its mark: a few centimetres and degrees, different per seed, so that
+        repeated physics runs (bench) differ the way repeated real runs do."""
+        rng = np.random.default_rng(seed)
+        jx, jy, jyaw = rng.uniform(-1, 1, 3) * (self.START_JITTER_M, self.START_JITTER_M, self.START_JITTER_RAD)
+        return Pose2D(x=mark.x + jx, y=mark.y + jy, yaw=_wrap(mark.yaw + jyaw))
+
+    def _settle(self) -> None:
+        """Standing still before the run, so the feet find the ground: not counted in the run's time."""
+        for _ in range(round(self.SETTLE_S / self.dt)):
+            self.walker.step(self.data, np.zeros(3))
+        self._read_physics_pose()
 
     # --- locomotion --------------------------------------------------------
     async def walk_to(self, pose: Pose2D, max_speed: float) -> None:
@@ -784,6 +795,15 @@ class SimAdapter:
         if self.watchdog_ms is None:
             return False
         return (self.sim_time_s - self._last_heartbeat) * 1000 > self.watchdog_ms
+
+
+def _check_modes(locomotion: str, odometry: str) -> None:
+    if locomotion not in ("kinematic", "physics"):
+        raise ValueError(f"unknown locomotion {locomotion!r}: kinematic or physics")
+    if odometry not in ("truth", "drift"):
+        raise ValueError(f"unknown odometry {odometry!r}: truth or drift")
+    if odometry == "drift" and locomotion != "physics":
+        raise ValueError("odometry drift needs physics locomotion: the kinematic base moves exactly")
 
 
 class SimClock:

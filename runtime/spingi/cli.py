@@ -36,6 +36,25 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"runtime/.env: ignored variables not allowed in this file: {', '.join(sorted(ignored))}", file=sys.stderr
         )
+    args = _parser().parse_args(argv)
+    if args.cmd == "skills":
+        return _skills(args)
+    if args.cmd == "robots":
+        return _robots()
+    if args.cmd == "export":
+        return _export(args)
+    if args.cmd == "plan":
+        return _plan(args)
+    if args.cmd == "eval-planner":
+        return _eval_planner(args)
+    if args.cmd == "replay":
+        return asyncio.run(_replay(args))
+    if args.cmd == "bench":
+        return asyncio.run(_bench(args))
+    return asyncio.run(_run(args))
+
+
+def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="spingi", description="Physical Agent Runtime for humanoid robots")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -105,30 +124,22 @@ def main(argv: list[str] | None = None) -> int:
     skills.add_argument("--robot", choices=ROBOTS, default=None, help="only the skills this robot can run")
 
     sub.add_parser("robots", help="list the robot profiles and their capabilities")
-    args = parser.parse_args(argv)
+    return parser
 
-    if args.cmd == "skills":
-        registry = default_registry()
-        if args.robot:
-            registry = registry.subset(get_profile(args.robot).capabilities)
-        for name in registry.names():
-            print(name, registry.get(name).Params.model_json_schema().get("properties", {}))
-        return 0
-    if args.cmd == "robots":
-        for profile in PROFILES.values():
-            print(f"{profile.alias:<4} {profile.name:<12} {profile.kind:<10} {', '.join(sorted(profile.capabilities))}")
-        return 0
-    if args.cmd == "export":
-        return _export(args)
-    if args.cmd == "plan":
-        return _plan(args)
-    if args.cmd == "eval-planner":
-        return _eval_planner(args)
-    if args.cmd == "replay":
-        return asyncio.run(_replay(args))
-    if args.cmd == "bench":
-        return asyncio.run(_bench(args))
-    return asyncio.run(_run(args))
+
+def _skills(args) -> int:
+    registry = default_registry()
+    if args.robot:
+        registry = registry.subset(get_profile(args.robot).capabilities)
+    for name in registry.names():
+        print(name, registry.get(name).Params.model_json_schema().get("properties", {}))
+    return 0
+
+
+def _robots() -> int:
+    for profile in PROFILES.values():
+        print(f"{profile.alias:<4} {profile.name:<12} {profile.kind:<10} {', '.join(sorted(profile.capabilities))}")
+    return 0
 
 
 def _session_args(p: argparse.ArgumentParser) -> None:

@@ -1,0 +1,18 @@
+# 0018: The viewer checks an episode once, when it loads, and is split by reason to change
+
+Status: Accepted · Date: 2026-11-13 · Milestone: M4.0
+
+## Context
+Episodes reach the viewer from strangers too: a shared zip, a `?url=` link. The viewer checked them in three different ways. A malformed trajectory refused the episode, a malformed landmark was skipped, and `scene.yaml`, `plan.yaml` and the event log were not checked at all. A scene with a location without a pose failed half-way through drawing, after the previous episode had already been replaced, and an event with a field of the wrong kind failed while the event list was being filled. The code had the matching shape. `main.ts` was one script of 320 lines with eight module variables and no test. The decision to play, seek or pause the head camera's video, the subtlest logic in the viewer, was tied to the `<video>` element and could not be tested. `episode.ts` held types, loading, checks, interpolation and UI text, so it changed for every reason. Loading a second episode left the first one's geometries and textures on the GPU.
+
+## Decision
+- **One rule for untrusted content, applied when the episode is loaded.** What the replay cannot do without is refused, with a message that names it: the archive's size, the format's version, a line of the trajectory or of the event log, the head camera's video entry. What is only drawn around the robot is skipped when it is malformed, and the rest is drawn: a location, an obstacle, an object or a landmark of the scene, at most 1024 of each (256 landmarks). An event whose fields are not what its kind promises is shown as it was written. After loading, the replay does not check again.
+- **Modules by reason to change, pure ones first.** `episode.ts` reads and checks. `timeline.ts` answers what the episode was at a time (`stateAt`). `describe.ts` turns it into text. `video.ts` decides what the head camera's video must do, and the page applies the decision. None of the four touches the DOM or three.js, and all are tested in Node. `panels.ts` holds the panels, each with its own state. `world.ts` draws, and frees what it drew when a new episode or robot replaces it. `main.ts` wires them.
+- **Logic leaves the page before it is changed.** A rule that decides what the user sees is written as a function of plain values with its own tests, and the DOM code only applies its result.
+
+## Consequences
+- **Refused or skipped, never half-way.** A malformed episode ends in a message at load time or is replayed without the malformed entry. `docs/episode-format.md` states what is refused and what is skipped. A scene entry that used to be drawn broken, such as an obstacle with a height that is not a number, is now left out.
+- **Tests.** The viewer's tests go from 40 to 73. They cover the video decision, the scene and event checks, the state at a time and the freeing of GPU memory. The panels and `main.ts` are still not unit-tested: they were checked by loading and replaying the six samples in a headless browser, which is not part of CI.
+- **Where new code goes.** A new field of the format is checked in `episode.ts` under the rule above. A new panel is a class in `panels.ts` with `show` and `render`, and what it computes goes in `timeline.ts` or `describe.ts`.
+- **Runtime, same commit, no decision changed.** `Executor.run` is split into one method per step and per attempt, `SimAdapter.__init__` and `cli.main` into named parts. The event order is unchanged: the golden replays pass. `spingi.core` still imports only what `tests/test_architecture.py` allows.
+- **Not done.** `SimAdapter` is still one class of about 700 lines with 26 constructor parameters. The viewer has no formatter or linter yet.

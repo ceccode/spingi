@@ -9,14 +9,14 @@ import asyncio
 import contextlib
 import time
 import uuid
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 
 from pydantic import BaseModel, Field
 
 from spingi.core.events import EventLog
-from spingi.core.plan import PlanError, TaskPlan, resolve_params, validate_plan
+from spingi.core.plan import PlanError, Step, TaskPlan, resolve_params, validate_plan
 from spingi.core.ports import Clock, HumanGateway, HumanRequest, Perceiver, RobotAdapter, RobotEstopped, RobotFell
-from spingi.core.skill import SkillContext, SkillOutcome, SkillRegistry, SkillResult
+from spingi.core.skill import Skill, SkillContext, SkillOutcome, SkillRegistry, SkillResult
 from spingi.core.types import WorldState, apply_delta
 
 RunStatus = Literal["success", "aborted", "invalid_plan", "deadline", "estop", "error"]
@@ -37,6 +37,23 @@ class RunResult(BaseModel):
     @property
     def ok(self) -> bool:
         return self.status == "success"
+
+
+class _Run:
+    """What a run carries from one step to the next."""
+
+    def __init__(self, plan: TaskPlan, state: WorldState, started: float) -> None:
+        self.plan = plan
+        self.state = state
+        self.started = started  # on the executor's clock: the run's budget counts from here
+        self.outputs: list[dict[str, Any]] = []  # one per step done or skipped, for later steps' references
+
+
+class _Stop(NamedTuple):
+    """Why a run ends before its last step."""
+
+    status: RunStatus
+    reason: str
 
 
 class Executor:
@@ -63,7 +80,6 @@ class Executor:
             self.log.sim_clock = lambda: robot.sim_time_s
 
     async def run(self, plan: TaskPlan, state: WorldState) -> RunResult:
-        run_id = self.log.run_id
         self.log.emit("run.start", plan_id=plan.id, steps=len(plan.steps))
 
         errors = validate_plan(plan, self.registry, self.robot.capabilities)
@@ -71,7 +87,7 @@ class Executor:
             self.log.emit("plan.invalid", errors=errors)
             self.log.emit("run.end", status="invalid_plan")
             return RunResult(
-                run_id=run_id,
+                run_id=self.log.run_id,
                 status="invalid_plan",
                 final_state=state,
                 steps_completed=0,
@@ -79,112 +95,140 @@ class Executor:
             )
         self.log.emit("plan.validated", plan_id=plan.id)
 
-        started = self._clock()
-        outputs: list[dict[str, Any]] = []
-
+        run = _Run(plan=plan, state=state, started=self._clock())
         for index, step in enumerate(plan.steps):
-            if self.robot.estopped:
-                return await self._finish(state, index, outputs, "estop", "robot e-stopped")
-            if plan.deadline_s is not None and self._clock() - started > plan.deadline_s:
-                return await self._finish(state, index, outputs, "deadline", "run budget exhausted")
+            stop = self._stop_before_step(run) or await self._run_step(run, index, step)
+            if stop is not None:
+                return await self._finish(run.state, index, run.outputs, stop.status, stop.reason)
+        return await self._finish(run.state, len(plan.steps), run.outputs, "success", "")
 
-            skill = self.registry.get(step.skill)
-            try:
-                raw_params = resolve_params(index, plan, outputs)
-                params = skill.Params.model_validate(raw_params)
-            except (PlanError, ValueError) as exc:
-                decision = await self._escalate(index, step.skill, str(exc), step.on_failure.then)
-                if decision == "skip":
-                    outputs.append({})
-                    continue
-                return await self._finish(state, index, outputs, "aborted", str(exc))
+    def _stop_before_step(self, run: _Run) -> _Stop | None:
+        if self.robot.estopped:
+            return _Stop("estop", "robot e-stopped")
+        if run.plan.deadline_s is not None and self._clock() - run.started > run.plan.deadline_s:
+            return _Stop("deadline", "run budget exhausted")
+        return None
 
-            self.log.emit("step.start", index=index, skill=step.skill, params=raw_params)
-            attempt = 0
-            operator_retries = 0
-            step_done = False
-            while not step_done:
-                await asyncio.sleep(0)  # let signal handlers and the safety monitor run between attempts
-                check = skill.preconditions(params, state)
-                if not check.ok:
-                    # Nothing has happened since the last check, so a retry would fail the same way:
-                    # go straight to the step's escalation policy.
-                    self.log.emit("skill.precondition_failed", skill=step.skill, reason=check.reason)
-                    result = SkillResult.needs_human(f"precondition: {check.reason}")
-                else:
-                    deadline = step.deadline_s if step.deadline_s is not None else skill.default_deadline_s
-                    plan_left = None if plan.deadline_s is None else plan.deadline_s - (self._clock() - started)
-                    plan_limited = plan_left is not None and plan_left < deadline
-                    if plan_limited:
-                        deadline = max(plan_left, 0.0)
-                    ctx = SkillContext(
-                        state=state,
-                        robot=self.robot,
-                        perceiver=self.perceiver,
-                        log=self.log,
-                        human=self.human,
-                        deadline_s=deadline,
-                    )
-                    self.log.emit("skill.start", skill=step.skill, attempt=attempt)
-                    t0 = self._clock()
-                    result = await self._execute_with_deadline(skill, params, ctx, deadline)
-                    self.log.emit(
-                        "skill.end",
-                        skill=step.skill,
-                        attempt=attempt,
-                        outcome=result.outcome.value,
-                        reason=result.reason,
-                        duration_s=round(self._clock() - t0, 4),
-                    )
-                    if self.robot.estopped:  # e-stopped during the skill (monitor, operator, adapter, a fall): terminal
-                        fatal = result.outcome is SkillOutcome.FATAL and result.reason
-                        return await self._finish(state, index, outputs, "estop", fatal or "robot e-stopped")
-                    if plan_limited and result.reason.startswith("deadline"):
-                        return await self._finish(state, index, outputs, "deadline", "run budget exhausted")
-                    if result.outcome is SkillOutcome.SUCCESS:
-                        candidate = apply_delta(state, result.delta)
-                        post = skill.postconditions(params, candidate)
-                        if post.ok:
-                            state = candidate
-                            if result.delta is not None:
-                                self.log.emit(
-                                    "state.delta", skill=step.skill, delta=result.delta.model_dump(exclude_none=True)
-                                )
-                            outputs.append(result.evidence)
-                            self.log.emit("step.end", index=index, skill=step.skill, outcome="success")
-                            step_done = True
-                            continue
-                        self.log.emit("skill.postcondition_failed", skill=step.skill, reason=post.reason)
-                        result = SkillResult.recoverable(f"postcondition: {post.reason}")
+    async def _run_step(self, run: _Run, index: int, step: Step) -> _Stop | None:
+        """Runs one step until it succeeds or is skipped (None: on to the next step), or until the run must end.
 
-                if result.outcome is SkillOutcome.FATAL:
-                    await self.robot.estop()  # act first, then record
-                    self.log.emit("safety.estop", skill=step.skill, reason=result.reason)
-                    return await self._finish(state, index, outputs, "estop", f"fatal: {result.reason}")
+        A recoverable failure is tried again as many times as the step allows; then the step's escalation policy
+        decides, which may ask the operator.
+        """
+        skill = self.registry.get(step.skill)
+        try:
+            raw_params = resolve_params(index, run.plan, run.outputs)
+            params = skill.Params.model_validate(raw_params)
+        except (PlanError, ValueError) as exc:
+            decision = await self._escalate(index, step.skill, str(exc), step.on_failure.then)
+            if decision == "skip":
+                run.outputs.append({})
+                return None
+            return _Stop("aborted", str(exc))  # a retry would find the same parameters
 
-                if result.outcome is SkillOutcome.RECOVERABLE and attempt < step.on_failure.retry:
-                    attempt += 1
-                    self.log.emit("step.retry", index=index, skill=step.skill, attempt=attempt)
-                    continue
+        self.log.emit("step.start", index=index, skill=step.skill, params=raw_params)
+        attempt = 0
+        operator_retries = 0
+        while True:
+            await asyncio.sleep(0)  # let signal handlers and the safety monitor run between attempts
+            result = await self._attempt(run, index, step, skill, params, attempt)
+            if isinstance(result, _Stop):
+                return result
+            if result.outcome is SkillOutcome.SUCCESS:
+                return None
 
-                decision = await self._escalate(index, step.skill, result.reason, step.on_failure.then)
-                if decision == "retry":
-                    operator_retries += 1
-                    if operator_retries > MAX_OPERATOR_RETRIES:
-                        reason = f"{MAX_OPERATOR_RETRIES} operator retries exhausted: {result.reason}"
-                        return await self._finish(state, index, outputs, "aborted", reason)
-                    attempt = 0
-                    continue
-                if decision == "skip":
-                    outputs.append({})
-                    self.log.emit("step.end", index=index, skill=step.skill, outcome="skipped")
-                    step_done = True
-                    continue
-                return await self._finish(state, index, outputs, "aborted", result.reason)
+            if result.outcome is SkillOutcome.FATAL:
+                await self.robot.estop()  # act first, then record
+                self.log.emit("safety.estop", skill=step.skill, reason=result.reason)
+                return _Stop("estop", f"fatal: {result.reason}")
 
-        return await self._finish(state, len(plan.steps), outputs, "success", "")
+            if result.outcome is SkillOutcome.RECOVERABLE and attempt < step.on_failure.retry:
+                attempt += 1
+                self.log.emit("step.retry", index=index, skill=step.skill, attempt=attempt)
+                continue
 
-    async def _execute_with_deadline(self, skill, params, ctx: SkillContext, deadline: float) -> SkillResult:
+            decision = await self._escalate(index, step.skill, result.reason, step.on_failure.then)
+            if decision == "retry":
+                operator_retries += 1
+                if operator_retries > MAX_OPERATOR_RETRIES:
+                    return _Stop("aborted", f"{MAX_OPERATOR_RETRIES} operator retries exhausted: {result.reason}")
+                attempt = 0
+                continue
+            if decision == "skip":
+                run.outputs.append({})
+                self.log.emit("step.end", index=index, skill=step.skill, outcome="skipped")
+                return None
+            return _Stop("aborted", result.reason)
+
+    async def _attempt(
+        self, run: _Run, index: int, step: Step, skill: Skill, params: BaseModel, attempt: int
+    ) -> SkillResult | _Stop:
+        """One try of a step: preconditions, the skill under its deadline, postconditions.
+
+        A success is committed to the run (its state, the step's output) before it is returned. A failed pre or
+        postcondition comes back as the failure the step's policy must handle. A _Stop ends the run.
+        """
+        check = skill.preconditions(params, run.state)
+        if not check.ok:
+            # Nothing has happened since the last check, so a retry would fail the same way:
+            # go straight to the step's escalation policy.
+            self.log.emit("skill.precondition_failed", skill=step.skill, reason=check.reason)
+            return SkillResult.needs_human(f"precondition: {check.reason}")
+
+        deadline, plan_limited = self._deadline_for(run, step, skill)
+        ctx = SkillContext(
+            state=run.state,
+            robot=self.robot,
+            perceiver=self.perceiver,
+            log=self.log,
+            human=self.human,
+            deadline_s=deadline,
+        )
+        self.log.emit("skill.start", skill=step.skill, attempt=attempt)
+        t0 = self._clock()
+        result = await self._execute_with_deadline(skill, params, ctx, deadline)
+        self.log.emit(
+            "skill.end",
+            skill=step.skill,
+            attempt=attempt,
+            outcome=result.outcome.value,
+            reason=result.reason,
+            duration_s=round(self._clock() - t0, 4),
+        )
+        if self.robot.estopped:  # e-stopped during the skill (monitor, operator, adapter, a fall): terminal
+            fatal = result.outcome is SkillOutcome.FATAL and result.reason
+            return _Stop("estop", fatal or "robot e-stopped")
+        if plan_limited and result.reason.startswith("deadline"):
+            return _Stop("deadline", "run budget exhausted")
+        if result.outcome is not SkillOutcome.SUCCESS:
+            return result
+
+        candidate = apply_delta(run.state, result.delta)
+        post = skill.postconditions(params, candidate)
+        if not post.ok:
+            self.log.emit("skill.postcondition_failed", skill=step.skill, reason=post.reason)
+            return SkillResult.recoverable(f"postcondition: {post.reason}")
+        run.state = candidate
+        if result.delta is not None:
+            self.log.emit("state.delta", skill=step.skill, delta=result.delta.model_dump(exclude_none=True))
+        run.outputs.append(result.evidence)
+        self.log.emit("step.end", index=index, skill=step.skill, outcome="success")
+        return result
+
+    def _deadline_for(self, run: _Run, step: Step, skill: Skill) -> tuple[float, bool]:
+        """The seconds a try of the step may take, and whether it is what is left of the run's budget that limits
+        it rather than the step's own deadline."""
+        deadline = step.deadline_s if step.deadline_s is not None else skill.default_deadline_s
+        if run.plan.deadline_s is None:
+            return deadline, False
+        plan_left = run.plan.deadline_s - (self._clock() - run.started)
+        if plan_left < deadline:
+            return max(plan_left, 0.0), True
+        return deadline, False
+
+    async def _execute_with_deadline(
+        self, skill: Skill, params: BaseModel, ctx: SkillContext, deadline: float
+    ) -> SkillResult:
         """Runs the skill until it ends, its deadline passes in robot time, or the same deadline passes in wall-clock
         time (a guard against a skill or adapter that hangs without the robot's clock moving)."""
         work = asyncio.ensure_future(skill.execute(params, ctx))
