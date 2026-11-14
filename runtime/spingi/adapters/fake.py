@@ -18,6 +18,7 @@ from spingi.core.ports import (
     Frame,
     GripResult,
     JointState,
+    Recording,
     RobotEstopped,
 )
 from spingi.core.types import Pose2D, Pose3D
@@ -144,6 +145,14 @@ class FakeAdapter:
     def set_speed_limit(self, max_speed: float) -> float:
         self.speed_cap = min(self.speed_cap, max_speed)
         return self.speed_cap
+
+    # --- lifecycle ---------------------------------------------------------
+    def close(self) -> None:
+        """Nothing to release: the fake has no viewer, renderer or file."""
+
+    def recording(self) -> Recording:
+        """The trajectory, sampled at each move rather than at a fixed rate, and the time the moves took."""
+        return Recording(trajectory=self.trajectory, sim_time_s=self.sim_time_s)
 
     def reset_estop(self) -> None:
         """Manual reset, like the physical button. Not exposed to the runtime."""

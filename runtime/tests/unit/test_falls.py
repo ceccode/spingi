@@ -13,7 +13,7 @@ from spingi.core.ports import RobotFell
 from spingi.metrics import run_metrics, summarize
 from spingi.perception.fake import FakePerceiver
 from spingi.scenes import load_world
-from spingi.session import SessionConfig, run_session
+from spingi.session import SessionConfig
 from spingi.skills import default_registry
 
 LAB = Path("sim/scenes/lab_small.yaml")
@@ -40,8 +40,7 @@ async def test_a_fall_is_fatal_recorded_and_counted():
     assert report.falls == 1 and not report.passed
 
 
-async def test_physics_locomotion_needs_the_simulator(tmp_path):
+def test_physics_locomotion_needs_the_simulator(tmp_path):
     plan = Path("plans/demo_inspection_round.yaml")
-    cfg = SessionConfig(plan=plan, scene=LAB, locomotion="physics", runs_dir=tmp_path)
     with pytest.raises(ValueError, match="sim adapter"):
-        await run_session(cfg, ScriptedHuman(default="abort"))
+        SessionConfig(plan=plan, scene=LAB, locomotion="physics", runs_dir=tmp_path)

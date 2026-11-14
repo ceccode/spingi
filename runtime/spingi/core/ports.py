@@ -5,7 +5,8 @@ The core depends on these abstractions, never on the implementations (ADR-0001).
 
 from __future__ import annotations
 
-from typing import Any, Literal, Protocol, runtime_checkable
+from pathlib import Path
+from typing import Any, Literal, NamedTuple, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
@@ -83,6 +84,18 @@ class Clock(Protocol):
     async def sleep(self, seconds: float) -> None: ...
 
 
+class Recording(NamedTuple):
+    """What a run leaves behind besides its event log, for the episode (docs/episode-format.md). An adapter that
+    cannot provide a part leaves it empty; the episode then has no such file or field."""
+
+    trajectory: list[dict[str, Any]]  # samples of trajectory.jsonl, in time order
+    sim_time_s: float | None = None  # robot time at the end of the run
+    sample_rate_hz: float | None = None  # nominal rate of the trajectory samples
+    terrain: dict[str, Any] | None = None  # terrain.json for the viewer; None on a flat floor
+    camera_video: dict[str, Any] | None = None  # the head camera's video, as the manifest describes it
+    video: Path | None = None  # the third-person video, for people
+
+
 Capability = Literal["locomotion", "camera", "arm"]
 ALL_CAPABILITIES: frozenset[Capability] = frozenset({"locomotion", "camera", "arm"})
 
@@ -98,6 +111,9 @@ class RobotAdapter(Protocol):
     `get_pose` is the robot's own estimate, from its odometry, and it drifts as the robot walks (ADR-0016).
     `relocalize` corrects it with a pose measured from outside, a landmark: from then on `get_pose`, `walk_to`
     targets and the camera's pose in a `Frame` are in the corrected frame.
+
+    `close` ends the run on the adapter's side (viewer, renderers, video files) and can be called more than once;
+    `recording` then says what the run left for its episode.
     """
 
     async def walk_to(self, pose: Pose2D, max_speed: float) -> None: ...
@@ -112,6 +128,8 @@ class RobotAdapter(Protocol):
     async def estop(self) -> None: ...
     async def heartbeat(self) -> None: ...
     def set_speed_limit(self, max_speed: float) -> float: ...  # never raises the limit; returns the one in force
+    def close(self) -> None: ...
+    def recording(self) -> Recording: ...
 
     clock: Clock  # the robot's time (see Clock)
     estopped: bool  # True from estop() until a manual reset on the robot; the executor treats it as terminal

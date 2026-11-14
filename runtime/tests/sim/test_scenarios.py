@@ -12,7 +12,7 @@ from spingi.core.executor import Executor
 from spingi.core.human import ScriptedHuman
 from spingi.core.plan import Step, TaskPlan, load_plan
 from spingi.core.types import Pose2D
-from spingi.episode import write_episode
+from spingi.episode import RobotInfo, RunOutcome, write_episode
 from spingi.perception.fake import FakePerceiver
 from spingi.perception.sim import SimPerceiver
 from spingi.safety import SafetyMonitor
@@ -110,7 +110,9 @@ async def test_head_camera_renders_when_gl_available(tmp_path):
 async def test_recording_writes_a_video(tmp_path):
     adapter = SimAdapter(LAB, record_dir=tmp_path, record_video=True, record_every=10)
     await adapter.walk_to(Pose2D(x=1.0, y=0.0, yaw=0.0), max_speed=1.0)
-    video = adapter.close()
+    adapter.close()
+    adapter.close()  # a second close changes nothing
+    video = adapter.recording().video
     if video is None:
         pytest.skip("rendering unavailable (no GL context)")
     assert video.exists() and video.stat().st_size > 1000
@@ -120,7 +122,7 @@ async def test_the_head_camera_video_puts_every_frame_on_the_episode_timeline(tm
     adapter = SimAdapter(LAB, record_dir=tmp_path, record_camera=True, record_every=10)
     await adapter.walk_to(Pose2D(x=1.0, y=0.0, yaw=0.0), max_speed=1.0)
     adapter.close()
-    info = adapter.camera_video_for_viewer()
+    info = adapter.recording().camera_video
     if info is None:
         pytest.skip(f"rendering unavailable: {adapter.render_error}")
     # 10 ticks of 20 ms between frames: 5 per second, the first at 0.2 s
@@ -140,13 +142,9 @@ async def test_the_head_camera_video_puts_every_frame_on_the_episode_timeline(tm
         log=log,
         plan_path="plans/demo_inspection_round.yaml",
         scene_path=LAB,
-        plan_id="p",
-        steps_total=0,
-        status="success",
-        steps_completed=0,
-        adapter=adapter,
-        adapter_name="sim_mujoco",
-        robot_model="unitree_g1",
+        outcome=RunOutcome(plan_id="p", status="success", steps_completed=0, steps_total=0),
+        robot=RobotInfo(model="unitree_g1", adapter="sim_mujoco"),
+        recording=adapter.recording(),
     )
     assert manifest.camera_video.model_dump() == info and "head.mp4" in manifest.files
 

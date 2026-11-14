@@ -51,6 +51,7 @@ from spingi.core.ports import (
     Frame,
     GripResult,
     JointState,
+    Recording,
     RobotEstopped,
     RobotFell,
 )
@@ -169,6 +170,7 @@ class SimAdapter:
         free = mujoco.mjtJoint.mjJNT_FREE
         self.joint_names = [self.model.joint(j).name for j in range(self.model.njnt) if self.model.jnt_type[j] != free]
         self._videos = Videos(self._renderers, record_dir, 1.0 / (dt * record_every), record_video, record_camera)
+        self._video: Path | None = None  # the third-person video, once `close` has finished it
         self._viewer = None
         if viewer:
             self._open_viewer()
@@ -430,14 +432,24 @@ class SimAdapter:
         return self.speed_cap
 
     # --- lifecycle ---------------------------------------------------------
-    def close(self) -> Path | None:
-        """Closes viewer and renderer and finishes the videos; returns the third-person video's path, if any."""
+    def close(self) -> None:
+        """Closes viewer and renderers and finishes the videos. A second call does nothing."""
         if self._viewer is not None:
             self._viewer.close()
             self._viewer = None
-        video = self._videos.close()
+        self._video = self._video or self._videos.close()
         self._renderers.close()
-        return video
+
+    def recording(self) -> Recording:
+        """What the run leaves for its episode; the videos are listed once `close` has finished them."""
+        return Recording(
+            trajectory=self.trajectory,
+            sim_time_s=self.sim_time_s,
+            sample_rate_hz=round(1.0 / (self.dt * self.sample_every), 3),
+            terrain=self.scene.viewer_terrain(),
+            camera_video=self._videos.head_for_manifest(),
+            video=self._video,
+        )
 
     # --- internals ---------------------------------------------------------
     def _try_move(self, new: Pose2D) -> bool:
@@ -548,14 +560,6 @@ class SimAdapter:
                 n: round(float(q[self.model.jnt_qposadr[self.model.joint(n).id]]), 3) for n in self.joint_names
             }
         self.trajectory.append(row)
-
-    def camera_video_for_viewer(self) -> dict | None:
-        """The head-camera video as the episode's manifest describes it, or None if none was written."""
-        return self._videos.head_for_manifest()
-
-    def terrain_for_viewer(self) -> dict | None:
-        """The ground as the episode's `terrain.json`, or None on a flat floor."""
-        return self.scene.viewer_terrain()
 
     def object_positions(self) -> dict[str, dict[str, float]]:
         """Ground-truth world positions of the scene objects, keyed by object id (used by SimPerceiver)."""

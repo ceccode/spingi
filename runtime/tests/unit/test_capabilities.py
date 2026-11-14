@@ -91,9 +91,6 @@ async def test_episodes_of_different_robots_do_not_share_a_lerobot_dataset(tmp_p
     assert info["robot_type"] == "unitree_go2"
 
 
-async def test_marker_perception_needs_camera_images(tmp_path):
-    cfg = SessionConfig(
-        plan=Path("plans/demo_inspection_round.yaml"), scene=LAB, perception="markers", runs_dir=tmp_path
-    )
+def test_marker_perception_needs_camera_images(tmp_path):
     with pytest.raises(ValueError, match="sim adapter"):
-        await run_session(cfg, ScriptedHuman(default="abort"))
+        SessionConfig(plan=Path("plans/demo_inspection_round.yaml"), scene=LAB, perception="markers", runs_dir=tmp_path)

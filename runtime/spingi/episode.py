@@ -12,11 +12,12 @@ import shutil
 import time
 import zipfile
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal, NamedTuple
 
 from pydantic import BaseModel, Field
 
 from spingi.core.events import EventLog
+from spingi.core.ports import Recording
 
 FORMAT_VERSION = "0.1"
 
@@ -26,15 +27,27 @@ class RobotInfo(BaseModel):
     adapter: str = Field(description="e.g. fake, sim_mujoco; the real robot's adapter later")
 
 
+PerceptionKind = Literal["truth", "markers"]
+LocomotionKind = Literal["kinematic", "physics"]
+OdometryKind = Literal["truth", "drift"]
+
+
 class RunConfig(BaseModel):
-    """What is needed to run the episode again (spingi replay). Optional: older episodes do not have it."""
+    """What is needed to run the episode again (spingi replay). Optional: older episodes do not have it. Its fields
+    have the names and values of `SessionConfig`'s: an episode with a value the runtime does not know is refused."""
 
     perception_noise: float = Field(default=0.0, description="perceiver false-negative rate")
     position_sigma_m: float = Field(default=0.0, description="perceiver position noise, metres")
     seed: int = 0
-    perception: str = Field(default="truth", description="truth (scene ground truth) or markers (AprilTags in frames)")
-    locomotion: str = Field(default="kinematic", description="kinematic (the base glides) or physics (the robot walks)")
-    odometry: str = Field(default="truth", description="truth (exact pose) or drift (the estimate drifts, ADR-0016)")
+    perception: PerceptionKind = Field(
+        default="truth", description="truth (scene ground truth) or markers (AprilTags in frames)"
+    )
+    locomotion: LocomotionKind = Field(
+        default="kinematic", description="kinematic (the base glides) or physics (the robot walks)"
+    )
+    odometry: OdometryKind = Field(
+        default="truth", description="truth (exact pose) or drift (the estimate drifts, ADR-0016)"
+    )
     camera_noise: bool = Field(default=False, description="blurred, noisy, JPEG-compressed head-camera frames")
 
 
@@ -100,58 +113,58 @@ class TrajectorySample(BaseModel):
     joints: dict[str, float] | None = Field(default=None, description="joint angles in radians (physics locomotion)")
 
 
+class RunOutcome(NamedTuple):
+    """How the run of a plan ended."""
+
+    plan_id: str
+    status: str
+    steps_completed: int
+    steps_total: int
+
+
 def write_episode(
     run_dir: Path,
     *,
     log: EventLog,
     plan_path: Path | str,
     scene_path: Path | str,
-    plan_id: str,
-    steps_total: int,
-    status: str,
-    steps_completed: int,
-    adapter: Any,
-    adapter_name: str,
-    robot_model: str,
+    outcome: RunOutcome,
+    robot: RobotInfo,
+    recording: Recording,
     config: RunConfig | None = None,
 ) -> Manifest:
     run_dir.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(plan_path, run_dir / "plan.yaml")
     shutil.copyfile(scene_path, run_dir / "scene.yaml")
 
-    terrain = adapter.terrain_for_viewer() if hasattr(adapter, "terrain_for_viewer") else None
-    if terrain is not None:
-        (run_dir / "terrain.json").write_text(json.dumps(terrain, separators=(",", ":")) + "\n", encoding="utf-8")
+    if recording.terrain is not None:
+        terrain = json.dumps(recording.terrain, separators=(",", ":"))
+        (run_dir / "terrain.json").write_text(terrain + "\n", encoding="utf-8")
 
-    samples = [TrajectorySample.model_validate(r) for r in getattr(adapter, "trajectory", [])]
+    samples = [TrajectorySample.model_validate(r) for r in recording.trajectory]
     with (run_dir / "trajectory.jsonl").open("w", encoding="utf-8") as fh:
         for s in samples:
             fh.write(s.model_dump_json(exclude_none=True) + "\n")
 
-    if (run_dir / "events.jsonl").exists() is False and log.events:
+    if not (run_dir / "events.jsonl").exists() and log.events:
         with (run_dir / "events.jsonl").open("w", encoding="utf-8") as fh:
             for e in log.events:
                 fh.write(e.to_jsonl() + "\n")
 
-    camera = adapter.camera_video_for_viewer() if hasattr(adapter, "camera_video_for_viewer") else None
     ts = [e.ts for e in log.events]
     files = sorted(p.name + ("/" if p.is_dir() else "") for p in run_dir.iterdir() if p.name != "manifest.json")
-    sample_rate = None
-    dt = getattr(adapter, "dt", None)
-    every = getattr(adapter, "sample_every", None)
-    if dt and every:
-        sample_rate = round(1.0 / (dt * every), 3)
+    camera = recording.camera_video
     manifest = Manifest(
         run_id=log.run_id,
         created_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        robot=RobotInfo(model=robot_model, adapter=adapter_name),
-        plan_id=plan_id,
-        status=status,
-        steps_completed=steps_completed,
-        steps_total=steps_total,
+        robot=robot,
+        plan_id=outcome.plan_id,
+        status=outcome.status,
+        steps_completed=outcome.steps_completed,
+        steps_total=outcome.steps_total,
         duration_s=round(max(ts) - min(ts), 3) if ts else 0.0,
-        sim_time_s=round(float(getattr(adapter, "sim_time_s", 0.0)), 3) if hasattr(adapter, "sim_time_s") else None,
-        sample_rate_hz=sample_rate,
+        sim_time_s=round(recording.sim_time_s, 3) if recording.sim_time_s is not None else None,
+        sample_rate_hz=recording.sample_rate_hz,
         config=config,
         camera_video=CameraVideo.model_validate(camera) if camera else None,
         files=files,

@@ -57,9 +57,19 @@ def test_cli_bench_gate_sets_the_exit_code(tmp_path, capsys):
 @pytest.mark.parametrize(
     "settings", [{"odometry": "drift"}, {"camera_noise": True}, {"record_camera": True}, {"record_video": True}]
 )
-async def test_simulated_sensors_and_videos_need_the_simulator(tmp_path, settings):
+def test_simulated_sensors_and_videos_need_the_simulator(tmp_path, settings):
     with pytest.raises(ValueError, match="sim adapter"):
-        await run_session(SessionConfig(plan=PLAN, scene=SCENE, runs_dir=tmp_path, **settings), ScriptedHuman())
+        SessionConfig(plan=PLAN, scene=SCENE, runs_dir=tmp_path, **settings)
+
+
+def test_odometry_drift_needs_a_walking_robot():
+    with pytest.raises(ValueError, match="needs physics locomotion"):
+        SessionConfig(plan=PLAN, scene=SCENE, adapter="sim", odometry="drift")
+
+
+def test_contradicting_settings_end_the_cli_with_one_line(tmp_path):
+    with pytest.raises(SystemExit, match="spingi run: perception 'markers' reads camera images"):
+        main(["run", str(PLAN), "--scene", str(SCENE), "--perception", "markers", "--runs-dir", str(tmp_path)])
 
 
 def test_cli_realistic_is_the_simulator_with_every_realistic_sensor(tmp_path):

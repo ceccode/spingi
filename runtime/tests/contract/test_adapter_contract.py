@@ -1,12 +1,13 @@
 """The same suite for every RobotAdapter and every robot profile: FakeAdapter, SimAdapter with the G1 and with the
 Go2 today, the real robots' adapters from M4."""
 
+import itertools
 from pathlib import Path
 
 import pytest
 
 from spingi.adapters.fake import FakeAdapter
-from spingi.core.ports import ALL_CAPABILITIES, CapabilityMissing, Frame, RobotAdapter
+from spingi.core.ports import ALL_CAPABILITIES, CapabilityMissing, Frame, Recording, RobotAdapter
 from spingi.core.types import Pose2D, Pose3D
 from spingi.robots import GO2
 
@@ -95,3 +96,14 @@ async def test_a_missing_capability_raises_instead_of_pretending(adapter):
 def test_clock_is_monotonic(adapter):
     a = adapter.clock.now()
     assert adapter.clock.now() >= a
+
+
+async def test_the_recording_follows_the_robot_and_survives_closing_twice(adapter):
+    await adapter.walk_to(Pose2D(x=0.5, y=0.0, yaw=0.0), max_speed=0.5)
+    adapter.close()
+    adapter.close()
+    rec = adapter.recording()
+    assert isinstance(rec, Recording) and rec.trajectory
+    assert abs(rec.trajectory[-1]["robot"]["x"] - 0.5) <= 0.15
+    assert rec.sim_time_s is not None and rec.sim_time_s > 0
+    assert all(b["t"] >= a["t"] for a, b in itertools.pairwise(rec.trajectory))

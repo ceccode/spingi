@@ -20,10 +20,11 @@ import asyncio
 import sys
 from pathlib import Path
 
+from spingi.core.events import EventLog
 from spingi.core.human import ScriptedHuman
 from spingi.dotenv import load_dotenv
 from spingi.robots import DEFAULT_ROBOT, PROFILES, get_profile
-from spingi.session import SessionConfig, run_session
+from spingi.session import SessionConfig, new_run_id, run_session
 from spingi.skills import default_registry
 
 DEFAULT_SCENE = Path("sim/scenes/lab_small.yaml")
@@ -182,49 +183,60 @@ def _session_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--seed", type=int, default=0)
 
 
-def _config(args) -> SessionConfig:
+def _config(args, **settings) -> SessionConfig:
+    """The session the shared options ask for; `settings` are those of one command (`run` records videos, ...)."""
     real = args.realistic
     if real and args.adapter == "fake":
         raise SystemExit("--realistic simulates the robot's sensors: it needs --adapter sim")
-    return SessionConfig(
-        plan=args.plan,
-        scene=args.scene,
-        adapter=args.adapter or ("sim" if real else "fake"),
-        robot=args.robot,
-        perception="markers" if real else args.perception,
-        locomotion="physics" if args.physics or real else "kinematic",
-        odometry="drift" if args.drift or real else "truth",
-        camera_noise=args.camera_noise or real,
-        runs_dir=args.runs_dir,
-        perception_noise=args.noise,
-        position_sigma_m=args.sigma,
-        seed=args.seed,
-    )
+    try:
+        return SessionConfig(
+            plan=args.plan,
+            scene=args.scene,
+            adapter=args.adapter or ("sim" if real else "fake"),
+            robot=args.robot,
+            perception="markers" if real else args.perception,
+            locomotion="physics" if args.physics or real else "kinematic",
+            odometry="drift" if args.drift or real else "truth",
+            camera_noise=args.camera_noise or real,
+            runs_dir=args.runs_dir,
+            perception_noise=args.noise,
+            position_sigma_m=args.sigma,
+            seed=args.seed,
+            **settings,
+        )
+    except ValueError as exc:  # settings that contradict each other: one line, not a traceback
+        raise SystemExit(f"spingi {args.cmd}: {exc}") from exc
 
 
 async def _run(args) -> int:
-    cfg = _config(args)
-    cfg.realtime, cfg.view, cfg.record_video, cfg.zip_episode = args.realtime, args.view, args.record, args.zip
-    cfg.record_camera = args.camera_video
+    cfg = _config(
+        args,
+        realtime=args.realtime,
+        view=args.view,
+        record_video=args.record,
+        record_camera=args.camera_video,
+        zip_episode=args.zip,
+    )
+    return await _run_with_operator(cfg, args.operator, on_failure=args.on_failure, quiet=args.quiet)
 
-    from spingi.core.events import EventLog
-    from spingi.session import new_run_id
 
+async def _run_with_operator(cfg: SessionConfig, operator: str, on_failure: str = "abort", quiet: bool = False) -> int:
+    """Runs one session with the operator asked for, prints its summary and returns the exit code."""
     run_id = new_run_id()
     log = EventLog(run_id=run_id, path=cfg.runs_dir / run_id / "events.jsonl")
-    if args.operator == "console":
+    if operator == "console":
         from spingi.console import ConsoleHuman, ConsoleReporter
 
         human = ConsoleHuman()
-        if not args.quiet:
+        if not quiet:
             log.subscribe(ConsoleReporter())
         print("Operator console: Ctrl+C stops the robot.", flush=True)
     else:
-        human = ScriptedHuman(default=args.on_failure)
+        human = ScriptedHuman(default=on_failure)
 
     result = await run_session(cfg, human, log=log)
 
-    if args.operator == "auto" and not args.quiet:
+    if operator == "auto" and not quiet:
         for event in result.log.events:
             print(event.to_jsonl())
     extra = f" · video: {result.video}" if result.video else ""
@@ -238,7 +250,6 @@ async def _run(args) -> int:
 
 async def _bench(args) -> int:
     from spingi.bench import bench, format_report
-    from spingi.session import new_run_id
 
     out_dir = args.runs_dir / f"bench-{new_run_id()[2:]}"
 
@@ -338,8 +349,8 @@ def _plan(args) -> int:
         if not args.yes and not _confirm(f"Run this plan on the {args.adapter} adapter as {args.robot}? [y/N] "):
             print("not run")
             return 0
-        run_args = ["run", str(out), "--scene", str(args.scene), "--adapter", args.adapter, "--robot", args.robot]
-        return main([*run_args, "--operator", args.operator])
+        cfg = SessionConfig(plan=out, scene=args.scene, adapter=args.adapter, robot=args.robot)
+        return asyncio.run(_run_with_operator(cfg, args.operator))
     return 0
 
 

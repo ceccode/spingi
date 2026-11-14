@@ -89,31 +89,28 @@ class NavigateSkill(Skill):
     async def _reach(
         self, ctx: SkillContext, name: str, target: Pose2D, tolerance: float, max_speed: float, final: bool
     ) -> bool:
-        """Walks to one waypoint and, where a landmark is in view, corrects the pose and walks the difference.
-        False when the walk was interrupted away from the waypoint."""
-        for attempt in range(MAX_FIXES + 1):
-            ctx.log.emit("adapter.call", op="walk_to", to=name, max_speed=max_speed)
-            await ctx.robot.walk_to(target, max_speed=max_speed)
-            pose = await ctx.robot.get_pose()
+        """Walks to one waypoint and, where a landmark is in view, corrects the pose and walks the difference, up to
+        MAX_FIXES times; the walk after the last correction is the final try. False when the walk was interrupted
+        away from the waypoint."""
+        for attempt in range(MAX_FIXES):
+            pose = await self._walk(ctx, name, target, max_speed)
             if pose.distance_to(target) > tolerance:
-                if attempt == 0 or attempt == MAX_FIXES:
-                    return False  # the leg was interrupted (an obstacle, a safety stop), or the last try failed
+                if attempt == 0:
+                    return False  # the leg was interrupted: an obstacle, a safety stop
                 continue  # a short walk back after a correction stalled: a walking robot does, now and then
-            if final and abs(wrap(pose.yaw - target.yaw)) > FINAL_YAW_TOL_RAD and attempt < MAX_FIXES:
+            if final and not _facing(pose, target):
                 continue  # the last turn did not finish (a walking robot can stall turning on the spot): again
-            if attempt == MAX_FIXES:
-                return True
             fixed = await self._fix(ctx, name, pose)
-            if fixed is None:
+            if fixed is None or _arrived(fixed, target, tolerance, final):
                 return True
-            # At a waypoint on the way being within its tolerance is enough; at the destination the inspection
-            # that follows needs the robot well inside it and facing the right way.
-            off = fixed.distance_to(target)
-            if final and off <= tolerance / 2 and abs(wrap(fixed.yaw - target.yaw)) <= FINAL_YAW_TOL_RAD:
-                return True
-            if not final and off <= tolerance:
-                return True
-        return True
+        pose = await self._walk(ctx, name, target, max_speed)
+        return pose.distance_to(target) <= tolerance
+
+    async def _walk(self, ctx: SkillContext, name: str, target: Pose2D, max_speed: float) -> Pose2D:
+        """One walk towards the waypoint; where the robot believes it ended up."""
+        ctx.log.emit("adapter.call", op="walk_to", to=name, max_speed=max_speed)
+        await ctx.robot.walk_to(target, max_speed=max_speed)
+        return await ctx.robot.get_pose()
 
     async def _fix(self, ctx: SkillContext, at: str, pose: Pose2D) -> Pose2D | None:
         """Looks for the landmarks that should be in view from the estimated pose; the first one seen gives the
@@ -181,6 +178,18 @@ class NavigateSkill(Skill):
 
     async def abort(self) -> None:
         return None  # the Executor calls robot.stop(); the skill has no state to clean up
+
+
+def _facing(pose: Pose2D, target: Pose2D) -> bool:
+    return abs(wrap(pose.yaw - target.yaw)) <= FINAL_YAW_TOL_RAD
+
+
+def _arrived(pose: Pose2D, target: Pose2D, tolerance: float, final: bool) -> bool:
+    """At a waypoint on the way being within its tolerance is enough; at the destination the inspection that follows
+    needs the robot well inside it and facing the right way."""
+    if final:
+        return pose.distance_to(target) <= tolerance / 2 and _facing(pose, target)
+    return pose.distance_to(target) <= tolerance
 
 
 def _mean(poses: list[Pose2D]) -> Pose2D:

@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from spingi.core.events import Event, EventLog
 from spingi.core.human import ScriptedHuman
-from spingi.episode import read_manifest, read_trajectory
+from spingi.episode import RunConfig, read_manifest, read_trajectory
 from spingi.robots import DEFAULT_ROBOT, get_profile
 from spingi.session import SessionConfig, run_session
 
@@ -59,12 +59,12 @@ def _operator_answers(events: list[Event]) -> list[str]:
 async def replay(episode_dir: Path, runs_dir: Path | None = None) -> ReplayReport:
     manifest = read_manifest(episode_dir)
     recorded = EventLog.read(episode_dir / "events.jsonl")
-    cfg_rec = manifest.config
     adapter = "sim" if manifest.robot.adapter == "sim_mujoco" else "fake"
     try:
         robot = get_profile(manifest.robot.model).alias
     except KeyError:
         robot = DEFAULT_ROBOT  # episodes recorded before robot profiles existed say "fake": they ran as the G1
+    recorded_settings = (manifest.config or RunConfig()).model_dump()  # older episodes ran with the defaults
     with tempfile.TemporaryDirectory() as tmp:
         cfg = SessionConfig(
             plan=episode_dir / "plan.yaml",
@@ -72,13 +72,7 @@ async def replay(episode_dir: Path, runs_dir: Path | None = None) -> ReplayRepor
             adapter=adapter,
             robot=robot,
             runs_dir=runs_dir or Path(tmp),
-            perception_noise=cfg_rec.perception_noise if cfg_rec else 0.0,
-            position_sigma_m=cfg_rec.position_sigma_m if cfg_rec else 0.0,
-            seed=cfg_rec.seed if cfg_rec else 0,
-            perception=cfg_rec.perception if cfg_rec else "truth",  # type: ignore[arg-type]
-            locomotion=cfg_rec.locomotion if cfg_rec else "kinematic",  # type: ignore[arg-type]
-            odometry=cfg_rec.odometry if cfg_rec else "truth",  # type: ignore[arg-type]
-            camera_noise=cfg_rec.camera_noise if cfg_rec else False,
+            **recorded_settings,
         )
         # The operator gives the same answers, in the same order, as in the recording.
         human = ScriptedHuman(responses=_operator_answers(recorded), default="abort")

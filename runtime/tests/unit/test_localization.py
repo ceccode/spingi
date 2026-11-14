@@ -132,6 +132,43 @@ async def test_navigate_corrects_its_pose_at_a_landmark_and_walks_the_difference
     assert len(log.find("adapter.call")) == 2  # the leg, then the walk back after the correction
 
 
+class StallingRobot(DriftingRobot):
+    """A drifting robot whose walks can also stop short, and know it: a walking robot that stalls on a short walk
+    or does not finish turning on the spot. `stalls` holds, per walk, the (dx, dy, dyaw) it stops short by."""
+
+    def __init__(self, stalls: list[tuple[float, float, float] | None], **kw) -> None:
+        super().__init__(**kw)
+        self.stalls = list(stalls)
+
+    async def walk_to(self, pose, max_speed):
+        await super().walk_to(pose, max_speed)
+        stall = self.stalls.pop(0) if self.stalls else None
+        if stall is not None:
+            dx, dy, dyaw = stall
+            self.pose = Pose2D(x=self.pose.x + dx, y=self.pose.y + dy, yaw=self.pose.yaw + dyaw)
+            self.truth = Pose2D(x=self.truth.x + dx, y=self.truth.y + dy, yaw=self.truth.yaw + dyaw)
+
+
+async def test_a_walk_back_that_stalls_after_a_correction_is_walked_again():
+    robot = StallingRobot(errors=[(0.0, -0.3, 0.0)], stalls=[None, (-0.5, 0.0, 0.0)])
+    result, log = await navigate(robot, LandmarkPerceiver(robot, [LANDMARK]), world(), to="pump")
+    assert result.outcome == "success" and robot.truth.distance_to(Pose2D(x=5.0, y=0.0)) < 1e-6
+    assert len(log.find("adapter.call")) == 3  # the leg, the stalled walk back, the last try
+
+
+async def test_a_turn_left_unfinished_at_the_destination_is_turned_again():
+    robot = StallingRobot(errors=[], stalls=[(0.0, 0.0, 0.3)])  # arrived, but facing 17 degrees off
+    _, log = await navigate(robot, LandmarkPerceiver(robot, []), world(landmarks=()), to="pump")
+    assert abs(robot.pose.yaw) < 1e-6 and len(log.find("adapter.call")) == 2
+
+
+async def test_at_the_destination_a_correction_inside_the_tolerance_is_still_walked():
+    """10 cm off is inside the pump's 15 cm, but the inspection that follows needs the robot well inside it."""
+    robot = DriftingRobot(errors=[(0.0, -0.1, 0.0)])
+    _, log = await navigate(robot, LandmarkPerceiver(robot, [LANDMARK]), world(), to="pump")
+    assert robot.truth.distance_to(Pose2D(x=5.0, y=0.0)) < 1e-6 and len(log.find("adapter.call")) == 2
+
+
 async def test_without_landmarks_the_robot_believes_it_arrived_where_it_is_not():
     robot = DriftingRobot(errors=[(0.0, -0.3, 0.05)])
     result, log = await navigate(robot, LandmarkPerceiver(robot, []), world(landmarks=()), to="pump")

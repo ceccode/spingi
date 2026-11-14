@@ -69,7 +69,7 @@
       "type": "object"
     },
     "RunConfig": {
-      "description": "What is needed to run the episode again (spingi replay). Optional: older episodes do not have it.",
+      "description": "What is needed to run the episode again (spingi replay). Optional: older episodes do not have it. Its fields\nhave the names and values of `SessionConfig`'s: an episode with a value the runtime does not know is refused.",
       "properties": {
         "perception_noise": {
           "default": 0.0,
@@ -91,18 +91,30 @@
         "perception": {
           "default": "truth",
           "description": "truth (scene ground truth) or markers (AprilTags in frames)",
+          "enum": [
+            "truth",
+            "markers"
+          ],
           "title": "Perception",
           "type": "string"
         },
         "locomotion": {
           "default": "kinematic",
           "description": "kinematic (the base glides) or physics (the robot walks)",
+          "enum": [
+            "kinematic",
+            "physics"
+          ],
           "title": "Locomotion",
           "type": "string"
         },
         "odometry": {
           "default": "truth",
           "description": "truth (exact pose) or drift (the estimate drifts, ADR-0016)",
+          "enum": [
+            "truth",
+            "drift"
+          ],
           "title": "Odometry",
           "type": "string"
         },

@@ -2,12 +2,24 @@ import itertools
 import json
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
 from spingi.adapters.fake import FakeAdapter
 from spingi.core.events import EventLog
 from spingi.core.executor import Executor
 from spingi.core.human import ScriptedHuman
 from spingi.core.plan import load_plan
-from spingi.episode import json_schemas, read_manifest, read_trajectory, write_episode, zip_episode
+from spingi.episode import (
+    RobotInfo,
+    RunConfig,
+    RunOutcome,
+    json_schemas,
+    read_manifest,
+    read_trajectory,
+    write_episode,
+    zip_episode,
+)
 from spingi.perception.fake import FakePerceiver
 from spingi.scenes import load_world
 from spingi.skills import default_registry
@@ -28,13 +40,9 @@ async def run_demo(tmp_path: Path):
         log=log,
         plan_path=PLAN,
         scene_path=SCENE,
-        plan_id=plan.id,
-        steps_total=len(plan.steps),
-        status=result.status,
-        steps_completed=result.steps_completed,
-        adapter=adapter,
-        adapter_name="fake",
-        robot_model="fake",
+        outcome=RunOutcome(plan.id, result.status, result.steps_completed, len(plan.steps)),
+        robot=RobotInfo(model="fake", adapter="fake"),
+        recording=adapter.recording(),
     )
     return manifest, log, adapter
 
@@ -79,3 +87,8 @@ def test_published_schemas_match_the_models():
         path = SCHEMAS_DIR / name
         assert path.exists(), f"{path} missing: run `make schemas`"
         assert json.loads(path.read_text(encoding="utf-8")) == schema, f"{name} out of date: run `make schemas`"
+
+
+def test_an_episode_with_settings_the_runtime_does_not_know_is_refused():
+    with pytest.raises(ValidationError, match="locomotion"):
+        RunConfig.model_validate({"locomotion": "hover"})
