@@ -17,12 +17,15 @@ from spingi.perception.fake import FakePerceiver
 from spingi.perception.sim import SimPerceiver
 from spingi.safety import SafetyMonitor
 from spingi.scenes import load_safety_limits, load_world
+from spingi.session import SessionConfig, SessionResult, run_session
 from spingi.skills import default_registry
 
 LAB = Path("sim/scenes/lab_small.yaml")
 BLOCKED = Path("sim/scenes/lab_blocked.yaml")
 FENCED = Path("sim/scenes/lab_geofence.yaml")
 WAREHOUSE = Path("sim/scenes/warehouse_small.yaml")
+INSPECTION_ROUND = Path("plans/demo_inspection_round.yaml")
+MATERIAL_RUNNER = Path("plans/demo_material_runner.yaml")
 
 
 def make(scene: Path, human: ScriptedHuman | None = None, sim_perceiver: bool = False, **kw):
@@ -51,6 +54,27 @@ async def test_inspection_round_completes_in_sim(tmp_path):
     results = log.find("perception.result")
     assert [r.data["anomalies"] for r in results] == [[], ["present:red_box"]]
     assert "red_box_01" in result.final_state.objects
+
+
+@pytest.mark.parametrize(("plan", "scene"), [(INSPECTION_ROUND, LAB), (MATERIAL_RUNNER, WAREHOUSE)])
+async def test_a_plan_perceives_the_same_on_the_fake_adapter_and_in_sim(plan, scene, tmp_path):
+    """The fake perceiver sees what the simulated head camera sees (ADR-0024): same detections, same anomalies."""
+
+    def perceived(result: SessionResult) -> list:
+        return [
+            (e.data.get("target"), e.data.get("found"), e.data.get("checks"), e.data.get("anomalies"))
+            for e in result.log.find("perception.result")
+        ]
+
+    runs = {
+        adapter: await run_session(
+            SessionConfig(plan=plan, scene=scene, adapter=adapter, runs_dir=tmp_path, write_episode=False),
+            ScriptedHuman(),
+        )
+        for adapter in ("fake", "sim")
+    }
+    assert runs["fake"].ok and runs["sim"].ok
+    assert perceived(runs["fake"]) == perceived(runs["sim"]) != []
 
 
 async def test_leaving_the_geofence_estops_and_ends_the_run():

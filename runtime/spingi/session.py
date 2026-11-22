@@ -188,7 +188,9 @@ def _robot_and_perceiver(
     if cfg.adapter == "fake":
         robot = FakeAdapter(start=state.robot.pose, watchdog_ms=cfg.watchdog_ms, capabilities=profile.capabilities)
         objects = list(state.objects.values())
-        return robot, FakePerceiver(objects=objects, false_negative_rate=cfg.perception_noise, seed=cfg.seed)
+        # sees what the head camera would see from where the fake robot stands, as on the simulator (ADR-0024)
+        noise = cfg.perception_noise
+        return robot, FakePerceiver(objects=objects, robot=robot, false_negative_rate=noise, seed=cfg.seed)
 
     from spingi.adapters.sim_mujoco import SimAdapter
 

@@ -82,3 +82,27 @@ def test_the_scene_landmarks_are_part_of_the_world():
     assert {lm.marker_id for lm in world.landmarks} == {30, 31, 32, 33, 34, 35}
     rack = next(lm for lm in world.landmarks if lm.marker_id == 31)
     assert (rack.height_m, rack.size_m) == (1.1, 0.16) and abs(rack.pose.yaw - 3.1416) < 1e-9
+
+
+async def test_on_the_fake_adapter_the_camera_sees_only_what_is_in_view(tmp_path):
+    """A toy 5 m behind the robot is not an anomaly at its stop; the same toy 2 m ahead is (ADR-0024)."""
+    scene = tmp_path / "scene.yaml"
+    scene.write_text(
+        "robot: { pose: { x: 0.0, y: 0.0, yaw: 0.0 } }\n"
+        "locations:\n"
+        "  bench: { pose: { x: 2.0, y: 0.0, yaw: 0.0 } }\n"
+        "  corner: { pose: { x: -1.0, y: 0.0, yaw: 3.1416 } }\n"
+        "objects:\n"
+        "  toy_01: { cls: toy, pose: { x: -3.0, y: 0.0, z: 0.1 } }\n"
+    )
+    plan = tmp_path / "plan.yaml"
+    plan.write_text(
+        "id: tidy\nsteps:\n"
+        "  - { skill: navigate, params: { to: bench } }\n"
+        '  - { skill: inspect, params: { target: bench, checks: ["absent:toy"] } }\n'
+        "  - { skill: navigate, params: { to: corner } }\n"
+        '  - { skill: inspect, params: { target: corner, checks: ["absent:toy"] } }\n'
+    )
+    result = await run_session(SessionConfig(plan=plan, scene=scene, runs_dir=tmp_path), ScriptedHuman())
+    assert result.ok
+    assert [e.data["anomalies"] for e in result.log.find("perception.result")] == [[], ["absent:toy"]]

@@ -29,6 +29,10 @@ from spingi.skills import default_registry
 
 DEFAULT_SCENE = Path("sim/scenes/lab_small.yaml")
 ROBOTS = sorted(PROFILES)
+ADAPTER_HELP = (
+    "fake: in-memory robot, instant moves, no physics; its camera sees objects within 3 m and 40 degrees either side "
+    "of the heading, as in sim. sim: the robot in MuJoCo"
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -107,7 +111,7 @@ def _parser() -> argparse.ArgumentParser:
     plan.add_argument("--out", type=Path, help="write the plan to this YAML file")
     plan.add_argument("--model", default=None, help="Claude model id (default: claude-opus-5-5)")
     plan.add_argument("--run", action="store_true", help="run the plan right away (with --adapter, --operator)")
-    plan.add_argument("--adapter", choices=["fake", "sim"], default="fake")
+    plan.add_argument("--adapter", choices=["fake", "sim"], default="fake", help=ADAPTER_HELP)
     plan.add_argument("--robot", choices=ROBOTS, default=DEFAULT_ROBOT, help="plan for this robot's skills only")
     plan.add_argument("--operator", choices=["auto", "console"], default="console")
     plan.add_argument("--yes", action="store_true", help="with --run: do not ask for confirmation before running")
@@ -146,7 +150,8 @@ def _robots() -> int:
 def _session_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("plan", type=Path)
     p.add_argument("--scene", type=Path, default=DEFAULT_SCENE)
-    p.add_argument("--adapter", choices=["fake", "sim"], default=None, help="default: fake, or sim with --realistic")
+    adapter_help = f"{ADAPTER_HELP}; default: fake, or sim with --realistic"
+    p.add_argument("--adapter", choices=["fake", "sim"], default=None, help=adapter_help)
     p.add_argument("--robot", choices=ROBOTS, default=DEFAULT_ROBOT, help="which robot the adapter stands for")
     p.add_argument(
         "--perception",
