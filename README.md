@@ -144,7 +144,7 @@ Safety layers run on the robot's own clock (simulated time in MuJoCo), so a simu
 | [docs/tutorial.md](docs/tutorial.md) | Step by step: read a scene, write a plan, run it from the fake adapter up to realistic sensors, replay it in the viewer, place landmarks, measure it with bench, model your own place |
 | [docs/runtime-spec.md](docs/runtime-spec.md) | Principles, architecture, contracts, execution model, safety layers, testing strategy, milestones |
 | [docs/episode-format.md](docs/episode-format.md) | The episode folder, manifest, trajectory, frames, compatibility rules |
-| [adr/](adr/README.md) | Architecture decisions 0001–0023 and the ones still open |
+| [adr/](adr/README.md) | Architecture decisions 0001–0024 and the ones still open |
 | [runtime/README.md](runtime/README.md) | CLI reference, scenes, plans, skills, episodes, tests, how to add a skill or an adapter |
 | [viewer/README.md](viewer/README.md) | Running, loading episodes, deploying |
 | [SECURITY.md](SECURITY.md) | Threat model and how to report a security or safety problem |

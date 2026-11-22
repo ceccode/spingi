@@ -368,7 +368,7 @@ class Perceiver(Protocol):
 
 Positions come out in the frame the camera's pose was given in, the robot's estimate: if the estimate has drifted, so has what it sees. `localize` returns a marker's centre and, as a rotation about the vertical, the direction its face looks: what `navigate` needs to correct the robot's pose with a landmark (ADR-0016).
 
-Implemented: `FakePerceiver` (configured objects, optional false-negative rate), `SimPerceiver`, which reads the ground truth from the scene with configurable noise to test the logic without models (section 6), and `MarkerPerceiver`, which reads AprilTags on objects and landmarks from the images. Planned: a fixed-class detector (YOLO on known classes) *(not implemented yet)*; v1: VLM as another `Perceiver` behind the same interface.
+Implemented: `FakePerceiver` (configured objects, optional false-negative rate; on the fake adapter only those in the head camera's view, as `SimPerceiver`), `SimPerceiver`, which reads the ground truth from the scene with configurable noise to test the logic without models (section 6), and `MarkerPerceiver`, which reads AprilTags on objects and landmarks from the images. Planned: a fixed-class detector (YOLO on known classes) *(not implemented yet)*; v1: VLM as another `Perceiver` behind the same interface.
 
 ### 3.7 Human gateway
 
@@ -508,7 +508,7 @@ Deliberate choice: a **lightly prepared environment** rather than general percep
 - Fixed-class detector for the site's objects (10–20 classes), trained on photos of the site. *(Not implemented yet; after M4.1, when there are photos of a site.)*
 - VLM (v1) for `inspect`: "does the display show an error?", "is there a leak?" with a structured answer and confidence. Until then `inspect` evaluates only `present:<cls>` and `absent:<cls>` and records other checks as not evaluated.
 - In sim: `SimPerceiver` reads the ground truth from the MuJoCo scene. An object is seen when it is within 3 m and within ±40° of the robot's heading. Noise: a false-negative rate and Gaussian noise on positions (`--noise`, `--sigma`, seeded with `--seed`). It is there to test the retry and escalation logic without depending on a model.
-- In unit tests: `FakePerceiver` returns configured objects, optionally with a false-negative rate or always failing.
+- On the fake adapter: `FakePerceiver` returns the scene's objects that are in view by the same rule as `SimPerceiver` (within 3 m and ±40° of the robot's heading, ADR-0024), so a plan's detections and inspections come out as in sim. In unit tests, built without a robot, it returns every configured object, optionally with a false-negative rate or always failing.
 
 ---
 
