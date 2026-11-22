@@ -62,6 +62,13 @@ def test_reporter_prints_meaningful_events_only():
     assert "SAFETY geofence" in lines[4] and "run end: success" in lines[5]
 
 
+def test_an_invalid_plan_says_what_is_wrong():
+    invalid = Event(ts=0, run_id="r", kind="plan.invalid", data={"errors": ["step 1: unknown skill 'inspekt'"]})
+    assert describe(invalid) == "plan invalid, nothing moved: step 1: unknown skill 'inspekt'"
+    end = Event(ts=0, run_id="r", kind="run.end", data={"status": "invalid_plan"})
+    assert describe(end) == "run end: invalid_plan · 0 steps completed"
+
+
 def test_describe_ignores_unknown_events():
     assert describe(Event(ts=0, run_id="r", kind="adapter.call", data={})) is None
 

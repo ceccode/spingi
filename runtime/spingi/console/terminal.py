@@ -137,6 +137,10 @@ def describe(event: Event) -> str | None:
         return f"   operator: {d.get('action')}"
     if k == "operator.stop":
         return "   OPERATOR STOP: e-stop engaged"
+    if k == "plan.invalid":
+        errors = d.get("errors") or []
+        return "plan invalid, nothing moved: " + "; ".join(str(e) for e in errors)
     if k == "run.end":
-        return f"run end: {d.get('status')} · {d.get('steps_completed')} steps completed"
+        steps = d.get("steps_completed")
+        return f"run end: {d.get('status')} · {0 if steps is None else steps} steps completed"
     return None
