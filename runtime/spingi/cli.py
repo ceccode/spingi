@@ -22,6 +22,7 @@ from pathlib import Path
 
 from spingi.core.events import EventLog
 from spingi.core.human import ScriptedHuman
+from spingi.core.plan import PlanError, load_plan
 from spingi.dotenv import load_dotenv
 from spingi.robots import DEFAULT_ROBOT, PROFILES, get_profile
 from spingi.session import SessionConfig, new_run_id, run_session
@@ -227,6 +228,8 @@ async def _run(args) -> int:
 
 async def _run_with_operator(cfg: SessionConfig, operator: str, on_failure: str = "abort", quiet: bool = False) -> int:
     """Runs one session with the operator asked for, prints its summary and returns the exit code."""
+    if _refuse_plan(cfg.plan):
+        return 1
     run_id = new_run_id()
     log = EventLog(run_id=run_id, path=cfg.runs_dir / run_id / "events.jsonl")
     if operator == "console":
@@ -253,9 +256,23 @@ async def _run_with_operator(cfg: SessionConfig, operator: str, on_failure: str 
     return 0 if result.ok else 1
 
 
+def _refuse_plan(path: Path) -> bool:
+    """A plan file that is not a TaskPlan (an unknown key, a value out of range) ends the command as INVALID_PLAN,
+    in one line, before a robot is started or a run folder is made. A TaskPlan whose steps are wrong for the skills
+    is the executor's to refuse, and its episode records why."""
+    try:
+        load_plan(path)
+    except PlanError as exc:
+        print(f"\nINVALID_PLAN · {exc}")
+        return True
+    return False
+
+
 async def _bench(args) -> int:
     from spingi.bench import bench, format_report
 
+    if _refuse_plan(args.plan):
+        return 1
     out_dir = args.runs_dir / f"bench-{new_run_id()[2:]}"
 
     def progress(done: int, total: int, m) -> None:
@@ -404,7 +421,12 @@ async def _replay(args) -> int:
 
     all_same = True
     for episode in args.episodes:
-        report = await replay(episode)
+        try:
+            report = await replay(episode)
+        except PlanError as exc:  # recorded before ADR-0026, with a plan key that was then ignored
+            all_same = False
+            print(f"{'INVALID':<9} {episode}  {exc}")
+            continue
         all_same &= report.same
         mark = "same" if report.same else "DIFFERENT"
         print(f"{mark:<9} {episode}  (recorded {report.recorded_status}, replayed {report.replayed_status})")

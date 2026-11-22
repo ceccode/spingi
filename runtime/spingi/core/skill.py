@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Annotated, Any, ClassVar
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from spingi.core.events import EventLog
 from spingi.core.ports import Capability, HumanGateway, Perceiver, RobotAdapter
@@ -25,6 +25,15 @@ _NAMES_LOCATIONS = _NamesLocations()
 # the scene before anything moves (ADR-0025). The marker is pydantic metadata only: the JSON schema does not change.
 LocationName = Annotated[str, _NAMES_LOCATIONS]
 LocationNames = Annotated[list[str], _NAMES_LOCATIONS]
+
+
+class SkillParams(BaseModel):
+    """Base of every skill's `Params`: an unknown key is an error, not a silently dropped setting (ADR-0026).
+
+    A misspelled `max_sped: 0.8` would otherwise validate, and the robot would walk at the default speed.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class SkillOutcome(StrEnum):
@@ -92,7 +101,7 @@ class Skill:
     """
 
     name: ClassVar[str]
-    Params: ClassVar[type[BaseModel]]
+    Params: ClassVar[type[SkillParams]]
     default_deadline_s: ClassVar[float] = 30.0
     requires: ClassVar[frozenset[Capability]] = frozenset()  # robot capabilities the skill needs (ADR-0012)
 
@@ -135,6 +144,8 @@ class SkillRegistry:
     def register(self, skill: Skill) -> None:
         if skill.name in self._skills:
             raise ValueError(f"skill already registered: {skill.name}")
+        if skill.Params.model_config.get("extra") != "forbid":
+            raise ValueError(f"skill {skill.name}: Params must refuse unknown keys (derive it from SkillParams)")
         self._skills[skill.name] = skill
 
     def get(self, name: str) -> Skill:

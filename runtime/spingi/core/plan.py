@@ -9,20 +9,27 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from spingi.core.ports import Capability
 from spingi.core.skill import Skill, SkillRegistry
 
 REF_PATTERN = re.compile(r"^\$(?P<step>[A-Za-z_][A-Za-z0-9_]*|\d+)\.(?P<path>.+)$")
 
+# A misspelled key (`on_failre:`, `dealine_s:`) is an error: ignored, it would leave the default in place (ADR-0026).
+STRICT = ConfigDict(extra="forbid")
+
 
 class OnFailure(BaseModel):
+    model_config = STRICT
+
     retry: int = Field(default=0, ge=0, le=10)
     then: Literal["needs_human", "abort", "skip"] = "needs_human"
 
 
 class Step(BaseModel):
+    model_config = STRICT
+
     skill: str
     params: dict[str, Any] = Field(default_factory=dict)
     on_failure: OnFailure = Field(default_factory=OnFailure)
@@ -30,6 +37,8 @@ class Step(BaseModel):
 
 
 class TaskPlan(BaseModel):
+    model_config = STRICT
+
     id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
     description: str = ""
     steps: list[Step] = Field(min_length=1)
@@ -46,7 +55,7 @@ def load_plan(path: Path | str) -> TaskPlan:
     try:
         return TaskPlan.model_validate(raw)
     except ValidationError as exc:
-        raise PlanError(f"invalid plan ({path}): {exc}") from exc
+        raise PlanError(f"invalid plan ({path}): {_short(exc)}") from exc
 
 
 def validate_plan(
@@ -183,4 +192,7 @@ def _with_placeholders(params: dict[str, Any]) -> dict[str, Any]:
 
 
 def _short(exc: ValidationError) -> str:
-    return "; ".join(f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in exc.errors())
+    """One line per error, `where: what`; an error about the whole document (not a mapping) has no `where`."""
+    return "; ".join(
+        f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" if e["loc"] else e["msg"] for e in exc.errors()
+    )

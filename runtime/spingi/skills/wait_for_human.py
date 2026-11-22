@@ -8,14 +8,14 @@ from __future__ import annotations
 
 import asyncio
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from spingi.core.ports import HumanRequest
-from spingi.core.skill import Skill, SkillContext, SkillResult
+from spingi.core.skill import Skill, SkillContext, SkillParams, SkillResult
 from spingi.core.types import StateDelta
 
 
-class WaitForHumanParams(BaseModel):
+class WaitForHumanParams(SkillParams):
     prompt: str = Field(min_length=1, max_length=300, description="What the operator should do before continuing")
     timeout_s: float = Field(default=300.0, gt=0, le=3600)
 

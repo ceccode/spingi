@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
-from spingi.core.skill import Skill, SkillContext, SkillResult
+from spingi.core.skill import Skill, SkillContext, SkillParams, SkillResult
 
 
-class SayParams(BaseModel):
+class SayParams(SkillParams):
     text: str = Field(min_length=1, max_length=200)
 
 

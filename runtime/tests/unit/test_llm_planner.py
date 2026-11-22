@@ -138,6 +138,21 @@ def test_an_unknown_location_is_sent_back_with_the_closest_known_name():
     assert "step 4 (place): unknown location 'workstation_b', did you mean 'workstation_B'?" in feedback
 
 
+@pytest.mark.parametrize(
+    ("typo", "error"),
+    [
+        (lambda step: step["params"].update(max_sped=0.8), "invalid parameters: max_sped: Extra inputs"),
+        (lambda step: step.update(on_failre=step.pop("on_failure")), "steps.0.on_failre: Extra inputs"),
+    ],
+)
+def test_a_misspelled_key_in_the_answer_is_sent_back_not_dropped(typo, error):
+    bad = golden_as_answer("go_to_workstation")
+    typo(bad["steps"][0])
+    client = FakeClient(bad, golden_as_answer("go_to_workstation"))
+    result = planner(client).plan("Go to workstation B.", load_world(WAREHOUSE), load_routes(WAREHOUSE))
+    assert result.attempts == 2 and error in client.requests[1]["messages"][2]["content"]
+
+
 def test_two_invalid_answers_raise_and_nothing_is_returned():
     client = FakeClient(
         {"id": "x", "description": "", "steps": [{"skill": "fly", "params": {}, "on_failure": {}}]}, "not json at all"

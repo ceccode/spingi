@@ -10,13 +10,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
-from spingi.core.skill import Check, LocationName, Skill, SkillContext, SkillResult
+from spingi.core.skill import Check, LocationName, Skill, SkillContext, SkillParams, SkillResult
 from spingi.core.types import StateDelta, WorldState
 
 
-class InspectParams(BaseModel):
+class InspectParams(SkillParams):
     target: LocationName = Field(min_length=1, description="Known location the robot must be at")
     checks: list[str] = Field(default_factory=list, description="`present:<cls>`, `absent:<cls>` or free text")
 

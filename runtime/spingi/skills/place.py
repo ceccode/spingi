@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import math
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
-from spingi.core.skill import Check, LocationName, Skill, SkillContext, SkillResult
+from spingi.core.skill import Check, LocationName, Skill, SkillContext, SkillParams, SkillResult
 from spingi.core.types import ObjectRef, Pose3D, StateDelta, WorldState
 
 
-class PlaceParams(BaseModel):
+class PlaceParams(SkillParams):
     at: LocationName = Field(min_length=1, description="Known location the robot must be at")
     arm: str = Field(default="right", pattern="^(left|right)$")
     height_m: float = Field(default=0.9, ge=0.0, le=1.5, description="Drop height used when the adapter cannot tell")
