@@ -102,7 +102,7 @@ uv run spingi plan "Bring the red box from shelf A to workstation B" --scene sim
 
 ### 5. Write your own plan
 
-A plan is a YAML list of skills with a failure policy per step. No branches, no loops: when a decision is needed, a new plan is generated.
+A plan is a YAML list of skills with a failure policy per step. No branches, no loops: when a decision is needed, a new plan is generated. The [tutorial](docs/tutorial.md) writes a first patrol for the Go2 step by step, from the scene to the viewer and the benchmark.
 
 ```yaml
 id: fetch_box
@@ -141,6 +141,7 @@ Safety layers run on the robot's own clock (simulated time in MuJoCo), so a simu
 
 | Document | Content |
 |----------|---------|
+| [docs/tutorial.md](docs/tutorial.md) | Step by step: read a scene, write a plan, run it from the fake adapter up to realistic sensors, replay it in the viewer, place landmarks, measure it with bench, model your own place |
 | [docs/runtime-spec.md](docs/runtime-spec.md) | Principles, architecture, contracts, execution model, safety layers, testing strategy, milestones |
 | [docs/episode-format.md](docs/episode-format.md) | The episode folder, manifest, trajectory, frames, compatibility rules |
 | [adr/](adr/README.md) | Architecture decisions 0001–0023 and the ones still open |

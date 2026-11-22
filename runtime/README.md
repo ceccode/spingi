@@ -1,6 +1,6 @@
 # Spingi runtime
 
-The Physical Agent Runtime: a Python package (`spingi`) that executes declarative plans on a robot adapter, with safety limits, retries and human escalation, and records every run as an episode. Specification in [../docs/runtime-spec.md](../docs/runtime-spec.md), decisions in [../adr](../adr/README.md).
+The Physical Agent Runtime: a Python package (`spingi`) that executes declarative plans on a robot adapter, with safety limits, retries and human escalation, and records every run as an episode. Specification in [../docs/runtime-spec.md](../docs/runtime-spec.md), decisions in [../adr](../adr/README.md), a step-by-step first program in [../docs/tutorial.md](../docs/tutorial.md).
 
 All commands run from this folder. Requirements: Python 3.11+ and [uv](https://docs.astral.sh/uv/).
 
