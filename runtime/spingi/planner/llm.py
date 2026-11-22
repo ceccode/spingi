@@ -2,14 +2,16 @@
 
 The model sees the request, the symbolic world state (locations, known objects, battery) and the skill whitelist;
 it answers with a plan through structured outputs constrained by `plan_schema`. The plan then goes through
-`validate_plan` like any hand-written plan. If validation fails, the errors are sent back once; a second failure
-is reported, never executed. The model never sees telemetry, frames or joints, and has no way to move the robot.
+`validate_plan` like any hand-written plan, checked against the locations the model was shown (ADR-0025). If
+validation fails, the errors are sent back once; a second failure is reported, never executed. The model never
+sees telemetry, frames or joints, and has no way to move the robot.
 """
 
 from __future__ import annotations
 
 import json
 import sys
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -157,7 +159,7 @@ class LLMPlanner:
             text = next((b.text for b in response.content if getattr(b, "type", None) == "text"), None)
             if text is None:
                 raise PlanningError("no plan in the response")
-            plan, errors = self._parse(text)
+            plan, errors = self._parse(text, state.locations)
             if plan is not None and not errors:
                 return PlanningResult(
                     plan=plan, attempts=attempt, model=getattr(response, "model", self.model), usage=usage
@@ -172,7 +174,7 @@ class LLMPlanner:
             )
         raise PlanningError(f"no valid plan after {self.max_attempts} attempts: {'; '.join(errors)}")
 
-    def _parse(self, text: str) -> tuple[TaskPlan | None, list[str]]:
+    def _parse(self, text: str, locations: Collection[str]) -> tuple[TaskPlan | None, list[str]]:
         try:
             data = json.loads(text)
         except json.JSONDecodeError as exc:
@@ -184,7 +186,7 @@ class LLMPlanner:
             plan = TaskPlan.model_validate(raw)
         except ValidationError as exc:
             return None, [f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in exc.errors()]
-        return plan, validate_plan(plan, self.registry)
+        return plan, validate_plan(plan, self.registry, locations=locations)
 
 
 def _usage(response: Any) -> dict[str, Any]:

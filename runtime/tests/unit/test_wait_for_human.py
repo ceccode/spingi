@@ -3,7 +3,7 @@ import io
 from spingi.console import ConsoleHuman
 from spingi.core.human import ScriptedHuman
 from spingi.core.plan import Step, TaskPlan
-from tests.conftest import world
+from tests.conftest import out_of_place, world
 
 
 def plan(**on_failure) -> TaskPlan:
@@ -63,5 +63,5 @@ async def test_console_offers_only_continue_and_abort():
 
 async def test_a_continue_answer_to_an_escalation_is_treated_as_abort(make_executor):
     executor, adapter, log = make_executor(human=ScriptedHuman(responses=["continue"]))
-    result = await executor.run(TaskPlan(id="p", steps=[Step(skill="navigate", params={"to": "nowhere"})]), world())
+    result = await executor.run(TaskPlan(id="p", steps=[out_of_place()]), world())
     assert result.status == "aborted"  # an escalation offers retry/skip/abort only

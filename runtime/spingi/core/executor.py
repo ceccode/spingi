@@ -82,7 +82,7 @@ class Executor:
     async def run(self, plan: TaskPlan, state: WorldState) -> RunResult:
         self.log.emit("run.start", plan_id=plan.id, steps=len(plan.steps))
 
-        errors = validate_plan(plan, self.registry, self.robot.capabilities)
+        errors = validate_plan(plan, self.registry, self.robot.capabilities, state.locations)
         if errors:
             self.log.emit("plan.invalid", errors=errors)
             self.log.emit("run.end", status="invalid_plan")

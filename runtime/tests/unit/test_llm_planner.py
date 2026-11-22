@@ -128,6 +128,16 @@ def test_invalid_plan_is_sent_back_with_the_errors_append_only():
     assert "does not point to a previous step" in second[2]["content"]
 
 
+def test_an_unknown_location_is_sent_back_with_the_closest_known_name():
+    bad = golden_as_answer("fetch_and_deliver")
+    bad["steps"][4]["params"]["at"] = "workstation_b"
+    client = FakeClient(bad, golden_as_answer("fetch_and_deliver"))
+    result = planner(client).plan("Bring the red box", load_world(WAREHOUSE), load_routes(WAREHOUSE))
+    assert result.attempts == 2 and result.plan.steps[4].params["at"] == "workstation_B"
+    feedback = client.requests[1]["messages"][2]["content"]
+    assert "step 4 (place): unknown location 'workstation_b', did you mean 'workstation_B'?" in feedback
+
+
 def test_two_invalid_answers_raise_and_nothing_is_returned():
     client = FakeClient(
         {"id": "x", "description": "", "steps": [{"skill": "fly", "params": {}, "on_failure": {}}]}, "not json at all"
@@ -152,7 +162,7 @@ def test_every_golden_plan_is_valid_and_equivalent_to_itself():
     reg = default_registry()
     for case in load_cases(CASES):
         plan = golden_plan(case)
-        assert validate_plan(plan, reg) == [], case.id
+        assert validate_plan(plan, reg, locations=load_world(case.scene).locations) == [], case.id
         assert equivalence(plan, case, reg) == [], case.id
 
 
