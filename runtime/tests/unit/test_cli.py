@@ -1,6 +1,7 @@
 """The command line as a person uses it: which session each command asks for, what it prints, its exit code."""
 
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -78,6 +79,27 @@ def test_a_run_prints_its_summary_and_exits_with_its_status(tmp_path, capsys):
     assert capsys.readouterr().out.strip().splitlines()[-1].startswith("ABORTED · ")
 
 
+def test_a_misspelled_parameter_ends_the_run_as_an_invalid_plan(tmp_path, capsys):
+    plan = tmp_path / "typo.yaml"
+    plan.write_text("id: typo\nsteps:\n  - skill: navigate\n    params: { to: shelf_A, max_sped: 0.8 }\n")
+    assert main(["run", str(plan), "--runs-dir", str(tmp_path / "runs")]) == 1
+    out = capsys.readouterr().out.strip().splitlines()
+    assert out[-1].startswith("INVALID_PLAN · 0/1 steps · ")
+    (invalid,) = [json.loads(line) for line in out if line.startswith("{") and '"plan.invalid"' in line]
+    assert invalid["errors"] == ["step 0 (navigate): invalid parameters: max_sped: Extra inputs are not permitted"]
+
+
+def test_a_plan_file_that_is_not_a_task_plan_is_refused_before_any_robot_starts(sessions, tmp_path, capsys):
+    plan = tmp_path / "typo.yaml"
+    plan.write_text("id: typo\nsteps:\n  - skill: say\n    params: { text: hi }\n    on_failre: { then: abort }\n")
+    runs = tmp_path / "runs"
+    for command in (["run"], ["bench", "--runs", "2"]):
+        assert main([*command, str(plan), "--runs-dir", str(runs)]) == 1
+        last = capsys.readouterr().out.strip().splitlines()[-1]
+        assert last == f"INVALID_PLAN · invalid plan ({plan}): steps.0.on_failre: Extra inputs are not permitted"
+    assert sessions == [] and not runs.exists()
+
+
 def test_the_automatic_operator_prints_every_event(tmp_path, capsys):
     main(run("--runs-dir", str(tmp_path)))
     kinds = [json.loads(line)["kind"] for line in capsys.readouterr().out.splitlines() if line.startswith("{")]
@@ -96,6 +118,16 @@ def test_skills_and_robots_list_what_each_robot_can_do(capsys):
 def test_replay_says_whether_the_episode_behaves_the_same(capsys):
     assert main(["replay", "tests/golden/episodes/inspection_round"]) == 0
     assert capsys.readouterr().out.startswith("same ")
+
+
+def test_replay_reports_an_episode_whose_plan_is_no_longer_valid_and_goes_on(tmp_path, capsys):
+    old = shutil.copytree("tests/golden/episodes/inspection_round", tmp_path / "old")
+    plan = old / "plan.yaml"
+    plan.write_text(plan.read_text(encoding="utf-8").replace("on_failure:", "on_failre:", 1), encoding="utf-8")
+    assert main(["replay", str(old), "tests/golden/episodes/inspection_round"]) == 1
+    first, second = capsys.readouterr().out.splitlines()[:2]
+    assert first.startswith(f"INVALID   {old}  invalid plan (") and "on_failre: Extra inputs are not permitted" in first
+    assert second.startswith("same ")
 
 
 @pytest.fixture

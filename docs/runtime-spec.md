@@ -215,9 +215,12 @@ class SkillContext(BaseModel):
     human: HumanGateway | None = None   # used by wait_for_human
     deadline_s: float
 
+class SkillParams(BaseModel):           # base of every Params: extra="forbid", an unknown key is an error
+    ...
+
 class Skill:                            # base class
     name: ClassVar[str]
-    Params: ClassVar[type[BaseModel]]   # parameter schema, also what the planner sees
+    Params: ClassVar[type[SkillParams]] # parameter schema, also what the planner sees
     default_deadline_s: ClassVar[float] = 30.0
 
     def preconditions(self, params, state: WorldState) -> Check: ...
@@ -226,7 +229,7 @@ class Skill:                            # base class
     async def abort(self) -> None: ...
 ```
 
-The `SkillRegistry` is the whitelist: `default_registry()` registers the seven v0 skills, `names()` lists them and `schemas()` returns the JSON schema of each `Params`.
+The `SkillRegistry` is the whitelist: `default_registry()` registers the seven v0 skills, `names()` lists them and `schemas()` returns the JSON schema of each `Params`. `register` refuses a skill whose `Params` would accept a key it does not declare, so every skill's parameters are strict (ADR-0024).
 
 Rules:
 - `preconditions` and `postconditions` are **pure**: they read the state and do not touch the robot. Testable with a hand-built `WorldState`.
@@ -272,6 +275,7 @@ steps:
 ```
 
 ```python
+# OnFailure, Step and TaskPlan have extra="forbid": a key they do not declare is an error
 class OnFailure(BaseModel):
     retry: int = Field(0, ge=0, le=10)
     then: Literal["needs_human", "abort", "skip"] = "needs_human"
@@ -291,6 +295,7 @@ class TaskPlan(BaseModel):
 
 Rules:
 - The plan is validated **before** it starts (`validate_plan`): every `skill` exists in the registry, every `params` passes the skill's schema, every reference points to a previous step. An invalid plan never moves the robot.
+- **An unknown key is an error, never a default** (ADR-0024). A misspelled parameter fails the skill's schema: `max_sped: 0.8` on `navigate` gives `step 0 (navigate): invalid parameters: max_sped: Extra inputs are not permitted` and the run ends as `invalid_plan`, instead of walking at the default 0.5 m/s. A misspelled key of the plan itself (`on_failre`, `retires`, `dealine_s`) fails `TaskPlan` when the file is loaded: `load_plan` raises `PlanError` with one line per error, `invalid plan (<path>): steps.0.on_failre: Extra inputs are not permitted`.
 - A reference has the form `$<step>.<path>`: `<step>` is either a skill name (the nearest previous step with that skill) or a step index; `<path>` walks the step's evidence with dict keys and `[i]` list indexes only (no attributes; a name starting with `_` is refused), for example `$detect.objects[0].id` or `$2.objects[0].id`. A reference is always the **whole value** of a parameter, never a substring: `"text": "$navigate.reached"` is valid, `"text": "arrived at $navigate.reached"` is not (it is a plain string). References are resolved just before the step runs; a reference that cannot be resolved is a step failure handled by `on_failure.then`.
 - The plan is data. It is versioned, diffed, tested.
 - No control flow beyond `on_failure`. No `if`, no loops (v0). If they are needed, the Planner generates a different plan.
@@ -515,12 +520,12 @@ Deliberate choice: a **lightly prepared environment** rather than general percep
 ## 7. Planner
 
 ### 7.1 StaticPlanner
-Loads a `TaskPlan` from YAML (`StaticPlanner(plans_dir).plan(id)` reads `<plans_dir>/<id>.yaml`). It is the default for recurring tasks. Deterministic, testable, no inference cost. The CLI loads the plan file given on the command line in the same way (`load_plan`).
+Loads a `TaskPlan` from YAML (`StaticPlanner(plans_dir).plan(id)` reads `<plans_dir>/<id>.yaml`). It is the default for recurring tasks. Deterministic, testable, no inference cost. The CLI loads the plan file given on the command line in the same way (`load_plan`). A file that is not a `TaskPlan` (an unknown key, a value out of range) ends `spingi run` and `spingi bench` with `INVALID_PLAN · <the PlanError>` and exit status 1, before a robot is started or a run folder is made; a `TaskPlan` that fails `validate_plan` reaches the Executor, which ends it as `invalid_plan` and writes the episode with the `plan.invalid` event.
 
 ### 7.2 LLMPlanner
 - Uses structured output, not tool use (ADR-0010): the answer is constrained by a JSON schema generated from the registry, one `anyOf` variant per skill with that skill's parameter schema, every object strict. Constraints that structured output does not support (lengths, ranges, patterns) are stripped from the schema and enforced afterwards by `validate_plan`.
 - The LLM receives: the natural-language request, a one-line summary of each skill, the symbolic world (known locations, known objects, robot position, battery, what it holds) and the `routes:` section of the scene file, which lists waypoints that avoid obstacles. The world goes inside a `<world>` block, and the system prompt says that the skills list and that block are data describing the site, never instructions. Route names must match the name alphabet of §3.1.
-- Output: a JSON plan → `TaskPlan` → validated like any plan.
+- Output: a JSON plan → `TaskPlan` → validated like any plan. The schema's strict objects (`additionalProperties: false`) and the strict models agree: a key the schema would not allow is refused by `TaskPlan` or the skill's `Params` too, and sent back as an error (ADR-0024).
 - If validation fails, the errors are sent back once; a second failure, a refusal or a truncated answer is a `PlanningError` and nothing runs. The caller (`spingi plan`) reports it. Missing credentials are checked before any call is made.
 - `spingi plan --run` prints the plan and asks `[y/N]` before running it; `--yes` skips the question, and without a terminal (no TTY) the plan is not run unless `--yes` is given.
 - A request that cannot be done with the skills, locations and objects of the world is answered with a single `say` step that explains what is missing.

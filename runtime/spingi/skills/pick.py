@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import math
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
-from spingi.core.skill import Check, Skill, SkillContext, SkillResult
+from spingi.core.skill import Check, Skill, SkillContext, SkillParams, SkillResult
 from spingi.core.types import StateDelta, WorldState
 
 REACH_M = 0.9  # base-to-object distance within which the predefined grasp works
 
 
-class PickParams(BaseModel):
+class PickParams(SkillParams):
     object_id: str = Field(min_length=1, description="Id of an object with a known pose in the world state")
     arm: str = Field(default="right", pattern="^(left|right)$")
 

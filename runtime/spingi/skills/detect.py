@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
-from spingi.core.skill import Check, Skill, SkillContext, SkillResult
+from spingi.core.skill import Check, Skill, SkillContext, SkillParams, SkillResult
 from spingi.core.types import StateDelta, WorldState
 
 
-class DetectParams(BaseModel):
+class DetectParams(SkillParams):
     cls: str = Field(min_length=1, description="Object class to look for, e.g. red_box")
     expect: int = Field(default=1, ge=1, description="Minimum number of objects that must be found")
 

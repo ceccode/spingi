@@ -66,6 +66,12 @@ def test_describe_ignores_unknown_events():
     assert describe(Event(ts=0, run_id="r", kind="adapter.call", data={})) is None
 
 
+def test_an_invalid_plan_says_why_to_the_operator():
+    errors = ["step 0 (navigate): invalid parameters: max_sped: Extra inputs are not permitted"]
+    line = describe(Event(ts=0, run_id="r", kind="plan.invalid", data={"errors": errors}))
+    assert line == f"plan refused, nothing moved: {errors[0]}"
+
+
 async def test_subscriber_sees_events_in_order():
     seen: list[str] = []
     log = EventLog(run_id="r")

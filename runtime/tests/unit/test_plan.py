@@ -1,6 +1,8 @@
 import pytest
+from pydantic import ValidationError
 
 from spingi.core.plan import PlanError, Step, TaskPlan, load_plan, resolve_params, validate_plan
+from spingi.skills import default_registry
 
 
 def plan(*steps: dict) -> TaskPlan:
@@ -20,6 +22,50 @@ def test_unknown_skill_is_rejected(registry):
 def test_bad_params_are_rejected_before_running(registry):
     errors = validate_plan(plan({"skill": "navigate", "params": {"to": "A", "max_speed": 9}}), registry)
     assert errors and "max_speed" in errors[0]
+
+
+def test_a_misspelled_parameter_is_an_error_not_the_default(registry):
+    errors = validate_plan(plan({"skill": "navigate", "params": {"to": "shelf_A", "max_sped": 0.8}}), registry)
+    assert errors == ["step 0 (navigate): invalid parameters: max_sped: Extra inputs are not permitted"]
+
+
+@pytest.mark.parametrize("skill", default_registry().names())
+def test_every_skill_refuses_a_parameter_it_does_not_have(registry, skill):
+    errors = validate_plan(plan({"skill": skill, "params": {"speed_limit": 1}}), registry)
+    assert len(errors) == 1 and errors[0].startswith(f"step 0 ({skill}): invalid parameters: ")
+    assert "speed_limit: Extra inputs are not permitted" in errors[0]
+
+
+def test_a_misspelled_parameter_holding_a_reference_is_refused(registry):
+    p = plan({"skill": "detect", "params": {"cls": "red_box"}}, {"skill": "pick", "params": {"objectid": "$0.id"}})
+    errors = validate_plan(p, registry)
+    assert len(errors) == 1 and "objectid: Extra inputs are not permitted" in errors[0]
+
+
+@pytest.mark.parametrize(
+    ("raw", "where"),
+    [
+        ({"id": "t", "dealine_s": 60, "steps": [{"skill": "say"}]}, "dealine_s"),
+        ({"id": "t", "steps": [{"skill": "say", "on_failre": {"then": "abort"}}]}, "steps.0.on_failre"),
+        ({"id": "t", "steps": [{"skill": "say", "on_failure": {"retires": 2}}]}, "steps.0.on_failure.retires"),
+    ],
+)
+def test_a_misspelled_key_in_the_plan_is_an_error_not_the_default(raw, where):
+    with pytest.raises(ValidationError) as exc:
+        TaskPlan.model_validate(raw)
+    (error,) = exc.value.errors()
+    assert ".".join(str(p) for p in error["loc"]) == where and error["type"] == "extra_forbidden"
+
+
+def test_a_plan_file_that_is_not_a_task_plan_is_one_line(tmp_path):
+    path = tmp_path / "typo.yaml"
+    path.write_text("id: typo\nsteps:\n  - skill: say\n    params: { text: hi }\n    on_failre: { then: abort }\n")
+    with pytest.raises(PlanError) as exc:
+        load_plan(path)
+    assert str(exc.value) == f"invalid plan ({path}): steps.0.on_failre: Extra inputs are not permitted"
+    path.write_text("")  # an empty file is not a mapping: the message has no location
+    with pytest.raises(PlanError, match=r"\): Input should be a valid dictionary"):
+        load_plan(path)
 
 
 def test_reference_must_point_backwards(registry):

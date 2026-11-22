@@ -112,6 +112,8 @@ def describe(event: Event) -> str | None:
     k = event.kind
     if k == "run.start":
         return f"run {event.run_id} · plan {d.get('plan_id')} · {d.get('steps')} steps"
+    if k == "plan.invalid":
+        return "plan refused, nothing moved: " + "; ".join(d.get("errors") or [])
     if k == "step.start":
         return f"step {d.get('index')}  {d.get('skill')} {json.dumps(d.get('params', {}))}"
     if k == "skill.end" and d.get("outcome") != "success":
