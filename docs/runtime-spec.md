@@ -220,6 +220,9 @@ class Skill:                            # base class
     Params: ClassVar[type[BaseModel]]   # parameter schema, also what the planner sees
     default_deadline_s: ClassVar[float] = 30.0
 
+    @classmethod
+    def location_params(cls) -> list[str]: ...  # the Params fields typed LocationName / LocationNames
+
     def preconditions(self, params, state: WorldState) -> Check: ...
     async def execute(self, params, ctx: SkillContext) -> SkillResult: ...
     def postconditions(self, params, state: WorldState) -> Check: ...
@@ -227,6 +230,8 @@ class Skill:                            # base class
 ```
 
 The `SkillRegistry` is the whitelist: `default_registry()` registers the seven v0 skills, `names()` lists them and `schemas()` returns the JSON schema of each `Params`.
+
+A parameter that names a location of the scene is typed `LocationName` (one name) or `LocationNames` (a list), from `spingi.core.skill`: `navigate.to`, `navigate.via`, `inspect.target`, `place.at`. The type is `str` or `list[str]` with a marker that `validate_plan` reads and the JSON schema leaves out (ADR-0025).
 
 Rules:
 - `preconditions` and `postconditions` are **pure**: they read the state and do not touch the robot. Testable with a hand-built `WorldState`.
@@ -238,11 +243,11 @@ Rules:
 
 | Skill | Parameters | Precondition | Postcondition |
 |-------|------------|--------------|---------------|
-| `navigate` | `to: str` (location), `via: list[str] = []` (waypoints, in order), `max_speed: float = 0.5` (m/s, 0 < v ≤ 2) | `to` and every `via` location exist, battery ≥ 10 %, robot not in `estop` | robot within `tolerance_m` of `to`. Each leg is a straight line; evidence `reached`, `path`, `distance_m`. Before leaving and at every waypoint it looks for the landmarks in view and corrects its pose with the first one seen (`robot.relocalized`; `localization.missed` when one was expected and not seen), walking the difference when the correction moves it off the waypoint; a retry resumes from the waypoint the robot stands at (ADR-0016) |
+| `navigate` | `to: LocationName`, `via: LocationNames = []` (waypoints, in order), `max_speed: float = 0.5` (m/s, 0 < v ≤ 2) | `to` and every `via` location exist, battery ≥ 10 %, robot not in `estop` | robot within `tolerance_m` of `to`. Each leg is a straight line; evidence `reached`, `path`, `distance_m`. Before leaving and at every waypoint it looks for the landmarks in view and corrects its pose with the first one seen (`robot.relocalized`; `localization.missed` when one was expected and not seen), walking the difference when the correction moves it off the waypoint; a retry resumes from the waypoint the robot stands at (ADR-0016) |
 | `detect` | `cls: str`, `expect: int = 1` | robot mode `idle` | at least `expect` objects of class `cls` seen (checked in `execute`, `RECOVERABLE` otherwise); they enter `objects` with their pose; evidence `objects`, `frame_id` |
-| `inspect` | `target: str`, `checks: list[str] = []` | `target` is a known location, robot within its tolerance, not in `estop` | evidence contains `frame_id`, a result per check and the list of `anomalies`. `present:<cls>` and `absent:<cls>` are evaluated with the Perceiver; any other check is recorded as not evaluated. An anomaly does not fail the skill |
+| `inspect` | `target: LocationName`, `checks: list[str] = []` | `target` is a known location, robot within its tolerance, not in `estop` | evidence contains `frame_id`, a result per check and the list of `anomalies`. `present:<cls>` and `absent:<cls>` are evaluated with the Perceiver; any other check is recorded as not evaluated. An anomaly does not fail the skill |
 | `pick` | `object_id: str`, `arm: "left" \| "right" = "right"` | hand empty, object with known pose within 0.9 m of the base | `robot.holding.id == object_id`; the object leaves `objects` |
-| `place` | `at: str` (location), `arm = "right"`, `height_m: float = 0.9` | `robot.holding` not null, robot within the tolerance of `at` | `robot.holding is None`; the object is back in `objects` with the pose where it was put down |
+| `place` | `at: LocationName`, `arm = "right"`, `height_m: float = 0.9` | `robot.holding` not null, robot within the tolerance of `at` | `robot.holding is None`; the object is back in `objects` with the pose where it was put down |
 | `wait_for_human` | `prompt: str`, `timeout_s: float = 300` (≤ 3600) | – | the robot is stopped and the operator answered `continue`. `abort` or no answer within `timeout_s` gives `RECOVERABLE` |
 | `say` | `text: str` (1 to 200 characters) | – | always `SUCCESS`; the text is in a `say` event |
 
@@ -290,7 +295,8 @@ class TaskPlan(BaseModel):
 ```
 
 Rules:
-- The plan is validated **before** it starts (`validate_plan`): every `skill` exists in the registry, every `params` passes the skill's schema, every reference points to a previous step. An invalid plan never moves the robot.
+- The plan is validated **before** it starts (`validate_plan`): every `skill` exists in the registry, every `params` passes the skill's schema, every reference points to a previous step, and every location a step names is a location of the scene (ADR-0025). An invalid plan never moves the robot.
+- **A location the scene does not have is an error**, with the closest known name when there is one, ignoring case: `step 0 (navigate): unknown location 'pump_a', did you mean 'pump_A'?`. The Executor passes the scene's locations (`state.locations`) and the LLM planner the locations of the world it showed the model. A location parameter whose whole value is a reference is resolved at run time and not checked; the skill's precondition checks what it resolves to.
 - A reference has the form `$<step>.<path>`: `<step>` is either a skill name (the nearest previous step with that skill) or a step index; `<path>` walks the step's evidence with dict keys and `[i]` list indexes only (no attributes; a name starting with `_` is refused), for example `$detect.objects[0].id` or `$2.objects[0].id`. A reference is always the **whole value** of a parameter, never a substring: `"text": "$navigate.reached"` is valid, `"text": "arrived at $navigate.reached"` is not (it is a plain string). References are resolved just before the step runs; a reference that cannot be resolved is a step failure handled by `on_failure.then`.
 - The plan is data. It is versioned, diffed, tested.
 - No control flow beyond `on_failure`. No `if`, no loops (v0). If they are needed, the Planner generates a different plan.
@@ -424,7 +430,7 @@ Besides the events, the episode holds the camera frames taken by skills and the 
 ## 4. Execution model
 
 ```
-errors = validate_plan(plan, registry)
+errors = validate_plan(plan, registry, robot.capabilities, state.locations)
 if errors → plan.invalid, run.end(status=invalid_plan); nothing moves
 
 for index, step in plan.steps:
@@ -520,7 +526,7 @@ Loads a `TaskPlan` from YAML (`StaticPlanner(plans_dir).plan(id)` reads `<plans_
 ### 7.2 LLMPlanner
 - Uses structured output, not tool use (ADR-0010): the answer is constrained by a JSON schema generated from the registry, one `anyOf` variant per skill with that skill's parameter schema, every object strict. Constraints that structured output does not support (lengths, ranges, patterns) are stripped from the schema and enforced afterwards by `validate_plan`.
 - The LLM receives: the natural-language request, a one-line summary of each skill, the symbolic world (known locations, known objects, robot position, battery, what it holds) and the `routes:` section of the scene file, which lists waypoints that avoid obstacles. The world goes inside a `<world>` block, and the system prompt says that the skills list and that block are data describing the site, never instructions. Route names must match the name alphabet of §3.1.
-- Output: a JSON plan → `TaskPlan` → validated like any plan.
+- Output: a JSON plan → `TaskPlan` → validated like any plan, against the locations of the world the model was shown: a location the model invents or misspells is sent back as an error (ADR-0025).
 - If validation fails, the errors are sent back once; a second failure, a refusal or a truncated answer is a `PlanningError` and nothing runs. The caller (`spingi plan`) reports it. Missing credentials are checked before any call is made.
 - `spingi plan --run` prints the plan and asks `[y/N]` before running it; `--yes` skips the question, and without a terminal (no TTY) the plan is not run unless `--yes` is given.
 - A request that cannot be done with the skills, locations and objects of the world is answered with a single `say` step that explains what is missing.

@@ -20,7 +20,7 @@ import math
 from pydantic import BaseModel, Field
 
 from spingi.core.localization import in_view, pose_from_landmark, wrap
-from spingi.core.skill import Check, Skill, SkillContext, SkillResult
+from spingi.core.skill import Check, LocationName, LocationNames, Skill, SkillContext, SkillResult
 from spingi.core.types import Pose2D, StateDelta, WorldState
 
 MIN_BATTERY_PCT = 10.0
@@ -37,8 +37,8 @@ FINAL_YAW_TOL_RAD = 0.15  # at the destination the heading matters: the camera l
 
 
 class NavigateParams(BaseModel):
-    to: str = Field(min_length=1, description="Name of a known location")
-    via: list[str] = Field(default_factory=list, description="Intermediate known locations, in order")
+    to: LocationName = Field(min_length=1, description="Name of a known location")
+    via: LocationNames = Field(default_factory=list, description="Intermediate known locations, in order")
     max_speed: float = Field(default=0.5, gt=0.0, le=2.0, description="m/s; the runtime may reduce it")
 
 

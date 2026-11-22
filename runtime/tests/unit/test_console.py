@@ -6,9 +6,9 @@ import pytest
 from spingi.console import ConsoleHuman, ConsoleReporter
 from spingi.console.terminal import describe
 from spingi.core.events import Event, EventLog
-from spingi.core.plan import Step, TaskPlan
+from spingi.core.plan import TaskPlan
 from spingi.core.ports import HumanRequest
-from tests.conftest import world
+from tests.conftest import out_of_place, world
 
 
 def request() -> HumanRequest:
@@ -39,7 +39,7 @@ async def test_console_human_times_out():
 async def test_console_drives_an_executor_escalation(make_executor):
     human = ConsoleHuman(input_fn=lambda prompt: "a", out=io.StringIO())
     executor, adapter, log = make_executor(human=human)
-    plan = TaskPlan(id="p", steps=[Step(skill="navigate", params={"to": "nowhere"})])
+    plan = TaskPlan(id="p", steps=[out_of_place()])
     result = await executor.run(plan, world())
     assert result.status == "aborted" and len(human.requests) == 1
     assert log.find("human.response")[0].data["action"] == "abort"

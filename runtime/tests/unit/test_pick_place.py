@@ -76,7 +76,9 @@ def test_navigate_via_requires_known_waypoints(registry):
     from spingi.core.plan import validate_plan
 
     plan = TaskPlan(id="v", steps=[Step(skill="navigate", params={"to": "dock", "via": ["nowhere"]})])
-    assert validate_plan(plan, registry) == []  # statically fine: names are checked at runtime
+    errors = validate_plan(plan, registry, locations=world().locations)
+    assert errors == ["step 0 (navigate): unknown location 'nowhere'"]
+    # The precondition checks again at run time, for a name that only a reference resolves.
     check = registry.get("navigate").preconditions(registry.get("navigate").Params(to="dock", via=["nowhere"]), world())
     assert not check.ok and "nowhere" in check.reason
 

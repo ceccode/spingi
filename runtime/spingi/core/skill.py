@@ -3,13 +3,28 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any, ClassVar
+from typing import Annotated, Any, ClassVar
 
 from pydantic import BaseModel, Field
 
 from spingi.core.events import EventLog
 from spingi.core.ports import Capability, HumanGateway, Perceiver, RobotAdapter
 from spingi.core.types import StateDelta, WorldState
+
+
+class _NamesLocations:
+    """Marks a parameter of a skill's `Params` whose value names locations of the scene; see `LocationName`."""
+
+    def __repr__(self) -> str:
+        return "NamesLocations"
+
+
+_NAMES_LOCATIONS = _NamesLocations()
+
+# A parameter that names a known location of the scene, or a list of them. `validate_plan` checks each name against
+# the scene before anything moves (ADR-0025). The marker is pydantic metadata only: the JSON schema does not change.
+LocationName = Annotated[str, _NAMES_LOCATIONS]
+LocationNames = Annotated[list[str], _NAMES_LOCATIONS]
 
 
 class SkillOutcome(StrEnum):
@@ -85,6 +100,16 @@ class Skill:
     def missing(cls, capabilities: frozenset[Capability]) -> list[str]:
         """The capabilities this skill needs and the robot does not have, sorted; empty = usable."""
         return sorted(cls.requires - capabilities)
+
+    @classmethod
+    def location_params(cls) -> list[str]:
+        """The parameters that name locations of the scene: the fields `Params` declares as `LocationName` or
+        `LocationNames` (ADR-0025)."""
+        return [
+            name
+            for name, field in cls.Params.model_fields.items()
+            if any(isinstance(m, _NamesLocations) for m in field.metadata)
+        ]
 
     def preconditions(self, params: BaseModel, state: WorldState) -> Check:
         return Check.passed()

@@ -8,7 +8,7 @@ from spingi.core.plan import Step, TaskPlan
 from spingi.core.skill import Skill, SkillResult
 from spingi.core.types import Pose2D
 from spingi.skills import default_registry
-from tests.conftest import world
+from tests.conftest import out_of_place, world
 
 
 def three_step_plan() -> TaskPlan:
@@ -41,13 +41,29 @@ async def test_invalid_plan_never_moves_the_robot(make_executor):
     assert log.count("plan.invalid") == 1
 
 
+async def test_an_unknown_location_in_the_last_step_ends_the_run_before_the_first(make_executor):
+    human = ScriptedHuman(default="retry")
+    executor, adapter, log = make_executor(human=human)
+    plan = TaskPlan(
+        id="patrol",
+        steps=[
+            Step(skill="navigate", params={"to": "shelf_A"}),
+            Step(skill="inspect", params={"target": "shelf_A"}),
+            Step(skill="navigate", params={"to": "workstation_b"}),
+        ],
+    )
+    result = await executor.run(plan, world())
+    assert result.status == "invalid_plan" and result.steps_completed == 0
+    assert result.reason == "step 2 (navigate): unknown location 'workstation_b', did you mean 'workstation_B'?"
+    assert log.find("plan.invalid")[0].data["errors"] == [result.reason]
+    assert adapter.calls == [] and human.requests == []  # nothing moved, nobody was asked
+
+
 async def test_precondition_failure_escalates_without_useless_retries(make_executor):
     human = ScriptedHuman(default="abort")
     executor, adapter, log = make_executor(human=human)
-    plan = TaskPlan(
-        id="p", steps=[Step(skill="navigate", params={"to": "nowhere"}, on_failure={"retry": 2, "then": "needs_human"})]
-    )
-    # 'nowhere' passes static validation (it is a string) but fails the precondition at run time; nothing would
+    plan = TaskPlan(id="p", steps=[out_of_place(on_failure={"retry": 2, "then": "needs_human"})])
+    # The plan is valid but the robot is not at the shelf, so the precondition fails at run time; nothing would
     # change between retries, so the step goes straight to its escalation policy.
     result = await executor.run(plan, world())
     assert result.status == "aborted"
@@ -59,7 +75,7 @@ async def test_precondition_failure_escalates_without_useless_retries(make_execu
 async def test_human_retry_rechecks_the_precondition(make_executor):
     human = ScriptedHuman(responses=["retry", "abort"])
     executor, adapter, log = make_executor(human=human)
-    result = await executor.run(TaskPlan(id="p", steps=[Step(skill="navigate", params={"to": "nowhere"})]), world())
+    result = await executor.run(TaskPlan(id="p", steps=[out_of_place()]), world())
     assert result.status == "aborted" and log.count("skill.precondition_failed") == 2
 
 
@@ -78,7 +94,7 @@ async def test_human_can_skip_a_failing_step(make_executor):
     plan = TaskPlan(
         id="p",
         steps=[
-            Step(skill="navigate", params={"to": "nowhere"}),
+            out_of_place(),
             Step(skill="say", params={"text": "moving on"}),
         ],
     )
@@ -112,7 +128,7 @@ async def test_skip_policy_without_human(make_executor):
     plan = TaskPlan(
         id="p",
         steps=[
-            Step(skill="navigate", params={"to": "nowhere"}, on_failure={"then": "skip"}),
+            out_of_place(on_failure={"then": "skip"}),
             Step(skill="say", params={"text": "ok"}),
         ],
     )
@@ -183,7 +199,7 @@ async def test_postcondition_failure_is_recoverable(make_executor):
 
 async def test_human_timeout_aborts(make_executor):
     executor, adapter, log = make_executor(human=ScriptedHuman(never_answers=True), human_timeout_s=0.01)
-    plan = TaskPlan(id="p", steps=[Step(skill="navigate", params={"to": "nowhere"})])
+    plan = TaskPlan(id="p", steps=[out_of_place()])
     result = await executor.run(plan, world())
     assert result.status == "aborted" and log.count("human.timeout") == 1
 

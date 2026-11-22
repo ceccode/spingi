@@ -300,9 +300,14 @@ INVALID_PLAN · 0/2 steps · 0.0 s simulated
 The runner checks the whole plan before the robot moves:
 - the skills exist;
 - the parameters have the right types;
-- the robot can run every skill (a `pick` on the Go2, which has no arm, is refused).
+- the robot can run every skill (a `pick` on the Go2, which has no arm, is refused);
+- every place the plan names is in the scene (`to`, `via`, `target`, `at`), with the closest name the scene has when one is close.
 
-A place name the scene does not have is caught later, when the robot reaches that step: `precondition: unknown location: pump_a`, and the operator is asked.
+A typo in the last step of a patrol stops the run before the first step, not when the robot gets there:
+
+```
+[    0.0s] plan invalid, nothing moved: step 0 (navigate): unknown location 'pump_a', did you mean 'pump_A'?
+```
 
 ### A route through an obstacle
 

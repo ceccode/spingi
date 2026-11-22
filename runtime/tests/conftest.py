@@ -6,6 +6,7 @@ from spingi.adapters.fake import FakeAdapter
 from spingi.core.events import EventLog
 from spingi.core.executor import Executor
 from spingi.core.human import ScriptedHuman
+from spingi.core.plan import Step
 from spingi.core.types import Location, ObjectRef, Pose2D, Pose3D, RobotState, WorldState
 from spingi.perception.fake import FakePerceiver
 from spingi.skills import default_registry
@@ -21,6 +22,12 @@ def world(**kw) -> WorldState:
     objects = kw.pop("objects", {})
     robot = kw.pop("robot", RobotState(pose=Pose2D(x=0, y=0, yaw=0)))
     return WorldState(locations=locations, objects=objects, robot=robot, **kw)
+
+
+def out_of_place(**kw) -> Step:
+    """A valid step whose precondition fails at run time, whatever is retried: in `world()` the robot stands at the
+    dock, and inspecting shelf_A needs it at the shelf. Keyword arguments go to the Step (on_failure, deadline_s)."""
+    return Step(skill="inspect", params={"target": "shelf_A"}, **kw)
 
 
 def red_box(with_pose: bool = True) -> ObjectRef:
