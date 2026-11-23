@@ -209,7 +209,7 @@ A plan has no branches and no loops, on purpose: it can be read and checked befo
 
 Run it at three levels of realism, from the fastest to the most faithful.
 
-**The fake adapter** checks the logic of the plan in a fraction of a second. The robot moves along the path at a nominal speed; it does not model walls or the ground.
+**The fake adapter** checks the logic of the plan in a fraction of a second. The robot moves along the path at a nominal speed; it does not model walls or the ground. Its camera sees what the simulator's would from the same place: objects within 3 m and 40 degrees either side of where the robot faces ([ADR-0024](../adr/0024-the-fake-camera-sees-what-the-sim-camera-sees.md)).
 
 ```bash
 uv run spingi run plans/pump_check.yaml --scene sim/scenes/yard_outdoor.yaml --robot go2 --operator console
@@ -285,28 +285,34 @@ The command exits with status 0 on `SUCCESS` only, so scripts can rely on it.
 
 ### A mistake in the plan
 
+Here is `pump_check` with three typos: a parameter, a skill and, in the last step, a place.
+
 ```yaml
+  - skill: navigate
+    params: { to: pump_A, via: [yard_gate, track_mid], max_sped: 0.8 }
   - skill: inspekt
-    params: { target: pump_A }
+    params: { target: pump_A, checks: ["present:gauge"] }
+  - skill: navigate
+    params: { to: dok, via: [track_mid, yard_gate], max_speed: 0.8 }
 ```
 
 ```
-[    0.0s] plan invalid, nothing moved: step 1: unknown skill 'inspekt'
+[    0.0s] plan invalid, nothing moved: step 1 (navigate): invalid parameters: max_sped: Extra inputs are not permitted; step 2: unknown skill 'inspekt'; step 3 (navigate): unknown location 'dok', did you mean 'dock'?
 [    0.0s] run end: invalid_plan · 0 steps completed
 
-INVALID_PLAN · 0/2 steps · 0.0 s simulated
+INVALID_PLAN · 0/4 steps · 0.0 s simulated
 ```
 
-The runner checks the whole plan before the robot moves:
+The runner checks the whole plan before the robot moves, and reports every error at once:
 - the skills exist;
-- the parameters have the right types;
+- the parameters have the right names and types: a misspelled one is an error, never a setting silently ignored ([ADR-0026](../adr/0026-unknown-keys-in-plans-are-errors.md));
 - the robot can run every skill (a `pick` on the Go2, which has no arm, is refused);
-- every place the plan names is in the scene (`to`, `via`, `target`, `at`), with the closest name the scene has when one is close.
+- every place the plan names is in the scene (`to`, `via`, `target`, `at`), with the closest name the scene has when one is close ([ADR-0025](../adr/0025-plans-name-only-locations-of-the-scene.md)). A typo in the last step of a long patrol stops the run before the first step, not when the robot gets there.
 
-A typo in the last step of a patrol stops the run before the first step, not when the robot gets there:
+A misspelled key of the plan itself, such as `on_failre:`, is refused when the file is read, before a robot is started:
 
 ```
-[    0.0s] plan invalid, nothing moved: step 0 (navigate): unknown location 'pump_a', did you mean 'pump_A'?
+INVALID_PLAN · invalid plan (plans/pump_check.yaml): steps.1.on_failre: Extra inputs are not permitted
 ```
 
 ### A route through an obstacle
@@ -492,7 +498,7 @@ The yard was written by hand, and so can yours be. A floor plan is the best sour
    - an L-shaped building is two or three boxes;
    - a slanted fence is a row of short boxes.
 3. **The ground** is a base surface and rectangles: lawn, paving, gravel. Kerbs and steps are `raised`, slopes are `ramps`.
-4. **What cannot be modelled yet:** water and pits (a pool is a flat blue box: keep routes at least a meter from it, the robot would not fall in), overhangs and porch roofs, rotated walls.
+4. **What cannot be modeled yet:** water and pits (a pool is a flat blue box: keep routes at least a meter from it, the robot would not fall in), overhangs and porch roofs, rotated walls.
 5. **The places:** an inspection stop 1 to 3 m from what it checks and facing it, waypoints wherever a straight line would hit something, then a landmark ahead of each.
 6. **Then the same loop:** fake, sim, physics, realistic, bench.
 
