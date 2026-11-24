@@ -1,12 +1,17 @@
 # spingi
 
+[![ci](https://github.com/ceccode/spingi/actions/workflows/ci.yml/badge.svg)](https://github.com/ceccode/spingi/actions/workflows/ci.yml)
+[![license: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
 *Spingi* is Italian for "push!", the word you shout at someone who should keep going. Pronounced *speen-jee*.
+
+[![The Spingi Viewer replaying a Unitree Go2 on its patrol of an outdoor yard: the 3D scene with the robot on a dirt track, what its head camera sees, the event timeline and the frames it analysed](docs/images/viewer-yard-patrol.jpg)](https://spingi-viewer.netlify.app/?url=/samples/yard_patrol_go2_realistic.zip)
 
 Spingi is a **Physical Agent Runtime** for legged robots, humanoids and quadrupeds: it turns a robot into a reliable executor of simple physical tasks (go there, look at this, fetch that, put it here), with safety limits, retries and human escalation built in. It is developed **sim-first**: everything runs and is tested in MuJoCo with the Unitree G1 humanoid and the Unitree Go2 quadruped before any real robot is involved. Every run produces an **episode** that the **Spingi Viewer** replays in the browser.
 
 This repository is a neutral open-source toolkit. Applications built on top of it live elsewhere; this repo keeps sample plans and scenes that show how to use the system.
 
-Status: **runtime M4.0 in progress, two robots that walk in simulation, indoors and outdoors · viewer v0.5** · 2026-11-02
+Status: **runtime M4.0 in progress, two robots that walk in simulation, indoors and outdoors · viewer v0.5** · 2026-11-24
 
 ## What is in the box
 
@@ -23,7 +28,11 @@ Requirements: Python 3.11+ with [uv](https://docs.astral.sh/uv/), Node 20+ for t
 ### 1. Run a plan in simulation
 
 ```bash
-cd runtime && make setup
+git clone https://github.com/ceccode/spingi.git
+```
+
+```bash
+cd spingi/runtime && make setup
 ```
 
 ```bash
@@ -148,6 +157,8 @@ Safety layers run on the robot's own clock (simulated time in MuJoCo), so a simu
 | [runtime/README.md](runtime/README.md) | CLI reference, scenes, plans, skills, episodes, tests, how to add a skill or an adapter |
 | [viewer/README.md](viewer/README.md) | Running, loading episodes, deploying |
 | [SECURITY.md](SECURITY.md) | Threat model and how to report a security or safety problem |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Set up, the checks before a pull request, the rules of the house |
+| [CHANGELOG.md](CHANGELOG.md) | What changed, version by version |
 
 ## Development
 
@@ -155,7 +166,7 @@ Safety layers run on the robot's own clock (simulated time in MuJoCo), so a simu
 make test
 ```
 
-runs the runtime suite (unit, adapter contract on every adapter and robot, MuJoCo scenarios kinematic and walking, golden episodes, architecture and licensing rules): 330 tests in about 50 seconds. The viewer has `npm test` (40 tests) and `npm run build`. CI is GitHub Actions ([.github/workflows/ci.yml](.github/workflows/ci.yml)), on every push to `main` and every pull request, without a GPU: runtime lint, format check and tests (with offscreen MuJoCo rendering through EGL), viewer install, audit of the production dependencies, tests and build.
+runs the runtime suite (unit, adapter contract on every adapter and robot, MuJoCo scenarios kinematic and walking, golden episodes, architecture and licensing rules): 400 tests in about a minute. The viewer has `npm test` (73 tests), `npm run e2e` (the samples replayed in Chromium) and `npm run build`. How to contribute is in [CONTRIBUTING.md](CONTRIBUTING.md). CI is GitHub Actions ([.github/workflows/ci.yml](.github/workflows/ci.yml)), on every push to `main` and every pull request, without a GPU: runtime lint, format check and tests (with offscreen MuJoCo rendering through EGL), viewer install, audit of the production dependencies, tests and build.
 
 Conventions: every architectural decision is an ADR, changed by writing a new one; the runtime never imports the viewer and the viewer never imports the runtime, they only share the episode format; `spingi.core` imports nothing from adapters, skills, planner or perception, and a test enforces it.
 

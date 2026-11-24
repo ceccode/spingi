@@ -1,0 +1,48 @@
+name: Bug report
+description: Something does not work as the documentation says
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A way to make the robot move when it should not, or any other security or safety problem, is not a public issue: use the private form linked in SECURITY.md.
+  - type: dropdown
+    id: part
+    attributes:
+      label: Part of the project
+      options:
+        - Runtime (the spingi command, the Python package)
+        - Simulation (MuJoCo, walking, scenes)
+        - Viewer
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: What you ran
+      description: The command, with the plan and the scene it used. If they are your own files, paste them or attach the episode .zip (runs/<run_id>.zip), which contains both.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+      description: The last lines of the output, or what the viewer showed.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version and system
+      description: The commit or the package version, the operating system, the Python version (or the browser, for the viewer).
+      placeholder: "715c435 · macOS 15 · Python 3.12"
+    validations:
+      required: true

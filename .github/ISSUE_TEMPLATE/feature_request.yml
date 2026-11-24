@@ -1,0 +1,21 @@
+name: Proposal
+description: A skill, a robot, a scene feature, something the viewer should show
+labels: [enhancement]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: What you want to do
+      description: The task or the situation, not the solution. "A robot should check that a door is closed" says more than "add a door skill".
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: What happens today
+      description: What you tried, and where it stopped.
+  - type: textarea
+    id: idea
+    attributes:
+      label: An idea of how
+      description: Optional. A change that introduces or changes a decision will need an ADR (adr/template.md).

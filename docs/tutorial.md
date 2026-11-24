@@ -37,7 +37,11 @@ The loop is always the same: **write, try on the fake adapter, try in the simula
 You need Python 3.11+ with [uv](https://docs.astral.sh/uv/); Node 20+ only if you want to run the viewer locally. Every `spingi` command runs from the `runtime` folder.
 
 ```bash
-cd runtime && make setup
+git clone https://github.com/ceccode/spingi.git
+```
+
+```bash
+cd spingi/runtime && make setup
 ```
 
 ```bash

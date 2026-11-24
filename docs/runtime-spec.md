@@ -748,7 +748,7 @@ Core dependencies: `pydantic`, `pyyaml`. Everything else is in the adapters and 
 │   │   ├── skills/            # one skill per file
 │   │   ├── planner/           # StaticPlanner, LLMPlanner, plan schema, golden-case evaluation
 │   │   ├── safety/            # SafetyMonitor, SafetyLimits, Geofence
-│   │   ├── perception/        # FakePerceiver, SimPerceiver
+│   │   ├── perception/        # FakePerceiver, SimPerceiver, MarkerPerceiver (AprilTags), the camera's view rule
 │   │   ├── adapters/          # fake.py, sim_mujoco/ (the real robots' adapter at M4)
 │   │   ├── console/           # terminal operator console
 │   │   ├── export/            # LeRobot v3.0 exporter

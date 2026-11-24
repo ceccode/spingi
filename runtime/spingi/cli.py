@@ -61,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="spingi", description="Physical Agent Runtime for humanoid robots")
+    parser = argparse.ArgumentParser(prog="spingi", description="Physical Agent Runtime for legged robots")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     run = sub.add_parser("run", help="run a plan once and write an episode")
