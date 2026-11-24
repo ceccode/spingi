@@ -12,7 +12,7 @@ The first version on PyPI: Spingi installs with one line, simulates without the 
 - The package carries the robot models, the walking policies, the tag images and the sample scenes and plans: an installed `spingi` simulates without the repository (ADR-0027).
 - A plan or a scene can be named instead of pointed at: `spingi run demo_inspection_round --adapter sim` runs from any folder. `spingi scenes` and `spingi plans` list the samples, `--show NAME` prints one.
 
-- `spingi check <scene> [--plan P]` says what a robot would meet before anything runs: a place outside the geofence or inside a box, a leg that crosses an obstacle, an object or an inspection with nothing in view, a stop without a landmark (ADR-0028).
+- `spingi check <scene> [--plan P]` says what a robot would meet before anything runs: a place outside the geofence or inside a box, a leg that crosses an obstacle, an object hidden inside one, an object or an inspection with nothing in view, a stop without a landmark (ADR-0028).
 - `spingi map <scene>` draws a scene from above as a PNG, with the warnings in red.
 - The schema of a scene file is published as `docs/schemas/scene.schema.json`.
 - A public Python API, `spingi.api` (ADR-0029): `check_scene`, `check_plan`, `run`, `bench`, `episode_summary` and the rest, by name, with plain data back. It is the stable interface; the rest of the package is internal.

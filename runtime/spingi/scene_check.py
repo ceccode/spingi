@@ -32,6 +32,7 @@ WarningCode = Literal[
     "inside_obstacle",
     "near_obstacle",
     "leg_crosses_obstacle",
+    "object_inside_obstacle",
     "object_out_of_view",
     "stop_without_landmark",
     "nothing_in_view",
@@ -51,6 +52,7 @@ def check_scene(scene: SceneFile) -> list[SceneWarning]:
         *_fence(scene),
         *_places_in_obstacles(scene),
         *_routes(scene),
+        *_objects_inside_obstacles(scene),
         *_objects_nobody_sees(scene),
         *_stops_without_landmarks(scene),
     ]
@@ -139,6 +141,24 @@ def _routes(scene: SceneFile) -> list[SceneWarning]:
             if hit is not None:
                 text = f"route {key}: the leg from {a} to {b} crosses {_obstacle(*hit)}: add a waypoint"
                 out.append(_warn("leg_crosses_obstacle", text, start, end))
+    return out
+
+
+def _objects_inside_obstacles(scene: SceneFile) -> list[SceneWarning]:
+    """An object whose centre is inside a box. Objects have no collision, so nothing refuses it, and the perceivers
+    that answer from the scene's truth still find it; a camera sees the box."""
+    out = []
+    for oid, obj in scene.objects.items():
+        if obj.pose is None:
+            continue
+        for index, obstacle in enumerate(scene.obstacles):
+            buried = _distance_to_box((obj.pose.x, obj.pose.y), obstacle) == 0 and obj.pose.z < obstacle.h
+            if buried:
+                text = (
+                    f"object '{oid}' is inside {_obstacle(index, obstacle)}, which is {obstacle.h:g} m high: a camera "
+                    f"sees the box, not the object. Put it on top (z above {obstacle.h:g}) or in front of it"
+                )
+                out.append(_warn("object_inside_obstacle", text, (obj.pose.x, obj.pose.y)))
     return out
 
 
