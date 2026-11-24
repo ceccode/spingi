@@ -343,7 +343,7 @@ A scene can be a valid file and still a bad place to work. `spingi check` looks 
 uv run spingi check my_yard.yaml --plan plans/pump_check.yaml --robot go2
 ```
 
-It warns about a place outside the geofence, a place inside a box, a leg that crosses one, an object no stop has in view, an inspection that looks the wrong way. A warning does not stop a run: the next two mistakes are ones it would have told you about.
+It warns about a place outside the geofence, a place inside a box, a leg that crosses one, an object hidden inside one, an object no stop has in view, an inspection that looks the wrong way. A warning does not stop a run: the next two mistakes are ones it would have told you about.
 
 ### A route through an obstacle
 

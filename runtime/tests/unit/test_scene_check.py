@@ -127,6 +127,21 @@ def test_an_object_nobody_looks_at_says_who_is_nearest_and_why_not():
     assert check_scene(far)[0].message.endswith("is 4.0 m away, and the camera reads up to 3 m")
 
 
+def test_an_object_inside_a_box_is_hidden_from_a_camera():
+    """Nothing collides with an object, so a scene can bury one in a shelf; the scene's truth would still find it."""
+    shelf = [{"x": 5, "y": 0, "w": 0.6, "d": 2, "h": 1.8}]
+    buried = scene(obstacles=shelf, objects={"box": {"cls": "box", "pose": {"x": 4.9, "y": 0, "z": 1.0}}})
+    (warning,) = check_scene(buried)
+    assert warning.code == "object_inside_obstacle" and warning.where == [(4.9, 0.0)]
+    assert warning.message == (
+        "object 'box' is inside obstacle 0 (a 0.6 x 2 m box at 5, 0), which is 1.8 m high: a camera sees the box, "
+        "not the object. Put it on top (z above 1.8) or in front of it"
+    )
+    on_top = scene(obstacles=shelf, objects={"box": {"cls": "box", "pose": {"x": 4.9, "y": 0, "z": 1.85}}})
+    in_front = scene(obstacles=shelf, objects={"box": {"cls": "box", "pose": {"x": 4.6, "y": 0, "z": 1.0}}})
+    assert check_scene(on_top) == [] and check_scene(in_front) == []
+
+
 def test_an_object_in_front_of_a_stop_or_without_a_known_position_is_fine():
     seen = scene(objects={"box": {"cls": "box", "pose": {"x": 5, "y": 0.5, "z": 1}}, "lost": {"cls": "key"}})
     assert check_scene(seen) == []

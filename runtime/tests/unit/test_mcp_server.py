@@ -20,14 +20,14 @@ TOOLS = {
 }  # fmt: skip
 WRITING = {"preview_scene", "save_scene", "run_plan", "bench_plan"}
 
-ROOM = """# A stock room: a rack on the east wall.
+ROOM = """# A stock room: a low shelf on the east wall.
 locations:
   dock:   { pose: { x: 0.0, y: 0.0, yaw: 0.0 } }
   rack_A: { pose: { x: 4.0, y: 2.0, yaw: 0.0 } }
 obstacles:
-  - { x: 5.0, y: 2.0, w: 0.5, d: 3.0, h: 1.8 }
+  - { x: 5.0, y: 2.0, w: 0.5, d: 3.0, h: 0.9 }
 objects:
-  crate_01: { cls: crate, marker_id: 7, pose: { x: 4.8, y: 2.0, z: 1.0 } }
+  crate_01: { cls: crate, marker_id: 7, pose: { x: 4.85, y: 2.0, z: 0.95 } }
 safety:
   geofence: { x_min: -1.0, x_max: 6.0, y_min: -1.0, y_max: 5.0 }
 """
@@ -157,7 +157,7 @@ async def test_a_scene_goes_from_a_typo_to_a_saved_place_a_plan_runs_in(agent):
     assert saved == {"name": "room", "path": str(agent.root / "scenes" / "room.yaml"), "warnings": []}
     assert (await call(agent, "list_scenes"))[0] == {
         "name": "room",
-        "summary": "A stock room: a rack on the east wall.",
+        "summary": "A stock room: a low shelf on the east wall.",
         "source": "folder",
         "path": str(agent.root / "scenes" / "room.yaml"),
     }

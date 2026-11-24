@@ -185,6 +185,7 @@ OK · 0 errors, 1 warning
 | a place outside the geofence, or within 0.3 m of its edge | reaching it, or overshooting it, stops the robot |
 | a place inside an obstacle, or within 0.15 m of one | the robot's body would be in the box; stops in front of tables and shelves stand 0.3 m away and are fine |
 | a route's leg, or a `navigate`'s, crosses an obstacle | the robot walks in straight lines, with 0.3 m of clearance either side: add a waypoint |
+| an object inside an obstacle | objects have no collision, so nothing else refuses it: a camera would see the box, not the object. Put it on top or in front |
 | an object in view from no location | no stop is within 3 m of it and facing it within 40°; the warning gives the heading that would |
 | an `inspect` or a `detect` with nothing of that class in view | the robot would look from the wrong place |
 | a stop that looks at an object and has no landmark to read | only in scenes with landmarks: with `--drift` the robot cannot correct its pose there |
