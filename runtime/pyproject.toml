@@ -22,6 +22,7 @@ sim = [
     "imageio-ffmpeg>=0.5",
     "mujoco>=3.2",
     "numpy>=1.26",
+    "pillow>=10.1",  # the scene map (ADR-0028); its built-in scalable font arrived in 10.1
     "scipy>=1.11",
     "trimesh>=4.4",
 ]

@@ -620,7 +620,7 @@ async def test_leaving_the_geofence_estops_and_ends_the_run():
 
 ### 8.3 Simulation scenes
 
-Scenes are declarative YAML files. The same file gives the initial `WorldState`, the safety limits, the routes for the planner and, in simulation, the MuJoCo scene (floor, location markers, obstacles with collisions, objects):
+Scenes are declarative YAML files. The same file gives the initial `WorldState`, the safety limits, the routes for the planner and, in simulation, the MuJoCo scene (floor, location markers, obstacles with collisions, objects). It has one schema, `SceneFile` (`spingi/scenes.py`, published as `docs/schemas/scene.schema.json`), which every reader goes through: unknown keys, non-finite numbers, a marker id used twice, a route that names an unknown location and a ground that does not reach the geofence are errors, reported together before anything starts (ADR-0028). `spingi check` adds warnings from the scene's geometry, and `spingi map` draws it from above:
 
 ```yaml
 # sim/scenes/warehouse_small.yaml (abridged)
@@ -752,7 +752,8 @@ Core dependencies: `pydantic`, `pyyaml`. Everything else is in the adapters and 
 │   │   ├── adapters/          # fake.py, sim_mujoco/ (the real robots' adapter at M4)
 │   │   ├── console/           # terminal operator console
 │   │   ├── export/            # LeRobot v3.0 exporter
-│   │   └── *.py               # cli, session, bench, metrics, replay, episode, scenes, robots, assets, dotenv
+│   │   └── *.py               # cli, session, bench, metrics, replay, episode, scenes (the scene schema), scene_check,
+│   │                          # scene_map, robots, assets, dotenv
 │   ├── plans/                 # TaskPlan YAML; plans/golden/ holds the planner cases
 │   ├── sim/scenes/            # YAML scenes (plans/ and sim/ travel inside the wheel as spingi/_assets, ADR-0027)
 │   ├── sim/models/            # G1 and Go2 models (mujoco_menagerie), one folder each with its license
@@ -782,7 +783,7 @@ Rule: `spingi/core` imports nothing from `adapters`, `skills`, `planner`, `perce
 | **M4.2** | The G1 in the lab | The same adapter and gate on the G1; the arm and hand methods of the port on real hardware | Gate passed for `navigate` and `inspect` on the G1; `gripper` and `move_arm` exercised in the contract tests | Not started (needs a G1) |
 | **M5** | Pilot-ready | `pick`/`place` on the G1 with standard containers (after M4.2), metrics dashboard, operating procedures | Gate passed for 4 skills; 1 day of continuous operation in the lab without `FATAL` | Not started |
 
-| **A1** | Usable by others | The package installs with one line and simulates without the repository (ADR-0027); scenes are checked like plans; a public Python API; an MCP server for coding agents | From an empty folder and the wheel alone, `spingi run demo_inspection_round --adapter sim` succeeds; an MCP client creates a scene, saves it and runs a plan on it. Both in CI | In progress (2026-11-24). Done: the wheel carries the simulator's assets and samples have names, checked by `make wheel-smoke` in CI |
+| **A1** | Usable by others | The package installs with one line and simulates without the repository (ADR-0027); scenes are checked like plans; a public Python API; an MCP server for coding agents | From an empty folder and the wheel alone, `spingi run demo_inspection_round --adapter sim` succeeds; an MCP client creates a scene, saves it and runs a plan on it. Both in CI | In progress (2026-11-24). Done: the wheel carries the simulator's assets and samples have names, checked by `make wheel-smoke` in CI; scenes have one strict schema, geometry checks and a map (ADR-0028) |
 
 M0–M3, M4.0 and A1 do not require a robot. A1 is about adoption, not about a robot: it runs alongside M4. The M3 planner evaluation calls the Claude API and is run on demand, not in CI. M4.1 and M4.2 need the hardware, a fenced area and the signed checklist; their contract tests run only with the robot connected, never in CI.
 

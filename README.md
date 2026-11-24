@@ -132,6 +132,18 @@ steps:
 
 Skills available today: `navigate`, `detect`, `pick`, `place`, `inspect`, `wait_for_human`, `say`. `uv run spingi skills` prints their parameters. Each run stands for one robot profile (`--robot g1`, the default, or `--robot go2`): a skill the robot cannot run, `pick` or `place` on a Go2 without an arm, makes the plan invalid before anything moves, and the LLM planner never sees it ([ADR-0012](adr/0012-robot-profiles-and-capabilities.md)). A scene is a YAML file too: named locations, obstacles, objects, safety limits (geofence, speed cap, battery minimum) and, outdoors, the ground: surfaces with their grip and roughness, ramps, kerbs and raised areas. See [runtime/sim/scenes/](runtime/sim/scenes/).
 
+A scene is checked like a plan ([ADR-0028](adr/0028-scenes-are-checked-like-plans.md)): a key nobody declares is an error, so a misspelled `obstacles:` cannot leave a wall out of the world. Before running anything, `spingi check` says what a robot would meet, a leg that crosses a shelf, a stop from which the camera sees nothing, and `spingi map` draws the scene from above:
+
+```bash
+uv run spingi check yard_outdoor --plan yard_patrol --robot go2
+```
+
+```bash
+uv run spingi map yard_outdoor
+```
+
+![The yard scene drawn from above: surfaces, obstacles, the geofence, named locations with their heading, objects, AprilTag landmarks and routes](docs/images/map-yard-outdoor.png)
+
 ## How it works
 
 ```
@@ -153,7 +165,7 @@ Safety layers run on the robot's own clock (simulated time in MuJoCo), so a simu
 | [docs/tutorial.md](docs/tutorial.md) | Step by step: read a scene, write a plan, run it from the fake adapter up to realistic sensors, replay it in the viewer, place landmarks, measure it with bench, model your own place |
 | [docs/runtime-spec.md](docs/runtime-spec.md) | Principles, architecture, contracts, execution model, safety layers, testing strategy, milestones |
 | [docs/episode-format.md](docs/episode-format.md) | The episode folder, manifest, trajectory, frames, compatibility rules |
-| [adr/](adr/README.md) | Architecture decisions 0001–0027 and the ones still open |
+| [adr/](adr/README.md) | Architecture decisions 0001–0028 and the ones still open |
 | [runtime/README.md](runtime/README.md) | CLI reference, scenes, plans, skills, episodes, tests, how to add a skill or an adapter |
 | [viewer/README.md](viewer/README.md) | Running, loading episodes, deploying |
 | [SECURITY.md](SECURITY.md) | Threat model and how to report a security or safety problem |

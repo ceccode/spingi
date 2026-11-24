@@ -7,9 +7,9 @@ import math
 import re
 from typing import Any
 
+from spingi.scenes import SceneError  # one error type for a scene, whoever finds the problem (ADR-0028)
 
-class SceneError(ValueError):
-    """The scene file contains a value that cannot go into the simulator model."""
+__all__ = ["SceneError", "color", "interval", "name", "num"]
 
 
 _NAME = re.compile(r"^[A-Za-z0-9_-]{1,64}$")

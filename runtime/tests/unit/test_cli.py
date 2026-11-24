@@ -131,6 +131,71 @@ def test_scenes_and_plans_list_the_samples_and_print_one(capsys):
     assert "no sample 'nothing'; known: demo_inspection_round" in capsys.readouterr().err
 
 
+def test_a_scene_file_that_is_not_a_scene_is_refused_before_any_robot_starts(sessions, tmp_path, capsys):
+    scene = tmp_path / "typo.yaml"
+    scene.write_text("locations:\n  dock: { pose: { x: 0, y: 0 } }\nobstacle:\n  - { x: 1, y: 0 }\n")
+    runs = tmp_path / "runs"
+    for command in (["run"], ["bench", "--runs", "2"]):
+        assert main([*command, str(PLAN), "--scene", str(scene), "--runs-dir", str(runs)]) == 1
+        last = capsys.readouterr().out.strip().splitlines()[-1]
+        assert last == f"INVALID_SCENE · invalid scene ({scene}): obstacle: Extra inputs are not permitted"
+    assert sessions == [] and not runs.exists()
+
+
+def test_check_says_what_a_scene_holds_and_what_a_robot_would_meet_in_it(capsys):
+    assert main(["check", "yard_outdoor"]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == "scene sim/scenes/yard_outdoor.yaml: 9 locations, 7 obstacles, 3 objects, 16 landmarks, terrain"
+    assert out[-1] == "OK · 0 errors, 0 warnings"
+
+    assert main(["check", "lab_geofence"]) == 0  # a warning is not an error
+    out = capsys.readouterr().out.splitlines()
+    assert out[1] == "warning: location 'workstation_B' is outside the geofence: reaching it is an emergency stop"
+    assert out[-1] == "OK · 0 errors, 1 warning"
+    assert main(["check", "lab_geofence", "--strict"]) == 1
+
+
+def test_check_takes_a_plan_and_its_robot(capsys):
+    blocked = ["check", "lab_blocked", "--plan", "tests/golden/plans/to_workstation.yaml"]
+    assert main(blocked) == 0
+    assert "warning: step 0 (navigate): the leg from the start to workstation_B crosses obstacle 0" in (
+        capsys.readouterr().out
+    )
+    assert main(["check", "warehouse_small", "--plan", "demo_material_runner", "--robot", "go2"]) == 1
+    out = capsys.readouterr().out.splitlines()
+    assert out[1] == "error: plan: step 3: skill 'pick' needs arm, which this robot does not have"
+    assert out[-1] == "INVALID · 2 errors, 0 warnings"
+
+
+def test_check_lists_every_error_of_a_file_that_is_not_a_scene(tmp_path, capsys):
+    scene = tmp_path / "typo.yaml"
+    scene.write_text("locations:\n  dock: { pose: { x: 0, y: 0, yaww: 1 } }\nobstacle: []\n")
+    assert main(["check", str(scene)]) == 1
+    assert capsys.readouterr().out.splitlines() == [
+        "error: scene: locations.dock.pose.yaww: Extra inputs are not permitted",
+        "error: scene: obstacle: Extra inputs are not permitted",
+        "",
+        "INVALID · 2 errors, 0 warnings",
+    ]
+
+
+def test_map_draws_the_scene_with_what_the_checks_found(tmp_path, capsys, monkeypatch):
+    out = tmp_path / "blocked.png"
+    plan = "tests/golden/plans/to_workstation.yaml"
+    assert main(["map", "lab_blocked", "--plan", plan, "--out", str(out)]) == 0
+    assert capsys.readouterr().out.strip() == f"map: {out} · 1 warning marked"
+    assert out.read_bytes().startswith(b"\x89PNG")
+
+    scene = Path("sim/scenes/lab_small.yaml").resolve()
+    monkeypatch.chdir(tmp_path)  # without --out the picture goes into the current folder, named after the scene
+    assert main(["map", str(scene)]) == 0
+    assert (tmp_path / "lab_small-map.png").is_file()
+
+    (tmp_path / "typo.yaml").write_text("obstacle: []\n")
+    assert main(["map", "typo.yaml"]) == 1
+    assert "error: scene: obstacle: Extra inputs are not permitted" in capsys.readouterr().err
+
+
 def test_skills_and_robots_list_what_each_robot_can_do(capsys):
     assert main(["skills", "--robot", "go2"]) == 0
     names = {line.split()[0] for line in capsys.readouterr().out.splitlines()}

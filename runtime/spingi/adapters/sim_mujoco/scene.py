@@ -20,8 +20,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, NamedTuple
 
-import yaml
-
 from spingi.adapters.sim_mujoco.terrain import (
     SURFACES,
     TerrainMap,
@@ -35,7 +33,7 @@ from spingi.adapters.sim_mujoco.terrain import mjcf as terrain_mjcf
 from spingi.adapters.sim_mujoco.values import SceneError, color, name, num
 from spingi.assets import MARKERS_DIR, MODELS_DIR
 from spingi.core.types import Landmark
-from spingi.scenes import parse_landmarks
+from spingi.scenes import MAX_MARKER_ID, parse_landmarks, parse_scene, read_scene_yaml
 
 DEFAULT_MODEL_DIR = MODELS_DIR / "unitree_g1"
 
@@ -45,7 +43,6 @@ DEFAULT_MODEL_DIR = MODELS_DIR / "unitree_g1"
 TAG_CELLS = 12
 TAG_BLACK_CELLS = 10
 MARKER_DECAL_SCALE = 0.9
-MAX_MARKER_ID = 63
 OFFSCREEN_SIZE = (1280, 960)
 
 
@@ -65,8 +62,10 @@ def tag_image(marker_id: int) -> Path:
 
 
 def load_scene_yaml(path: Path | str) -> dict[str, Any]:
-    with Path(path).open(encoding="utf-8") as fh:
-        return yaml.safe_load(fh) or {}
+    """The scene file as a mapping, once it has passed the schema every reader of a scene goes through (ADR-0028)."""
+    raw = read_scene_yaml(Path(path).read_text(encoding="utf-8"), str(path)) or {}
+    parse_scene(raw, str(path))
+    return raw
 
 
 # Kept importable from here: the validation helpers moved to `values` so that the terrain builder can share them.

@@ -61,7 +61,15 @@ The Go2 has no arm: its skills are `say`, `navigate`, `inspect`, `detect` and `w
 
 ## 2. Read the scene
 
-A scene describes the world once; every plan for that place uses it. Open `sim/scenes/yard_outdoor.yaml` next to this page.
+A scene describes the world once; every plan for that place uses it. Open `sim/scenes/yard_outdoor.yaml` next to this page, and draw it:
+
+```bash
+uv run spingi map sim/scenes/yard_outdoor.yaml
+```
+
+![The yard scene drawn from above](images/map-yard-outdoor.png)
+
+`yard_outdoor-map.png` is the scene from above: `x` to the right, `y` up, every location with an arrow for the way the robot faces there.
 
 ### Coordinates
 
@@ -319,6 +327,24 @@ A misspelled key of the plan itself, such as `on_failre:`, is refused when the f
 INVALID_PLAN · invalid plan (plans/pump_check.yaml): steps.1.on_failre: Extra inputs are not permitted
 ```
 
+### A mistake in the scene
+
+A scene is checked the same way ([ADR-0028](../adr/0028-scenes-are-checked-like-plans.md)). Write `obstacle:` for `obstacles:` in a copy of the yard, and nothing runs:
+
+```
+INVALID_SCENE · invalid scene (my_yard.yaml): obstacle: Extra inputs are not permitted
+```
+
+Without this check the containers would not be in the world, and the robot would walk through where they stand. The same holds for a misspelled limit: `max_sped:` in `safety:` is an error, not a run without its speed cap.
+
+A scene can be a valid file and still a bad place to work. `spingi check` looks at its geometry before any run, and with `--plan` at what that plan would meet in it:
+
+```bash
+uv run spingi check my_yard.yaml --plan plans/pump_check.yaml --robot go2
+```
+
+It warns about a place outside the geofence, a place inside a box, a leg that crosses one, an object no stop has in view, an inspection that looks the wrong way. A warning does not stop a run: the next two mistakes are ones it would have told you about.
+
 ### A route through an obstacle
 
 This plan goes from the dock straight to `dock_B`, on the loading dock, without taking the ramp:
@@ -504,7 +530,8 @@ The yard was written by hand, and so can yours be. A floor plan is the best sour
 3. **The ground** is a base surface and rectangles: lawn, paving, gravel. Kerbs and steps are `raised`, slopes are `ramps`.
 4. **What cannot be modeled yet:** water and pits (a pool is a flat blue box: keep routes at least a meter from it, the robot would not fall in), overhangs and porch roofs, rotated walls.
 5. **The places:** an inspection stop 1 to 3 m from what it checks and facing it, waypoints wherever a straight line would hit something, then a landmark ahead of each.
-6. **Then the same loop:** fake, sim, physics, realistic, bench.
+6. **Check it and look at it:** `spingi check my_place.yaml` for what the file gets wrong and what a robot would meet, `spingi map my_place.yaml` to compare the picture with your floor plan.
+7. **Then the same loop:** fake, sim, physics, realistic, bench.
 
 A model of a home is personal data. Keep it, and the episodes made in it (they contain the scene), out of public repositories.
 

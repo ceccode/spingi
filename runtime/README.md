@@ -28,6 +28,8 @@ spingi skills [--robot g1|go2]
 spingi robots
 spingi scenes [--show NAME]
 spingi plans [--show NAME]
+spingi check <scene.yaml> [--plan plan.yaml] [--robot g1|go2] [--strict]
+spingi map <scene.yaml> [--plan plan.yaml] [--out map.png]
 ```
 
 A plan or a scene is a file or the name of a sample (ADR-0027): `spingi run demo_inspection_round --adapter sim` and `spingi run plans/demo_inspection_round.yaml --adapter sim` are the same command, and both run from any folder once the package is installed. `spingi scenes` and `spingi plans` list the samples; `--show NAME` prints one, to read it or to start your own from it. A scene you keep in `scenes/<name>.yaml` of the folder you work in, or a plan in `plans/<name>.yaml`, is found by its name too, before a sample of the same name.
@@ -146,7 +148,39 @@ landmarks:
 - Two, one either side, of an inspection target the robot stands close to: arriving 30 cm off to one side, it still sees one.
 - One every 8–10 m on a long leg (add a waypoint): drift grows with the distance, and an error of half a metre puts the robot off a ramp.
 
-Names of locations, objects, classes and routes must match `^[A-Za-z0-9_-]{1,64}$`, and every number must be finite: NaN or infinity in a pose, the geofence or the limits is rejected. The checks run when the world is loaded and again when the MuJoCo scene is generated. Leaving the geofence e-stops the robot (latched until a manual reset); `estop_on_geofence: false` in the `safety:` section makes it a plain stop instead, repeated at every check while the robot is outside.
+A scene file has one schema, `SceneFile` in `spingi/scenes.py`, and every reader goes through it (ADR-0028); it is published as [scene.schema.json](https://github.com/ceccode/spingi/blob/main/docs/schemas/scene.schema.json). A key nobody declares is an error, not a section dropped in silence: `obstacle:` for `obstacles:` would leave a wall out of the world, `max_sped:` would leave the run without its speed cap. Names of locations, objects, classes and routes must match `^[A-Za-z0-9_-]{1,64}$`; every number must be a finite number, so NaN, infinity, `true` and `"1"` are refused; a marker id names one tag, objects and landmarks together; a route names locations of its scene. A file that is not a scene ends `spingi run` as `INVALID_SCENE · invalid scene (my.yaml): obstacle: Extra inputs are not permitted`, with every problem in that one line, before a robot is started. The values are checked when the file is read and again when the MuJoCo scene is generated.
+
+### Check a scene and see it
+
+```bash
+uv run spingi check sim/scenes/lab_blocked.yaml --plan tests/golden/plans/to_workstation.yaml
+```
+
+```
+scene sim/scenes/lab_blocked.yaml: 3 locations, 1 obstacle, 0 objects, 0 landmarks
+warning: step 0 (navigate): the leg from the start to workstation_B crosses obstacle 0 (a 0.3 x 6 m box at 3, 0.25): add a waypoint with via
+
+OK · 0 errors, 1 warning
+```
+
+`spingi check` prints what the scene holds, the errors of the file and, with `--plan`, of the plan for `--robot`, and the warnings: what a robot would meet, found with plane geometry and the runtime's own rules for the camera and the landmarks. An error exits with status 1; a warning does not, unless `--strict`.
+
+| Warning | What it means |
+|---------|---------------|
+| a place outside the geofence, or within 0.3 m of its edge | reaching it, or overshooting it, stops the robot |
+| a place inside an obstacle, or within 0.15 m of one | the robot's body would be in the box; stops in front of tables and shelves stand 0.3 m away and are fine |
+| a route's leg, or a `navigate`'s, crosses an obstacle | the robot walks in straight lines, with 0.3 m of clearance either side: add a waypoint |
+| an object in view from no location | no stop is within 3 m of it and facing it within 40°; the warning gives the heading that would |
+| an `inspect` or a `detect` with nothing of that class in view | the robot would look from the wrong place |
+| a stop that looks at an object and has no landmark to read | only in scenes with landmarks: with `--drift` the robot cannot correct its pose there |
+
+```bash
+uv run spingi map sim/scenes/yard_outdoor.yaml
+```
+
+writes `yard_outdoor-map.png`, the scene from above: the ground's surfaces, ramps and raised areas, the geofence, obstacles with their index, locations with their heading, objects, tags with the way they face, routes, and the warnings in red, numbered and listed under the map. It needs no OpenGL.
+
+![The yard scene drawn from above](https://raw.githubusercontent.com/ceccode/spingi/main/docs/images/map-yard-outdoor.png) Leaving the geofence e-stops the robot (latched until a manual reset); `estop_on_geofence: false` in the `safety:` section makes it a plain stop instead, repeated at every check while the robot is outside.
 
 ## Plans
 

@@ -33,6 +33,7 @@ from typing import Any
 import numpy as np
 
 from spingi.adapters.sim_mujoco.values import SceneError, interval, num
+from spingi.scenes import DEFAULT_CELL_M, MAX_CELL_M, MAX_HEIGHT_M, MAX_ROUGHNESS_M, MAX_SAMPLES, MIN_CELL_M
 
 
 @dataclass(frozen=True)
@@ -57,9 +58,7 @@ SURFACES: dict[str, Surface] = {
 
 # Feet are spheres of 1 to 2 cm; on finer height fields they catch on the cell edges and the walking fails for reasons
 # that are not the ground's (measured, ADR-0015). Finer grain than the cell, like gravel stones, is in the grip.
-MIN_CELL_M, MAX_CELL_M = 0.08, 0.25
-DEFAULT_CELL_M = 0.1
-MAX_SAMPLES = 2_000_000  # a larger grid is a mistake in the scene, not a terrain
+# The limits themselves (MIN_CELL_M, MAX_CELL_M, DEFAULT_CELL_M, MAX_SAMPLES) are the scene schema's, spingi.scenes.
 BLEND_M = 0.25  # surfaces fade into each other's roughness over this distance: no seams of height at the borders
 VIEWER_CELL_M = 0.1  # the copy written into episodes for the viewer
 
@@ -146,8 +145,8 @@ def parse_terrain(raw: Any) -> TerrainSpec:
     for i, reg in enumerate(_list(raw.get("regions"), "terrain.regions")):
         what = f"terrain.regions[{i}]"
         rough = reg.get("roughness_m")
-        if rough is not None and (num(rough, f"{what}.roughness_m") < 0 or rough > 0.1):
-            raise SceneError(f"{what}.roughness_m must be between 0 and 0.1 m, got {rough!r}")
+        if rough is not None and (num(rough, f"{what}.roughness_m") < 0 or rough > MAX_ROUGHNESS_M):
+            raise SceneError(f"{what}.roughness_m must be between 0 and {MAX_ROUGHNESS_M} m, got {rough!r}")
         regions.append(
             (
                 _surface(reg.get("surface"), f"{what}.surface"),
@@ -198,8 +197,8 @@ def _surface(value: Any, what: str) -> str:
 def _height(value: Any, what: str) -> float:
     """Built structures stand on the ground: from 0 to 3 m. Pits and ditches are not supported."""
     h = num(value, what)
-    if not 0.0 <= h <= 3.0:
-        raise SceneError(f"{what} must be between 0 and 3 m, got {h}")
+    if not 0.0 <= h <= MAX_HEIGHT_M:
+        raise SceneError(f"{what} must be between 0 and {MAX_HEIGHT_M:g} m, got {h}")
     return h
 
 
