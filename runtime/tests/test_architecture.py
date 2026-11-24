@@ -45,3 +45,18 @@ def test_core_third_party_dependencies_are_only_pydantic_and_yaml():
         for mod in _imports(f):
             root = mod.split(".")[0]
             assert root in stdlib_ok or mod.startswith(allowed_prefixes), f"{f}: unexpected import '{mod}'"
+
+
+def test_the_public_api_does_not_know_its_skins():
+    """ADR-0029: the command line and the MCP server are skins over spingi.api, never the other way round."""
+    skins = ("spingi.cli", "spingi.mcp_server")
+    assert [m for m in _imports(Path("spingi/api.py")) if m.startswith(skins)] == []
+
+
+def test_nothing_in_the_package_imports_the_command_line():
+    offenders = {
+        str(f): [m for m in _imports(f) if m.startswith("spingi.cli")]
+        for f in Path("spingi").rglob("*.py")
+        if f.name != "cli.py"
+    }
+    assert {k: v for k, v in offenders.items() if v} == {}

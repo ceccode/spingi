@@ -50,12 +50,22 @@ class PlanError(ValueError):
 
 
 def load_plan(path: Path | str) -> TaskPlan:
-    with Path(path).open(encoding="utf-8") as fh:
-        raw = yaml.safe_load(fh)
+    return parse_plan(Path(path).read_text(encoding="utf-8"), str(path))
+
+
+def parse_plan(source: str | dict[str, Any], origin: str = "") -> TaskPlan:
+    """A plan from YAML text or from a mapping. Whatever is wrong with it is a `PlanError` in one line."""
+    where = f" ({origin})" if origin else ""
+    raw: Any = source
+    if isinstance(source, str):
+        try:
+            raw = yaml.safe_load(source)
+        except yaml.YAMLError as exc:
+            raise PlanError(f"invalid plan{where}: not valid YAML: {' '.join(str(exc).split())}") from exc
     try:
         return TaskPlan.model_validate(raw)
     except ValidationError as exc:
-        raise PlanError(f"invalid plan ({path}): {_short(exc)}") from exc
+        raise PlanError(f"invalid plan{where}: {_short(exc)}") from exc
 
 
 def validate_plan(

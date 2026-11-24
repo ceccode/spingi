@@ -12,6 +12,7 @@ What changed for people who use Spingi, newest first. Decisions and their reason
 - `spingi check <scene> [--plan P]` says what a robot would meet before anything runs: a place outside the geofence or inside a box, a leg that crosses an obstacle, an object or an inspection with nothing in view, a stop without a landmark (ADR-0028).
 - `spingi map <scene>` draws a scene from above as a PNG, with the warnings in red.
 - The schema of a scene file is published as `docs/schemas/scene.schema.json`.
+- A public Python API, `spingi.api` (ADR-0029): `check_scene`, `check_plan`, `run`, `bench`, `episode_summary` and the rest, by name, with plain data back. It is the stable interface; the rest of the package is internal.
 
 ### Changed
 

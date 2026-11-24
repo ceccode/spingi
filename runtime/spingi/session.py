@@ -37,6 +37,22 @@ from spingi.scenes import load_safety_limits, load_world
 from spingi.skills import default_registry
 
 AdapterKind = Literal["fake", "sim"]
+Mode = Literal["fake", "kinematic", "physics", "realistic"]
+
+# How close to the real robot a run is, as settings of a session: the in-memory robot; MuJoCo with the base gliding
+# along the path; the robot walking; and walking with drifting odometry, a noisy camera and tags read from frames.
+MODES: dict[str, dict] = {
+    "fake": {"adapter": "fake"},
+    "kinematic": {"adapter": "sim"},
+    "physics": {"adapter": "sim", "locomotion": "physics"},
+    "realistic": {
+        "adapter": "sim",
+        "locomotion": "physics",
+        "odometry": "drift",
+        "camera_noise": True,
+        "perception": "markers",
+    },
+}
 
 MONITOR_PERIOD_S = 0.1  # robot time between safety checks (fast simulation yields every 0.2 s)
 ESTOP_TIMEOUT_S = 2.0  # wall-clock limit for a stop or e-stop command to return
@@ -120,7 +136,11 @@ def new_run_id() -> str:
     return f"r-{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
 
 
-async def run_session(cfg: SessionConfig, human: HumanGateway, log: EventLog | None = None) -> SessionResult:
+async def run_session(
+    cfg: SessionConfig, human: HumanGateway, log: EventLog | None = None, stop_button: bool = True
+) -> SessionResult:
+    """`stop_button`: Ctrl+C e-stops the robot and ends the run. A program that runs sessions without a terminal
+    (a library call, a server) turns it off and cancels the task instead, with the same result."""
     run_id = log.run_id if log is not None else new_run_id()
     run_dir = cfg.runs_dir / run_id
     log = log or EventLog(run_id=run_id, path=run_dir / "events.jsonl" if cfg.write_episode else None)
@@ -141,14 +161,15 @@ async def run_session(cfg: SessionConfig, human: HumanGateway, log: EventLog | N
     monitor = SafetyMonitor(robot, log, load_safety_limits(cfg.scene), period_s=MONITOR_PERIOD_S)
     await monitor.start()  # armed (speed cap, heartbeat) before the first motion command can be issued
     run_task = asyncio.create_task(executor.run(plan, state))
-    stop_button = StopButton(robot, run_task, log)
-    stop_button.install()
+    button = StopButton(robot, run_task, log)
+    if stop_button:
+        button.install()
 
     status, steps_completed = "aborted", 0
     try:
         status, steps_completed = await _outcome(run_task, log)
     finally:
-        await _shut_down(robot, monitor, stop_button, success=status == "success")
+        await _shut_down(robot, monitor, button, success=status == "success")
 
     recording = robot.recording()
     outcome = RunOutcome(plan_id=plan.id, status=status, steps_completed=steps_completed, steps_total=len(plan.steps))

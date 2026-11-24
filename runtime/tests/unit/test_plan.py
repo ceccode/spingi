@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from spingi.core.plan import PlanError, Step, TaskPlan, load_plan, resolve_params, validate_plan
+from spingi.core.plan import PlanError, Step, TaskPlan, load_plan, parse_plan, resolve_params, validate_plan
 from spingi.scenes import load_world
 from spingi.skills import default_registry
 from tests.conftest import world
@@ -196,3 +196,24 @@ def test_every_plan_file_names_only_locations_of_its_scene(registry):
     for plan_id, scene in PLAN_SCENES.items():
         p = load_plan(f"plans/{plan_id}.yaml")
         assert validate_plan(p, registry, locations=load_world(f"sim/scenes/{scene}.yaml").locations) == [], plan_id
+
+
+def test_a_plan_from_text_or_from_a_mapping_is_the_same_plan():
+    text = "id: hello\nsteps:\n  - skill: say\n    params: { text: hi }\n"
+    from_text = parse_plan(text)
+    assert from_text == parse_plan({"id": "hello", "steps": [{"skill": "say", "params": {"text": "hi"}}]})
+    assert from_text.steps[0].skill == "say"
+
+
+def test_what_is_not_a_plan_is_one_line_wherever_it_comes_from(tmp_path):
+    with pytest.raises(PlanError, match=r"^invalid plan: steps\.0\.on_failre: Extra inputs are not permitted$"):
+        parse_plan({"id": "x", "steps": [{"skill": "say", "on_failre": {}}]})
+    with pytest.raises(PlanError, match=r"^invalid plan \(from an agent\): not valid YAML: ") as error:
+        parse_plan("id: [unclosed\nsteps: 3\n", "from an agent")
+    assert "\n" not in str(error.value)
+    with pytest.raises(PlanError, match="invalid plan: Input should be a valid dictionary"):
+        parse_plan("just a sentence")
+    broken = tmp_path / "broken.yaml"
+    broken.write_text("id: [unclosed\n")
+    with pytest.raises(PlanError, match=rf"^invalid plan \({broken}\): not valid YAML"):
+        load_plan(broken)

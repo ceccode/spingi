@@ -752,6 +752,7 @@ Core dependencies: `pydantic`, `pyyaml`. Everything else is in the adapters and 
 │   │   ├── adapters/          # fake.py, sim_mujoco/ (the real robots' adapter at M4)
 │   │   ├── console/           # terminal operator console
 │   │   ├── export/            # LeRobot v3.0 exporter
+│   │   ├── api.py             # the public Python surface (ADR-0029): cli and the MCP server are skins over it
 │   │   └── *.py               # cli, session, bench, metrics, replay, episode, scenes (the scene schema), scene_check,
 │   │                          # scene_map, robots, assets, dotenv
 │   ├── plans/                 # TaskPlan YAML; plans/golden/ holds the planner cases
@@ -766,7 +767,7 @@ Core dependencies: `pydantic`, `pyyaml`. Everything else is in the adapters and 
 └── viewer/                    # project 2: web replayer for episodes (see episode-format.md)
 ```
 
-Rule: `spingi/core` imports nothing from `adapters`, `skills`, `planner`, `perception`, nor ROS; its only third-party imports are `pydantic` and `yaml`. The runtime does not know about the viewer: they talk only through the episode format. The dependency graph is acyclic and is verified by a test (`tests/test_architecture.py`, a simple AST script).
+Rule: `spingi/core` imports nothing from `adapters`, `skills`, `planner`, `perception`, nor ROS; its only third-party imports are `pydantic` and `yaml`. `spingi.api` imports neither the command line nor the MCP server, and nothing in the package imports the command line (ADR-0029). The runtime does not know about the viewer: they talk only through the episode format. The dependency graph is acyclic and is verified by a test (`tests/test_architecture.py`, a simple AST script).
 
 ---
 
@@ -783,7 +784,7 @@ Rule: `spingi/core` imports nothing from `adapters`, `skills`, `planner`, `perce
 | **M4.2** | The G1 in the lab | The same adapter and gate on the G1; the arm and hand methods of the port on real hardware | Gate passed for `navigate` and `inspect` on the G1; `gripper` and `move_arm` exercised in the contract tests | Not started (needs a G1) |
 | **M5** | Pilot-ready | `pick`/`place` on the G1 with standard containers (after M4.2), metrics dashboard, operating procedures | Gate passed for 4 skills; 1 day of continuous operation in the lab without `FATAL` | Not started |
 
-| **A1** | Usable by others | The package installs with one line and simulates without the repository (ADR-0027); scenes are checked like plans; a public Python API; an MCP server for coding agents | From an empty folder and the wheel alone, `spingi run demo_inspection_round --adapter sim` succeeds; an MCP client creates a scene, saves it and runs a plan on it. Both in CI | In progress (2026-11-24). Done: the wheel carries the simulator's assets and samples have names, checked by `make wheel-smoke` in CI; scenes have one strict schema, geometry checks and a map (ADR-0028) |
+| **A1** | Usable by others | The package installs with one line and simulates without the repository (ADR-0027); scenes are checked like plans; a public Python API; an MCP server for coding agents | From an empty folder and the wheel alone, `spingi run demo_inspection_round --adapter sim` succeeds; an MCP client creates a scene, saves it and runs a plan on it. Both in CI | In progress (2026-11-24). Done: the wheel carries the simulator's assets and samples have names, checked by `make wheel-smoke` in CI; scenes have one strict schema, geometry checks and a map (ADR-0028); `spingi.api` is the public Python surface (ADR-0029) |
 
 M0–M3, M4.0 and A1 do not require a robot. A1 is about adoption, not about a robot: it runs alongside M4. The M3 planner evaluation calls the Claude API and is run on demand, not in CI. M4.1 and M4.2 need the hardware, a fenced area and the signed checklist; their contract tests run only with the robot connected, never in CI.
 
