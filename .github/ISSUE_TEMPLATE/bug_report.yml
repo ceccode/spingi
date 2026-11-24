@@ -42,7 +42,7 @@ body:
     id: version
     attributes:
       label: Version and system
-      description: The commit or the package version, the operating system, the Python version (or the browser, for the viewer).
-      placeholder: "715c435 · macOS 15 · Python 3.12"
+      description: The commit or the package version (`spingi --version`), the operating system, the Python version (or the browser, for the viewer).
+      placeholder: "spingi 0.2.1 · macOS 15 · Python 3.12"
     validations:
       required: true

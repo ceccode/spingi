@@ -45,6 +45,7 @@ spingi plans [--show NAME]
 spingi check <scene.yaml> [--plan plan.yaml] [--robot g1|go2] [--strict]
 spingi map <scene.yaml> [--plan plan.yaml] [--out map.png]
 spingi mcp [--root DIR] [--runs-dir DIR]
+spingi --version
 ```
 
 A plan or a scene is a file or the name of a sample (ADR-0027): `spingi run demo_inspection_round --adapter sim` and `spingi run plans/demo_inspection_round.yaml --adapter sim` are the same command, and both run from any folder once the package is installed. `spingi scenes` and `spingi plans` list the samples; `--show NAME` prints one, to read it or to start your own from it. A scene you keep in `scenes/<name>.yaml` of the folder you work in, or a plan in `plans/<name>.yaml`, is found by its name too, before a sample of the same name.

@@ -14,6 +14,7 @@
   spingi check <scene.yaml> [--plan plan.yaml] [--robot R] [--strict]
   spingi map <scene.yaml> [--plan plan.yaml] [--out map.png]
   spingi mcp [--root DIR] [--runs-dir DIR]                             (needs the mcp extra)
+  spingi --version
 
 A plan or a scene is a file, or the name of a sample (`spingi plans`, `spingi scenes`): `spingi run
 demo_inspection_round --adapter sim` runs from any folder.
@@ -28,7 +29,7 @@ import asyncio
 import sys
 from pathlib import Path
 
-from spingi import api
+from spingi import __version__, api
 from spingi.assets import DEFAULT_SCENE, PLANS_DIR, UnknownSample, resolve_plan, resolve_scene
 from spingi.core.events import EventLog
 from spingi.core.human import ScriptedHuman
@@ -84,6 +85,7 @@ def main(argv: list[str] | None = None) -> int:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="spingi", description="Physical Agent Runtime for legged robots")
+    parser.add_argument("--version", action="version", version=f"spingi {__version__}")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     run = sub.add_parser("run", help="run a plan once and write an episode")
