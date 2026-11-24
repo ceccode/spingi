@@ -156,7 +156,6 @@ A plan is an ordered list of steps. Each step names a skill, its parameters and 
 | `pick` | `object_id`, `arm=right` | object pose known and within 0.9 m, hand empty | `robot.holding` set, object removed from the scene |
 | `place` | `at`, `arm=right` | holding something, robot at `at` | object put down ahead of the robot, `holding` cleared |
 | `inspect` | `target`, `checks=[]` | robot at `target` | a head-camera frame; `present:<cls>` / `absent:<cls>` checks evaluated, anomalies listed |
-
 | `wait_for_human` | `prompt`, `timeout_s=300` | – | the robot stops and waits; the operator answers `continue` or `abort` |
 | `say` | `text` | – | the text in the event log |
 

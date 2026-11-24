@@ -1,7 +1,7 @@
 [project]
 name = "spingi"
 version = "0.1.0"
-description = "Physical Agent Runtime: a reliable executor of simple physical tasks for humanoid robots, developed sim-first."
+description = "Physical Agent Runtime: a reliable executor of simple physical tasks for legged robots, humanoids and quadrupeds, developed sim-first."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
