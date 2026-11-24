@@ -9,8 +9,14 @@ What changed for people who use Spingi, newest first. Decisions and their reason
 - The package carries the robot models, the walking policies, the tag images and the sample scenes and plans: an installed `spingi` simulates without the repository (ADR-0027).
 - A plan or a scene can be named instead of pointed at: `spingi run demo_inspection_round --adapter sim` runs from any folder. `spingi scenes` and `spingi plans` list the samples, `--show NAME` prints one.
 
+- `spingi check <scene> [--plan P]` says what a robot would meet before anything runs: a place outside the geofence or inside a box, a leg that crosses an obstacle, an object or an inspection with nothing in view, a stop without a landmark (ADR-0028).
+- `spingi map <scene>` draws a scene from above as a PNG, with the warnings in red.
+- The schema of a scene file is published as `docs/schemas/scene.schema.json`.
+
 ### Changed
 
+- **A scene file with a key nobody declares no longer runs** (ADR-0028). `obstacle:` for `obstacles:`, or `max_sped:` in `safety:`, used to be dropped in silence; now the run ends as `INVALID_SCENE` naming the key. Numbers must be numbers: `true` and `"1"` are refused. A route must name locations of its scene.
+- A file that is not a scene ends the command in one line with every problem, instead of a traceback.
 - A plan or scene that is neither a file nor a sample ends the command in one line that lists the samples, instead of a traceback.
 
 - The repository says how to get the code, how to contribute and how to report a problem: `CONTRIBUTING.md`, a code of conduct, issue and pull request templates, this changelog.

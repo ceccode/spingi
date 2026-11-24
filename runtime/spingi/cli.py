@@ -11,6 +11,8 @@
   spingi robots
   spingi scenes [--show NAME]
   spingi plans [--show NAME]
+  spingi check <scene.yaml> [--plan plan.yaml] [--robot R] [--strict]
+  spingi map <scene.yaml> [--plan plan.yaml] [--out map.png]
 
 A plan or a scene is a file, or the name of a sample (`spingi plans`, `spingi scenes`): `spingi run
 demo_inspection_round --adapter sim` runs from any folder.
@@ -37,9 +39,10 @@ from spingi.assets import (
 )
 from spingi.core.events import EventLog
 from spingi.core.human import ScriptedHuman
-from spingi.core.plan import PlanError, load_plan
+from spingi.core.plan import PlanError, load_plan, validate_plan
 from spingi.dotenv import load_dotenv
 from spingi.robots import DEFAULT_ROBOT, PROFILES, get_profile
+from spingi.scenes import SceneError, SceneFile, load_scene
 from spingi.session import SessionConfig, new_run_id, run_session
 from spingi.skills import default_registry
 
@@ -67,6 +70,10 @@ def main(argv: list[str] | None = None) -> int:
         return _samples(bundled_scenes(), args.show)
     if args.cmd == "plans":
         return _samples(bundled_plans(), args.show)
+    if args.cmd == "check":
+        return _check(args)
+    if args.cmd == "map":
+        return _map(args)
     if args.cmd == "export":
         return _export(args)
     if args.cmd == "plan":
@@ -150,6 +157,17 @@ def _parser() -> argparse.ArgumentParser:
     skills.add_argument("--robot", choices=ROBOTS, default=None, help="only the skills this robot can run")
 
     sub.add_parser("robots", help="list the robot profiles and their capabilities")
+
+    check = sub.add_parser("check", help="check a scene, and a plan in it, before running anything")
+    check.add_argument("scene", type=_scene_ref, help=SCENE_HELP)
+    check.add_argument("--plan", type=_plan_ref, default=None, help="also check this plan in the scene")
+    check.add_argument("--robot", choices=ROBOTS, default=DEFAULT_ROBOT, help="the robot the plan is for")
+    check.add_argument("--strict", action="store_true", help="exit with status 1 on warnings too")
+
+    scene_map = sub.add_parser("map", help="draw a scene from above as a PNG, with what the checks found")
+    scene_map.add_argument("scene", type=_scene_ref, help=SCENE_HELP)
+    scene_map.add_argument("--plan", type=_plan_ref, default=None, help="also mark what this plan would meet")
+    scene_map.add_argument("--out", type=Path, default=None, help="default: <scene name>-map.png in this folder")
 
     for cmd, what in (("scenes", "scene"), ("plans", "plan")):
         samples = sub.add_parser(cmd, help=f"list the sample {cmd} that come with Spingi")
@@ -287,7 +305,7 @@ async def _run(args) -> int:
 
 async def _run_with_operator(cfg: SessionConfig, operator: str, on_failure: str = "abort", quiet: bool = False) -> int:
     """Runs one session with the operator asked for, prints its summary and returns the exit code."""
-    if _refuse_plan(cfg.plan):
+    if _refuse_plan(cfg.plan) or _refuse_scene(cfg.scene):
         return 1
     run_id = new_run_id()
     log = EventLog(run_id=run_id, path=cfg.runs_dir / run_id / "events.jsonl")
@@ -327,10 +345,86 @@ def _refuse_plan(path: Path) -> bool:
     return False
 
 
+def _refuse_scene(path: Path) -> bool:
+    """A scene file that is not a scene (an unknown key, a value out of range) ends the command as INVALID_SCENE,
+    in one line, before a robot is started or a run folder is made (ADR-0028)."""
+    try:
+        load_scene(path)
+    except SceneError as exc:
+        print(f"\nINVALID_SCENE · {exc}")
+        return True
+    return False
+
+
+def _checked(args) -> tuple[SceneFile | None, list[str], list]:
+    """The scene, the errors of the scene or of the plan in it, and the warnings of both."""
+    from spingi.scene_check import check_plan, check_scene
+
+    try:
+        scene = load_scene(args.scene)
+    except SceneError as exc:
+        return None, [f"scene: {error}" for error in exc.errors], []
+    warnings = check_scene(scene)
+    if args.plan is None:
+        return scene, [], warnings
+    try:
+        plan = load_plan(args.plan)
+    except PlanError as exc:
+        return scene, [str(exc)], warnings
+    capabilities = get_profile(getattr(args, "robot", DEFAULT_ROBOT)).capabilities
+    errors = validate_plan(plan, default_registry(), capabilities, scene.locations)
+    return scene, [f"plan: {error}" for error in errors], [*warnings, *check_plan(plan, scene)]
+
+
+def _check(args) -> int:
+    scene, errors, warnings = _checked(args)
+    if scene is not None:
+        parts = [
+            _count(len(scene.locations), "location"),
+            _count(len(scene.obstacles), "obstacle"),
+            _count(len(scene.objects), "object"),
+            _count(len(scene.landmarks), "landmark"),
+            *(["terrain"] if scene.terrain else []),
+        ]
+        print(f"scene {args.scene}: {', '.join(parts)}")
+    for error in errors:
+        print(f"error: {error}")
+    for warning in warnings:
+        print(f"warning: {warning.message}")
+    counted = f"{_count(len(errors), 'error')}, {_count(len(warnings), 'warning')}"
+    if errors:
+        print(f"\nINVALID · {counted}")
+        return 1
+    print(f"\nOK · {counted}")
+    return 1 if args.strict and warnings else 0
+
+
+def _count(n: int, what: str) -> str:
+    return f"{n} {what}" if n == 1 else f"{n} {what}s"
+
+
+def _map(args) -> int:
+    scene, errors, warnings = _checked(args)
+    if scene is None:
+        for error in errors:
+            print(f"error: {error}", file=sys.stderr)
+        return 1
+    try:
+        from spingi.scene_map import write_map
+
+        out = args.out or Path(f"{args.scene.stem}-map.png")
+        write_map(scene, out, warnings, title=args.scene.stem)
+    except (ImportError, RuntimeError) as exc:  # Pillow comes with the sim extra
+        print(f"no map: {exc}", file=sys.stderr)
+        return 2
+    print(f"map: {out} · {_count(len(warnings), 'warning')} marked")
+    return 0
+
+
 async def _bench(args) -> int:
     from spingi.bench import bench, format_report
 
-    if _refuse_plan(args.plan):
+    if _refuse_plan(args.plan) or _refuse_scene(args.scene):
         return 1
     out_dir = args.runs_dir / f"bench-{new_run_id()[2:]}"
 
@@ -412,7 +506,7 @@ def _plan(args) -> int:
     planner = _llm_planner(args.model, args.robot)
     try:
         result, error = _api_call(lambda: planner.plan(args.request, load_world(args.scene), load_routes(args.scene)))
-    except PlanningError as exc:
+    except (PlanningError, SceneError) as exc:
         result, error = None, str(exc)
     if result is None:
         print(f"no plan: {error}", file=sys.stderr)

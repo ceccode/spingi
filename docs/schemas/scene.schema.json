@@ -1,0 +1,673 @@
+{
+  "$defs": {
+    "Geofence": {
+      "additionalProperties": false,
+      "description": "Axis-aligned working area. Anything outside it stops the robot.",
+      "properties": {
+        "x_min": {
+          "title": "X Min",
+          "type": "number"
+        },
+        "x_max": {
+          "title": "X Max",
+          "type": "number"
+        },
+        "y_min": {
+          "title": "Y Min",
+          "type": "number"
+        },
+        "y_max": {
+          "title": "Y Max",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x_min",
+        "x_max",
+        "y_min",
+        "y_max"
+      ],
+      "title": "Geofence",
+      "type": "object"
+    },
+    "SafetyLimits": {
+      "additionalProperties": false,
+      "properties": {
+        "geofence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Geofence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "max_speed": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "m/s; applied as a cap on the adapter",
+          "title": "Max Speed"
+        },
+        "min_battery_pct": {
+          "default": 5.0,
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Min Battery Pct",
+          "type": "number"
+        },
+        "estop_on_geofence": {
+          "default": true,
+          "description": "leaving the fence e-stops the robot (latched, needs a reset); false: a plain stop",
+          "title": "Estop On Geofence",
+          "type": "boolean"
+        }
+      },
+      "title": "SafetyLimits",
+      "type": "object"
+    },
+    "SceneExtent": {
+      "additionalProperties": false,
+      "properties": {
+        "x_min": {
+          "title": "X Min",
+          "type": "number"
+        },
+        "x_max": {
+          "title": "X Max",
+          "type": "number"
+        },
+        "y_min": {
+          "title": "Y Min",
+          "type": "number"
+        },
+        "y_max": {
+          "title": "Y Max",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x_min",
+        "x_max",
+        "y_min",
+        "y_max"
+      ],
+      "title": "SceneExtent",
+      "type": "object"
+    },
+    "SceneLandmark": {
+      "additionalProperties": false,
+      "description": "An AprilTag at a known place, on a post or flat on a wall: reading it corrects the robot's pose.",
+      "properties": {
+        "marker_id": {
+          "maximum": 63,
+          "minimum": 0,
+          "title": "Marker Id",
+          "type": "integer"
+        },
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        },
+        "facing": {
+          "default": 0.0,
+          "description": "the direction the tag's face looks, rad",
+          "title": "Facing",
+          "type": "number"
+        },
+        "height_m": {
+          "default": 0.6,
+          "description": "the tag's centre above ground",
+          "exclusiveMinimum": 0,
+          "maximum": 3.0,
+          "title": "Height M",
+          "type": "number"
+        },
+        "size_m": {
+          "default": 0.2,
+          "description": "side of the tag's black square",
+          "exclusiveMinimum": 0,
+          "maximum": 0.6,
+          "title": "Size M",
+          "type": "number"
+        },
+        "post": {
+          "default": true,
+          "description": "false: flat on a wall or an obstacle, no post drawn",
+          "title": "Post",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "marker_id",
+        "x",
+        "y"
+      ],
+      "title": "SceneLandmark",
+      "type": "object"
+    },
+    "SceneLocation": {
+      "additionalProperties": false,
+      "description": "A named place: the only places a plan can send the robot to.",
+      "properties": {
+        "pose": {
+          "$ref": "#/$defs/ScenePose"
+        },
+        "tolerance_m": {
+          "default": 0.15,
+          "description": "how close counts as arrived",
+          "exclusiveMinimum": 0,
+          "title": "Tolerance M",
+          "type": "number"
+        }
+      },
+      "required": [
+        "pose"
+      ],
+      "title": "SceneLocation",
+      "type": "object"
+    },
+    "SceneObject": {
+      "additionalProperties": false,
+      "description": "Something the robot looks for with its camera. No collision.",
+      "properties": {
+        "cls": {
+          "description": "the class plans look for, as in present:<cls>",
+          "pattern": "^[A-Za-z0-9_-]{1,64}$",
+          "title": "Cls",
+          "type": "string"
+        },
+        "marker_id": {
+          "anyOf": [
+            {
+              "maximum": 63,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "its AprilTag, if it has one",
+          "title": "Marker Id"
+        },
+        "size": {
+          "description": "[along x, along y, height] in metres",
+          "items": {
+            "exclusiveMinimum": 0,
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "title": "Size",
+          "type": "array"
+        },
+        "pose": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ScenePosition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the object's centre; unknown when left out"
+        },
+        "color": {
+          "anyOf": [
+            {
+              "description": "#rrggbb",
+              "pattern": "^#[0-9A-Fa-f]{6}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Color"
+        },
+        "confidence": {
+          "default": 1.0,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        }
+      },
+      "required": [
+        "cls"
+      ],
+      "title": "SceneObject",
+      "type": "object"
+    },
+    "SceneObstacle": {
+      "additionalProperties": false,
+      "description": "A solid box standing on the ground, aligned with the axes. The robot collides with it.",
+      "properties": {
+        "x": {
+          "description": "centre",
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "description": "centre",
+          "title": "Y",
+          "type": "number"
+        },
+        "w": {
+          "default": 0.5,
+          "description": "size along x",
+          "exclusiveMinimum": 0,
+          "title": "W",
+          "type": "number"
+        },
+        "d": {
+          "default": 0.5,
+          "description": "size along y",
+          "exclusiveMinimum": 0,
+          "title": "D",
+          "type": "number"
+        },
+        "h": {
+          "default": 1.0,
+          "description": "height",
+          "exclusiveMinimum": 0,
+          "title": "H",
+          "type": "number"
+        },
+        "color": {
+          "anyOf": [
+            {
+              "description": "#rrggbb",
+              "pattern": "^#[0-9A-Fa-f]{6}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Color"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "title": "SceneObstacle",
+      "type": "object"
+    },
+    "ScenePose": {
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        },
+        "yaw": {
+          "default": 0.0,
+          "description": "rad, counter-clockwise from +x",
+          "title": "Yaw",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "title": "ScenePose",
+      "type": "object"
+    },
+    "ScenePosition": {
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        },
+        "z": {
+          "description": "height of the object's centre, metres",
+          "title": "Z",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "z"
+      ],
+      "title": "ScenePosition",
+      "type": "object"
+    },
+    "SceneRobot": {
+      "additionalProperties": false,
+      "properties": {
+        "pose": {
+          "$ref": "#/$defs/ScenePose",
+          "description": "where the robot starts"
+        },
+        "battery_pct": {
+          "default": 100.0,
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Battery Pct",
+          "type": "number"
+        }
+      },
+      "title": "SceneRobot",
+      "type": "object"
+    },
+    "SceneTerrain": {
+      "additionalProperties": false,
+      "description": "The ground, outdoors: a base surface, rectangles of other surfaces, ramps and raised areas.",
+      "properties": {
+        "extent": {
+          "$ref": "#/$defs/SceneExtent",
+          "description": "must cover the safety geofence"
+        },
+        "cell_m": {
+          "default": 0.1,
+          "maximum": 0.25,
+          "minimum": 0.08,
+          "title": "Cell M",
+          "type": "number"
+        },
+        "seed": {
+          "default": 0,
+          "description": "same seed, same bumps on every run",
+          "exclusiveMaximum": 2147483648,
+          "minimum": 0,
+          "title": "Seed",
+          "type": "integer"
+        },
+        "surface": {
+          "default": "floor",
+          "enum": [
+            "floor",
+            "concrete",
+            "asphalt",
+            "gravel",
+            "dirt",
+            "grass"
+          ],
+          "title": "Surface",
+          "type": "string"
+        },
+        "regions": {
+          "items": {
+            "$ref": "#/$defs/TerrainRegion"
+          },
+          "title": "Regions",
+          "type": "array"
+        },
+        "ramps": {
+          "items": {
+            "$ref": "#/$defs/TerrainRamp"
+          },
+          "title": "Ramps",
+          "type": "array"
+        },
+        "raised": {
+          "items": {
+            "$ref": "#/$defs/TerrainRaised"
+          },
+          "title": "Raised",
+          "type": "array"
+        }
+      },
+      "required": [
+        "extent"
+      ],
+      "title": "SceneTerrain",
+      "type": "object"
+    },
+    "TerrainRaised": {
+      "additionalProperties": false,
+      "description": "A raised area, flat on top with vertical sides: a kerb, a step, a loading dock.",
+      "properties": {
+        "x": {
+          "description": "[from, to] in metres, from < to",
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "X",
+          "type": "array"
+        },
+        "y": {
+          "description": "[from, to] in metres, from < to",
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Y",
+          "type": "array"
+        },
+        "height_m": {
+          "maximum": 3.0,
+          "minimum": 0,
+          "title": "Height M",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "height_m"
+      ],
+      "title": "TerrainRaised",
+      "type": "object"
+    },
+    "TerrainRamp": {
+      "additionalProperties": false,
+      "description": "A solid slope between two heights.",
+      "properties": {
+        "x": {
+          "description": "[from, to] in metres, from < to",
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "X",
+          "type": "array"
+        },
+        "y": {
+          "description": "[from, to] in metres, from < to",
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Y",
+          "type": "array"
+        },
+        "from_m": {
+          "default": 0.0,
+          "maximum": 3.0,
+          "minimum": 0,
+          "title": "From M",
+          "type": "number"
+        },
+        "to_m": {
+          "maximum": 3.0,
+          "minimum": 0,
+          "title": "To M",
+          "type": "number"
+        },
+        "along": {
+          "default": "x",
+          "description": "the direction it rises in",
+          "enum": [
+            "x",
+            "y",
+            "-x",
+            "-y"
+          ],
+          "title": "Along",
+          "type": "string"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "to_m"
+      ],
+      "title": "TerrainRamp",
+      "type": "object"
+    },
+    "TerrainRegion": {
+      "additionalProperties": false,
+      "description": "A rectangle of another surface. Where two overlap, the last one listed wins.",
+      "properties": {
+        "x": {
+          "description": "[from, to] in metres, from < to",
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "X",
+          "type": "array"
+        },
+        "y": {
+          "description": "[from, to] in metres, from < to",
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Y",
+          "type": "array"
+        },
+        "surface": {
+          "enum": [
+            "floor",
+            "concrete",
+            "asphalt",
+            "gravel",
+            "dirt",
+            "grass"
+          ],
+          "title": "Surface",
+          "type": "string"
+        },
+        "roughness_m": {
+          "anyOf": [
+            {
+              "maximum": 0.1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "instead of the surface's",
+          "title": "Roughness M"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "surface"
+      ],
+      "title": "TerrainRegion",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A scene: the world the robot knows. Distances in metres on the ground plane, angles in radians.",
+  "properties": {
+    "robot": {
+      "$ref": "#/$defs/SceneRobot"
+    },
+    "locations": {
+      "patternProperties": {
+        "^[A-Za-z0-9_-]{1,64}$": {
+          "$ref": "#/$defs/SceneLocation"
+        }
+      },
+      "title": "Locations",
+      "type": "object"
+    },
+    "obstacles": {
+      "items": {
+        "$ref": "#/$defs/SceneObstacle"
+      },
+      "title": "Obstacles",
+      "type": "array"
+    },
+    "objects": {
+      "patternProperties": {
+        "^[A-Za-z0-9_-]{1,64}$": {
+          "$ref": "#/$defs/SceneObject"
+        }
+      },
+      "title": "Objects",
+      "type": "object"
+    },
+    "landmarks": {
+      "items": {
+        "$ref": "#/$defs/SceneLandmark"
+      },
+      "title": "Landmarks",
+      "type": "array"
+    },
+    "routes": {
+      "additionalProperties": {
+        "items": {
+          "pattern": "^[A-Za-z0-9_-]{1,64}$",
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "description": "\"from->to\": the waypoints that keep that leg clear of obstacles",
+      "title": "Routes",
+      "type": "object"
+    },
+    "safety": {
+      "$ref": "#/$defs/SafetyLimits"
+    },
+    "terrain": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SceneTerrain"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "title": "SceneFile",
+  "type": "object"
+}
