@@ -9,6 +9,11 @@
   spingi replay <episode_dir> [<episode_dir>...]
   spingi skills [--robot R]
   spingi robots
+  spingi scenes [--show NAME]
+  spingi plans [--show NAME]
+
+A plan or a scene is a file, or the name of a sample (`spingi plans`, `spingi scenes`): `spingi run
+demo_inspection_round --adapter sim` runs from any folder.
 
 The MuJoCo viewer on macOS requires `uv run mjpython -m spingi.cli run ... --view`.
 """
@@ -20,6 +25,16 @@ import asyncio
 import sys
 from pathlib import Path
 
+from spingi.assets import (
+    DEFAULT_SCENE,
+    PLANS_DIR,
+    UnknownSample,
+    bundled_plans,
+    bundled_scenes,
+    resolve_plan,
+    resolve_scene,
+    summary,
+)
 from spingi.core.events import EventLog
 from spingi.core.human import ScriptedHuman
 from spingi.core.plan import PlanError, load_plan
@@ -28,8 +43,9 @@ from spingi.robots import DEFAULT_ROBOT, PROFILES, get_profile
 from spingi.session import SessionConfig, new_run_id, run_session
 from spingi.skills import default_registry
 
-DEFAULT_SCENE = Path("sim/scenes/lab_small.yaml")
 ROBOTS = sorted(PROFILES)
+PLAN_HELP = "a plan file, or the name of a sample (spingi plans)"
+SCENE_HELP = f"a scene file, or the name of a sample (spingi scenes); default: {DEFAULT_SCENE}"
 ADAPTER_HELP = (
     "fake: in-memory robot, instant moves, no physics; its camera sees objects within 3 m and 40 degrees either side "
     "of the heading, as in sim. sim: the robot in MuJoCo"
@@ -47,6 +63,10 @@ def main(argv: list[str] | None = None) -> int:
         return _skills(args)
     if args.cmd == "robots":
         return _robots()
+    if args.cmd == "scenes":
+        return _samples(bundled_scenes(), args.show)
+    if args.cmd == "plans":
+        return _samples(bundled_plans(), args.show)
     if args.cmd == "export":
         return _export(args)
     if args.cmd == "plan":
@@ -108,7 +128,7 @@ def _parser() -> argparse.ArgumentParser:
 
     plan = sub.add_parser("plan", help="turn a request in natural language into a validated plan (LLM)")
     plan.add_argument("request")
-    plan.add_argument("--scene", type=Path, default=DEFAULT_SCENE)
+    plan.add_argument("--scene", type=_scene_ref, default=DEFAULT_SCENE, help=SCENE_HELP)
     plan.add_argument("--out", type=Path, help="write the plan to this YAML file")
     plan.add_argument("--model", default=None, help="Claude model id (default: claude-opus-5-5)")
     plan.add_argument("--run", action="store_true", help="run the plan right away (with --adapter, --operator)")
@@ -118,7 +138,7 @@ def _parser() -> argparse.ArgumentParser:
     plan.add_argument("--yes", action="store_true", help="with --run: do not ask for confirmation before running")
 
     evalp = sub.add_parser("eval-planner", help="run the LLM planner on the golden cases and report the pass rate")
-    evalp.add_argument("--cases", type=Path, default=Path("plans/golden/planner_cases.yaml"))
+    evalp.add_argument("--cases", type=Path, default=_short(PLANS_DIR / "golden" / "planner_cases.yaml"))
     evalp.add_argument("--model", default=None)
     evalp.add_argument("--out", type=Path, default=None, help="write the JSON report here")
     evalp.add_argument("--min-pass-rate", type=float, default=1.0, help="exit with status 1 below this rate")
@@ -130,7 +150,46 @@ def _parser() -> argparse.ArgumentParser:
     skills.add_argument("--robot", choices=ROBOTS, default=None, help="only the skills this robot can run")
 
     sub.add_parser("robots", help="list the robot profiles and their capabilities")
+
+    for cmd, what in (("scenes", "scene"), ("plans", "plan")):
+        samples = sub.add_parser(cmd, help=f"list the sample {cmd} that come with Spingi")
+        samples.add_argument("--show", metavar="NAME", help=f"print a sample {what}, to read it or to start from it")
     return parser
+
+
+def _short(path: Path) -> Path:
+    """Relative to the current folder when the file is inside it: what a person would type."""
+    cwd = Path.cwd().resolve()
+    return path.relative_to(cwd) if path.is_relative_to(cwd) else path
+
+
+def _plan_ref(value: str) -> Path:
+    return _sample_or_file(resolve_plan, value)
+
+
+def _scene_ref(value: str) -> Path:
+    return _sample_or_file(resolve_scene, value)
+
+
+def _sample_or_file(resolve, value: str) -> Path:
+    """A reference that is neither a file nor a sample ends the command in one line, before anything is loaded."""
+    try:
+        return resolve(value)
+    except UnknownSample as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
+def _samples(samples: dict[str, Path], show: str | None) -> int:
+    if show is not None:
+        if show not in samples:
+            print(f"no sample '{show}'; known: {', '.join(sorted(samples))}", file=sys.stderr)
+            return 1
+        print(samples[show].read_text(encoding="utf-8"), end="")
+        return 0
+    width = max(len(name) for name in samples)
+    for name, path in samples.items():
+        print(f"{name:<{width}}  {summary(path)}")
+    return 0
 
 
 def _skills(args) -> int:
@@ -149,8 +208,8 @@ def _robots() -> int:
 
 
 def _session_args(p: argparse.ArgumentParser) -> None:
-    p.add_argument("plan", type=Path)
-    p.add_argument("--scene", type=Path, default=DEFAULT_SCENE)
+    p.add_argument("plan", type=_plan_ref, help=PLAN_HELP)
+    p.add_argument("--scene", type=_scene_ref, default=DEFAULT_SCENE, help=SCENE_HELP)
     adapter_help = f"{ADAPTER_HELP}; default: fake, or sim with --realistic"
     p.add_argument("--adapter", choices=["fake", "sim"], default=None, help=adapter_help)
     p.add_argument("--robot", choices=ROBOTS, default=DEFAULT_ROBOT, help="which robot the adapter stands for")
@@ -399,7 +458,8 @@ def _eval_planner(args) -> int:
         return 2
 
     def plan_fn(case):
-        r = planner.plan(case.request, load_world(case.scene), load_routes(case.scene))
+        scene = resolve_scene(case.scene)
+        r = planner.plan(case.request, load_world(scene), load_routes(scene))
         return r.plan, r.attempts
 
     def progress(r) -> None:

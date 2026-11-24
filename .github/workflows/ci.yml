@@ -1,4 +1,4 @@
-# Lint and tests of both projects on every push and pull request. No GPU, no robot, no network calls to Claude.
+# Lint and tests of both projects, and the package as a user installs it, on every push and pull request. No GPU, no robot, no network calls to Claude.
 # Actions are pinned to commit SHAs (the comment gives the tag); permissions are read-only.
 name: ci
 
@@ -40,6 +40,27 @@ jobs:
         run: uv run ruff format --check spingi tests scripts
       - name: Tests
         run: uv run pytest
+
+  # What a user gets from the package alone: the wheel, in a clean environment, runs a sample from an empty folder.
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: runtime
+    env:
+      MUJOCO_GL: egl
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
+        with:
+          python-version: "3.12"
+      - name: Install system libraries for MuJoCo rendering
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libegl1 libgl1 libglvnd0
+      - name: Build the wheel and run a sample from it
+        run: uv run --no-project python scripts/wheel_smoke.py
 
   viewer:
     runs-on: ubuntu-24.04

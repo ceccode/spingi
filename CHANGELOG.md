@@ -4,7 +4,14 @@ What changed for people who use Spingi, newest first. Decisions and their reason
 
 ## Unreleased
 
+### Added
+
+- The package carries the robot models, the walking policies, the tag images and the sample scenes and plans: an installed `spingi` simulates without the repository (ADR-0027).
+- A plan or a scene can be named instead of pointed at: `spingi run demo_inspection_round --adapter sim` runs from any folder. `spingi scenes` and `spingi plans` list the samples, `--show NAME` prints one.
+
 ### Changed
+
+- A plan or scene that is neither a file nor a sample ends the command in one line that lists the samples, instead of a traceback.
 
 - The repository says how to get the code, how to contribute and how to report a problem: `CONTRIBUTING.md`, a code of conduct, issue and pull request templates, this changelog.
 - The package and the command line describe Spingi as a runtime for legged robots, humanoids and quadrupeds.

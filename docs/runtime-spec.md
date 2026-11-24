@@ -752,12 +752,12 @@ Core dependencies: `pydantic`, `pyyaml`. Everything else is in the adapters and 
 │   │   ├── adapters/          # fake.py, sim_mujoco/ (the real robots' adapter at M4)
 │   │   ├── console/           # terminal operator console
 │   │   ├── export/            # LeRobot v3.0 exporter
-│   │   └── *.py               # cli, session, bench, metrics, replay, episode, scenes, robots, dotenv
+│   │   └── *.py               # cli, session, bench, metrics, replay, episode, scenes, robots, assets, dotenv
 │   ├── plans/                 # TaskPlan YAML; plans/golden/ holds the planner cases
-│   ├── sim/scenes/            # YAML scenes
+│   ├── sim/scenes/            # YAML scenes (plans/ and sim/ travel inside the wheel as spingi/_assets, ADR-0027)
 │   ├── sim/models/            # G1 and Go2 models (mujoco_menagerie), one folder each with its license
 │   ├── sim/policies/          # walking policies for physics locomotion (numpy weights + settings + license)
-│   ├── scripts/               # gen_schemas, record_golden, record_samples, export_glb, import_policies
+│   ├── scripts/               # gen_schemas, record_golden, record_samples, export_glb, import_policies, wheel_smoke
 │   ├── runs/                  # output (gitignored)
 │   ├── tests/                 # unit · contract · sim · golden · test_architecture.py · test_licensing.py
 │   ├── LICENSE, NOTICE        # copies of the root files shipped in the wheel, kept equal by a test
@@ -782,7 +782,9 @@ Rule: `spingi/core` imports nothing from `adapters`, `skills`, `planner`, `perce
 | **M4.2** | The G1 in the lab | The same adapter and gate on the G1; the arm and hand methods of the port on real hardware | Gate passed for `navigate` and `inspect` on the G1; `gripper` and `move_arm` exercised in the contract tests | Not started (needs a G1) |
 | **M5** | Pilot-ready | `pick`/`place` on the G1 with standard containers (after M4.2), metrics dashboard, operating procedures | Gate passed for 4 skills; 1 day of continuous operation in the lab without `FATAL` | Not started |
 
-M0–M3 and M4.0 do not require a robot. The M3 planner evaluation calls the Claude API and is run on demand, not in CI. M4.1 and M4.2 need the hardware, a fenced area and the signed checklist; their contract tests run only with the robot connected, never in CI.
+| **A1** | Usable by others | The package installs with one line and simulates without the repository (ADR-0027); scenes are checked like plans; a public Python API; an MCP server for coding agents | From an empty folder and the wheel alone, `spingi run demo_inspection_round --adapter sim` succeeds; an MCP client creates a scene, saves it and runs a plan on it. Both in CI | In progress (2026-11-24). Done: the wheel carries the simulator's assets and samples have names, checked by `make wheel-smoke` in CI |
+
+M0–M3, M4.0 and A1 do not require a robot. A1 is about adoption, not about a robot: it runs alongside M4. The M3 planner evaluation calls the Claude API and is run on demand, not in CI. M4.1 and M4.2 need the hardware, a fenced area and the signed checklist; their contract tests run only with the robot connected, never in CI.
 
 **Status as of 2026-10-04: M0 to M3 complete.** 176 runtime tests green in about 12 seconds. Clarifications that emerged during implementation are normative and now part of the contracts: a `$step.field` reference is always the whole value of a parameter (§3.4); `on_failure.then: needs_human` stops the robot before asking, and the operator's `retry` answer resets the step's retry budget, at most three times per step (§4). A review before M4 added robot time, the terminal e-stop and latched safety stops (ADR-0011, §3.5, §4, §5). Robot profiles and capabilities, with the Go2 quadruped as a second robot in simulation, followed on 2026-10-09 (ADR-0012, §1.1, §3.5): 219 runtime tests. M4 was then split into M4.0 (prerequisites without a robot), M4.1 (the Go2 in the lab) and M4.2 (the G1), because neither a robot nor a fenced area is available yet and the perception and procedure work can be done first. M4.0 landed the same day: `MarkerPerceiver` on rendered frames, the lab checklist, ADR-0013 and ADR-0014 (proposed), the hardware timeout rule, the p95 check; 233 runtime tests. On 2026-11-01 the simulator learned to walk (ADR-0015): learned walking policies for both robots in physics mode, falls and stuck walks reported to the runtime, ground with surfaces, ramps and kerbs, two outdoor scenes, and episodes the viewer replays with moving legs; 278 runtime tests.
 

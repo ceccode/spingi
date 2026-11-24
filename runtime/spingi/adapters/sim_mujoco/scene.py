@@ -6,13 +6,14 @@ on the ground) and objects (boxes without collision in v0). An object with a `ma
 its four side faces, so the frames the head camera renders can be read by `MarkerPerceiver` like a real camera's
 (M4.0). Landmarks are tags at known places (ADR-0016), on a post or, with `post: false`, flat on a wall or an
 obstacle; they are drawn but have no collision, so a scene keeps them off the routes. The generated file goes into
-the model folder because `<include>` and `meshdir` resolve relative to the main file.
+the model folder because `<include>` and `meshdir` resolve relative to the main file (`write_scene`).
 """
 
 from __future__ import annotations
 
 import math
 import os
+import shutil
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -32,13 +33,11 @@ from spingi.adapters.sim_mujoco.terrain import (
 )
 from spingi.adapters.sim_mujoco.terrain import mjcf as terrain_mjcf
 from spingi.adapters.sim_mujoco.values import SceneError, color, name, num
+from spingi.assets import MARKERS_DIR, MODELS_DIR
 from spingi.core.types import Landmark
 from spingi.scenes import parse_landmarks
 
-# Resolved from this file, never from the working directory: a folder you run `spingi` in must not supply the robot.
-MODELS_DIR = Path(__file__).resolve().parents[3] / "sim" / "models"
 DEFAULT_MODEL_DIR = MODELS_DIR / "unitree_g1"
-MARKERS_DIR = Path(__file__).resolve().parents[3] / "sim" / "markers"  # tag36h11_NN.png, ids 0..63, committed
 
 # A tag image is the 10x10-cell AprilTag (8 data cells and the black border) plus a 1-cell white quiet zone on each
 # side: 12 cells. The decal is a square of `MARKER_DECAL_SCALE` times the object's smallest extent; the black square
@@ -394,12 +393,43 @@ def write_scene(
     scene_path: Path | str, model_dir: Path | str = DEFAULT_MODEL_DIR, robot_file: str = "g1.xml"
 ) -> tuple[Path, CompiledScene]:
     """Writes the MJCF next to the robot model (includes and meshes resolve from there) under a unique name, so
-    concurrent runs never overwrite each other. The caller deletes it once MuJoCo has loaded it."""
+    concurrent runs never overwrite each other. Where the model folder cannot be written, as in a read-only install,
+    the file goes into a temporary folder that links to the model's files. The caller gives the path to
+    `discard_scene` once MuJoCo has loaded it."""
     compiled = compile_scene(load_scene_yaml(scene_path), robot_file=robot_file)
-    fd, path = tempfile.mkstemp(prefix="_gen_", suffix=".xml", dir=model_dir)
+    try:
+        fd, path = tempfile.mkstemp(prefix="_gen_", suffix=".xml", dir=model_dir)
+    except OSError:
+        fd, path = tempfile.mkstemp(prefix="_gen_", suffix=".xml", dir=_mirror(Path(model_dir)))
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         fh.write(compiled.xml)
     return Path(path), compiled
+
+
+def discard_scene(xml_path: Path) -> None:
+    """Removes a generated scene file, and the folder made for it when the model folder could not be written."""
+    xml_path.unlink(missing_ok=True)
+    if xml_path.parent.name.startswith(MIRROR_PREFIX):
+        shutil.rmtree(xml_path.parent, ignore_errors=True)  # links only: the model's own files are not touched
+
+
+MIRROR_PREFIX = "spingi-model-"
+
+
+def _mirror(model_dir: Path) -> Path:
+    """A temporary folder that stands for the model folder: a link to each of its entries, or a copy where links
+    are not allowed."""
+    mirror = Path(tempfile.mkdtemp(prefix=MIRROR_PREFIX))
+    for entry in model_dir.iterdir():
+        target = mirror / entry.name
+        try:
+            target.symlink_to(entry, target_is_directory=entry.is_dir())
+        except OSError:
+            if entry.is_dir():
+                shutil.copytree(entry, target)
+            else:
+                shutil.copy2(entry, target)
+    return mirror
 
 
 def _tracking_camera() -> str:

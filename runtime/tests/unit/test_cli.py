@@ -107,6 +107,30 @@ def test_the_automatic_operator_prints_every_event(tmp_path, capsys):
     assert kinds[-1] == "safety.disarmed"
 
 
+def test_a_sample_runs_by_its_name_on_the_default_scene(sessions, tmp_path):
+    assert main(["run", "demo_inspection_round", "--runs-dir", str(tmp_path), "--quiet"]) == 0
+    cfg, _ = sessions[0]
+    assert cfg.plan == Path("plans/demo_inspection_round.yaml") and cfg.scene == Path("sim/scenes/lab_small.yaml")
+
+
+def test_a_plan_that_is_neither_a_file_nor_a_sample_ends_the_command_in_one_line(sessions, capsys):
+    with pytest.raises(SystemExit) as exit_:
+        main(["run", "plans/no_such_plan.yaml"])
+    assert exit_.value.code == 2 and sessions == []
+    assert "no plan 'plans/no_such_plan.yaml': not a file" in capsys.readouterr().err
+
+
+def test_scenes_and_plans_list_the_samples_and_print_one(capsys):
+    assert main(["scenes"]) == 0
+    listed = dict(line.split(maxsplit=1) for line in capsys.readouterr().out.splitlines())
+    assert listed["lab_small"].startswith("Lab scene: four known waypoints")
+    assert {"warehouse_small", "yard_outdoor"} <= set(listed)
+    assert main(["plans", "--show", "yard_patrol"]) == 0
+    assert capsys.readouterr().out == Path("plans/yard_patrol.yaml").read_text()
+    assert main(["plans", "--show", "nothing"]) == 1
+    assert "no sample 'nothing'; known: demo_inspection_round" in capsys.readouterr().err
+
+
 def test_skills_and_robots_list_what_each_robot_can_do(capsys):
     assert main(["skills", "--robot", "go2"]) == 0
     names = {line.split()[0] for line in capsys.readouterr().out.splitlines()}

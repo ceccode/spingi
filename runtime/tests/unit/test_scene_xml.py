@@ -1,6 +1,11 @@
+import tempfile
+from pathlib import Path
+
+import mujoco
 import pytest
 
-from spingi.adapters.sim_mujoco.scene import SceneError, build_scene_xml
+from spingi.adapters.sim_mujoco.scene import SceneError, build_scene_xml, discard_scene, write_scene
+from spingi.robots import G1
 
 
 def scene(**over):
@@ -101,3 +106,31 @@ def test_invalid_landmarks_are_refused(bad):
         build_scene_xml(
             scene(objects={"box_1": {"cls": "box", "marker_id": 7, "pose": {"x": 2, "y": 2}}}, landmarks=bad)
         )
+
+
+def test_the_generated_scene_is_written_next_to_the_model_and_removed():
+    xml_path, _ = write_scene("sim/scenes/lab_small.yaml", G1.sim.path, robot_file=G1.sim.file)
+    assert xml_path.parent == G1.sim.path and xml_path.name.startswith("_gen_")
+    discard_scene(xml_path)
+    assert not xml_path.exists()
+
+
+def test_a_model_folder_that_cannot_be_written_gets_the_scene_in_a_folder_of_links(monkeypatch):
+    """A read-only install: the generated file goes elsewhere and MuJoCo still finds the robot and its meshes."""
+    real_mkstemp = tempfile.mkstemp
+
+    def mkstemp(*args, dir=None, **kwargs):
+        if dir is not None and Path(dir) == G1.sim.path:
+            raise PermissionError("read-only file system")
+        return real_mkstemp(*args, dir=dir, **kwargs)
+
+    monkeypatch.setattr(tempfile, "mkstemp", mkstemp)
+    xml_path, _ = write_scene("sim/scenes/lab_small.yaml", G1.sim.path, robot_file=G1.sim.file)
+    mirror = xml_path.parent
+    try:
+        assert mirror != G1.sim.path and (mirror / G1.sim.file).is_file()
+        assert mujoco.MjModel.from_xml_path(str(xml_path)).nmesh > 0
+    finally:
+        discard_scene(xml_path)
+    assert not mirror.exists()
+    assert (G1.sim.path / G1.sim.file).is_file() and (G1.sim.path / "assets").is_dir()  # the model is untouched

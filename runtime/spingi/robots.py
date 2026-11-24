@@ -11,11 +11,10 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from spingi.assets import MODELS_DIR
 from spingi.core.ports import ALL_CAPABILITIES, Capability
 
 RobotKind = Literal["humanoid", "quadruped"]
-
-MODELS_DIR = Path(__file__).resolve().parent.parent / "sim" / "models"  # resolved from the package, never from cwd
 
 
 class SimModel(BaseModel):
