@@ -13,6 +13,7 @@
   spingi plans [--show NAME]
   spingi check <scene.yaml> [--plan plan.yaml] [--robot R] [--strict]
   spingi map <scene.yaml> [--plan plan.yaml] [--out map.png]
+  spingi mcp [--root DIR] [--runs-dir DIR]                             (needs the mcp extra)
 
 A plan or a scene is a file, or the name of a sample (`spingi plans`, `spingi scenes`): `spingi run
 demo_inspection_round --adapter sim` runs from any folder.
@@ -66,6 +67,8 @@ def main(argv: list[str] | None = None) -> int:
         return _check(args)
     if args.cmd == "map":
         return _map(args)
+    if args.cmd == "mcp":
+        return _mcp(args)
     if args.cmd == "export":
         return _export(args)
     if args.cmd == "plan":
@@ -160,6 +163,10 @@ def _parser() -> argparse.ArgumentParser:
     scene_map.add_argument("scene", type=_scene_ref, help=SCENE_HELP)
     scene_map.add_argument("--plan", type=_plan_ref, default=None, help="also mark what this plan would meet")
     scene_map.add_argument("--out", type=Path, default=None, help="default: <scene name>-map.png in this folder")
+
+    mcp = sub.add_parser("mcp", help="serve Spingi to a coding agent over MCP (stdio), in simulation only")
+    mcp.add_argument("--root", type=Path, default=Path(), help="the working folder: scenes/, plans/ and runs/ in it")
+    mcp.add_argument("--runs-dir", type=Path, default=None, help="where episodes go; default: <root>/runs")
 
     for cmd, what in (("scenes", "scene"), ("plans", "plan")):
         samples = sub.add_parser(cmd, help=f"list the sample {cmd} that come with Spingi")
@@ -375,6 +382,17 @@ def _check(args) -> int:
         return 1
     print(f"\nOK · {counted}")
     return 1 if args.strict and warnings else 0
+
+
+def _mcp(args) -> int:
+    """Standard output belongs to the protocol from here on: nothing else may print to it."""
+    try:
+        from spingi.mcp_server import main as serve
+    except ImportError as exc:
+        print(f"missing dependency ({exc}); install the mcp extra: pip install 'spingi[mcp]'", file=sys.stderr)
+        return 2
+    serve(args.root, args.runs_dir)
+    return 0
 
 
 def _count(n: int, what: str) -> str:

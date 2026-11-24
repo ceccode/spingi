@@ -1,15 +1,22 @@
 """The public Python surface (ADR-0029), used as a program would: by name, with plain data back."""
 
 import json
+import math
+import re
 import shutil
 from pathlib import Path
 
 import pytest
 
 from spingi import api
+from spingi.core.localization import FACING_LIMIT_RAD
 from spingi.core.plan import validate_plan
+from spingi.metrics import Gate
+from spingi.perception.view import HEAD_CAMERA
 from spingi.scenes import load_scene
+from spingi.session import MODES
 from spingi.skills import default_registry
+from spingi.skills.navigate import LANDMARK_HALF_FOV_RAD, TAG_READ_RANGE
 
 GOLDEN = Path("tests/golden/episodes/inspection_round")
 TWO_STEPS = {
@@ -297,3 +304,66 @@ def test_a_frame_is_an_image_inside_the_episode_and_nothing_else(tmp_path):
     (episode / "frames" / "link.png").symlink_to(tmp_path / "secret.png")
     with pytest.raises(ValueError, match="no frame"):
         api.frame(episode, "frames/link.png")
+
+
+# --- guides ------------------------------------------------------------------------------------------------------
+def yaml_blocks(topic: str) -> list[str]:
+    return re.findall(r"```yaml\n(.*?)```", api.guide(topic), re.S)
+
+
+def test_the_guides_are_four_and_an_unknown_topic_names_them():
+    assert api.guides() == ["landmarks", "plan", "scene", "workflow"]
+    assert api.guide("workflow").startswith("# Working with Spingi")
+    with pytest.raises(ValueError, match="no guide 'cooking'; known: landmarks, plan, scene, workflow"):
+        api.guide("cooking")
+
+
+def test_the_scene_a_guide_teaches_with_is_a_scene_without_warnings_and_its_plan_runs_in_it(tmp_path):
+    """A guide that teaches a format with an example that does not pass would teach the mistake."""
+    scene, ground = yaml_blocks("scene")
+    check = api.check_scene(text=scene)
+    assert check.valid and check.warnings == [], (check.errors, check.warnings)
+    assert api.check_scene(text=ground + "safety: {}\n").valid  # the outdoor fragment, alone
+
+    api.save_scene("stock_room", scene, tmp_path)
+    (plan,) = yaml_blocks("plan")
+    checked = api.check_plan(api.parse_plan(plan), "stock_room", root=tmp_path)
+    assert checked.valid and checked.warnings == [], (checked.errors, checked.warnings)
+    assert api.run(api.parse_plan(plan), "stock_room", root=tmp_path).ok
+
+    (tags,) = yaml_blocks("landmarks")
+    assert api.check_scene(text=tags).valid
+
+
+def test_what_the_guides_say_about_the_robot_is_what_the_code_does():
+    scene, plan, landmarks, workflow = (api.guide(t) for t in ("scene", "plan", "landmarks", "workflow"))
+    assert f"up to {HEAD_CAMERA.max_range_m:g} m away, within 40 degrees" in scene
+    assert math.degrees(HEAD_CAMERA.half_fov_rad) == pytest.approx(40)
+    assert f"read up to {TAG_READ_RANGE:g} times its side away" in landmarks
+    assert math.degrees(LANDMARK_HALF_FOV_RAD) == pytest.approx(45) and "within 45 degrees" in landmarks
+    assert math.degrees(FACING_LIMIT_RAD) == pytest.approx(75) and "within 75 degrees" in landmarks
+    gate = Gate()
+    assert (gate.min_success_rate, gate.max_needs_human_per_100, gate.max_fatal_runs) == (0.95, 5.0, 0)
+    assert "at least 95 % success, at most 5 operator requests per 100 runs" in workflow
+    for skill in api.skills():
+        assert f"`{skill.name}`" in plan, skill.name
+    for mode in MODES:
+        assert f"`{mode}`" in workflow
+
+
+# --- references held to the working folder -----------------------------------------------------------------------
+def test_a_confined_reference_is_a_file_of_the_working_folder_or_a_sample(tmp_path):
+    work = tmp_path / "work"
+    (work / "scenes").mkdir(parents=True)
+    (work / "scenes" / "room.yaml").write_text("locations: {}\n")
+    outside = tmp_path / "outside.yaml"
+    outside.write_text("locations: {}\n")
+    (work / "link.yaml").symlink_to(outside)
+
+    assert api.locate_scene("room", work, confined=True) == work / "scenes" / "room.yaml"
+    assert api.locate_scene("lab_small", work, confined=True).name == "lab_small.yaml"  # a sample
+    assert api.locate_plan("yard_patrol", work, confined=True).name == "yard_patrol.yaml"
+    for ref in (outside, "../outside.yaml", "link.yaml"):
+        with pytest.raises(api.OutsideWorkspace, match="is outside the working folder"):
+            api.locate_scene(ref, work, confined=True)
+    assert api.locate_scene(outside, work) == outside  # a program that names its own files is not confined

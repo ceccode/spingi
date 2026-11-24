@@ -32,7 +32,7 @@ import yaml
 from pydantic import BaseModel, Field
 
 from spingi import assets
-from spingi.assets import UnknownSample
+from spingi.assets import OutsideWorkspace, UnknownSample
 from spingi.bench import bench as _bench
 from spingi.console.terminal import line as _console_line
 from spingi.core.events import Event, EventLog
@@ -60,6 +60,7 @@ __all__ = [
     "EpisodeSummary",
     "EventPage",
     "Mode",
+    "OutsideWorkspace",
     "PlanCheck",
     "PlanError",
     "RobotSummary",
@@ -84,6 +85,10 @@ __all__ = [
     "episodes",
     "events",
     "frame",
+    "guide",
+    "guides",
+    "locate_plan",
+    "locate_scene",
     "parse_plan",
     "plan_schema",
     "plans",
@@ -102,7 +107,9 @@ DEFAULT_SCENE = assets.DEFAULT_SCENE
 VIEWER_URL = "https://spingi-viewer.netlify.app"
 OnFailure = Literal["abort", "skip", "retry"]
 PlanSource = Path | str | dict[str, Any] | TaskPlan
-_RUN_ID = re.compile(r"^r-[A-Za-z0-9-]{1,80}$")
+RUN_ID_PATTERN = r"^r-[A-Za-z0-9-]{1,80}$"
+_RUN_ID = re.compile(RUN_ID_PATTERN)
+_GUIDES_DIR = Path(__file__).resolve().parent / "guides"
 _FRAME_TYPES = {".png", ".jpg", ".jpeg"}
 
 
@@ -163,6 +170,27 @@ def scenes(root: Path | str | None = None) -> list[Sample]:
 
 def plans(root: Path | str | None = None) -> list[Sample]:
     return _listed(assets.bundled_plans(), root, "plans")
+
+
+def locate_scene(scene: Path | str, root: Path | str | None = None, confined: bool = False) -> Path:
+    """The file a scene reference stands for. `confined` refuses, with `OutsideWorkspace`, a file that is neither
+    inside the working folder nor a sample: for a caller that passes on references it did not write."""
+    return assets.resolve_scene(scene, root, confined)
+
+
+def locate_plan(plan: Path | str, root: Path | str | None = None, confined: bool = False) -> Path:
+    return assets.resolve_plan(plan, root, confined)
+
+
+def guides() -> list[str]:
+    """The topics of the short guides written for whoever writes scenes and plans, a person or an agent."""
+    return sorted(p.stem for p in _GUIDES_DIR.glob("*.md"))
+
+
+def guide(topic: str) -> str:
+    if topic not in guides():
+        raise ValueError(f"no guide '{topic}'; known: {', '.join(guides())}")
+    return (_GUIDES_DIR / f"{topic}.md").read_text(encoding="utf-8")
 
 
 def read_scene(scene: Path | str, root: Path | str | None = None) -> str:
@@ -365,7 +393,7 @@ async def arun(
         ok=result.ok,
         steps_completed=result.steps_completed,
         steps_total=result.steps_total,
-        sim_time_s=result.sim_time_s,
+        sim_time_s=None if result.sim_time_s is None else round(result.sim_time_s, 3),
         episode_dir=str(result.run_dir),
         archive=str(result.archive) if result.archive else None,
         video=str(result.video) if result.video else None,

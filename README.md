@@ -69,6 +69,16 @@ To see what the robot saw, add `--camera-video`: the head camera is recorded at 
 
 `plans/test_track.yaml` on `sim/scenes/test_track.yaml` walks a robot over concrete, asphalt, gravel, grass, dirt, rough dirt, a 15 degree ramp and two steps, and stops where it fails: the Go2 usually finishes, the G1, whose controller was trained on flat floors only, falls early.
 
+### Or let your coding agent do it
+
+Spingi has an MCP server, so an agent in Claude Code, Codex, OpenCode or any other MCP client can model your place as a scene, write a plan, check both, run it in simulation and tell you how often it works ([docs/agents.md](docs/agents.md)). From a clone, in Claude Code:
+
+```bash
+claude mcp add spingi -- uv run --project /path/to/spingi/runtime spingi mcp
+```
+
+Then ask: *"Here is my warehouse: 8 by 6 metres, two shelves along the north wall with a box on each, a bench by the east wall. Make a scene of it and check both boxes are in place."* The agent writes the scene, the checks tell it what its first draft gets wrong, it shows you a map and runs the round. Everything stays in simulation and on your machine; the agent never moves the robot outside a validated plan ([ADR-0030](adr/0030-agents-use-spingi-through-mcp-in-simulation.md)).
+
 ### 2. Replay the episode in the browser
 
 Open **https://spingi-viewer.netlify.app** and drop the `.zip` onto the page, or pick one of the bundled samples. Nothing is uploaded: the episode is read in your browser. To run the viewer locally, from the repository root:
@@ -162,10 +172,11 @@ Safety layers run on the robot's own clock (simulated time in MuJoCo), so a simu
 
 | Document | Content |
 |----------|---------|
+| [docs/agents.md](docs/agents.md) | Spingi from Claude Code, Codex, OpenCode and other MCP clients: install, connect, what to ask, the tools, what the server will not do |
 | [docs/tutorial.md](docs/tutorial.md) | Step by step: read a scene, write a plan, run it from the fake adapter up to realistic sensors, replay it in the viewer, place landmarks, measure it with bench, model your own place |
 | [docs/runtime-spec.md](docs/runtime-spec.md) | Principles, architecture, contracts, execution model, safety layers, testing strategy, milestones |
 | [docs/episode-format.md](docs/episode-format.md) | The episode folder, manifest, trajectory, frames, compatibility rules |
-| [adr/](adr/README.md) | Architecture decisions 0001–0029 and the ones still open |
+| [adr/](adr/README.md) | Architecture decisions 0001–0030 and the ones still open |
 | [runtime/README.md](runtime/README.md) | CLI reference, scenes, plans, skills, episodes, tests, how to add a skill or an adapter |
 | [viewer/README.md](viewer/README.md) | Running, loading episodes, deploying |
 | [SECURITY.md](SECURITY.md) | Threat model and how to report a security or safety problem |

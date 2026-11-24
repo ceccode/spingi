@@ -33,7 +33,7 @@ jobs:
       - name: Install system libraries for MuJoCo rendering
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libegl1 libgl1 libglvnd0
       - name: Install
-        run: uv sync --locked --extra dev --extra sim --extra export --extra llm --extra perception
+        run: uv sync --locked --extra dev --extra sim --extra export --extra llm --extra perception --extra mcp
       - name: Lint
         run: uv run ruff check spingi tests scripts
       - name: Format
@@ -60,7 +60,7 @@ jobs:
       - name: Install system libraries for MuJoCo rendering
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libegl1 libgl1 libglvnd0
       - name: Build the wheel and run a sample from it
-        run: uv run --no-project python scripts/wheel_smoke.py
+        run: uv run --no-project python scripts/wheel_smoke.py mcp
 
   viewer:
     runs-on: ubuntu-24.04

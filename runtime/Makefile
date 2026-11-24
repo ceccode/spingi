@@ -1,7 +1,7 @@
 .PHONY: setup test lint demo demo-sim demo-sim-go2 demo-sim-view demo-sim-record demo-yard demo-track schemas bench wheel-smoke
 
 setup:
-	uv sync --extra dev --extra sim --extra export --extra llm --extra perception
+	uv sync --extra dev --extra sim --extra export --extra llm --extra perception --extra mcp
 
 test:
 	uv run pytest
@@ -36,7 +36,7 @@ schemas:
 # What a user gets from the package alone (ADR-0027): the wheel, built into a fresh folder and installed in a clean
 # environment, runs a sample in MuJoCo from an empty folder. Fails above 60 MB, well before PyPI's 100 MB per file.
 wheel-smoke:
-	uv run --no-project python scripts/wheel_smoke.py
+	uv run --no-project python scripts/wheel_smoke.py mcp
 
 bench:
 	uv run spingi bench plans/demo_material_runner.yaml --scene sim/scenes/warehouse_small.yaml --adapter sim --runs 100 --noise 0.2 --sigma 0.02 --gate
