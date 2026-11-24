@@ -24,7 +24,7 @@ from typing import Literal
 import mujoco
 import numpy as np
 
-POLICIES_DIR = Path(__file__).resolve().parents[3] / "sim" / "policies"
+from spingi.assets import POLICIES_DIR
 
 ObservationTerm = Literal["ang_vel", "gravity", "command", "phase", "joint_pos", "joint_vel", "last_action"]
 

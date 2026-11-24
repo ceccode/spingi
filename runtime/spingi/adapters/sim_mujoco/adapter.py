@@ -42,7 +42,7 @@ from spingi.adapters.sim_mujoco.locomotion import (
 from spingi.adapters.sim_mujoco.objects import SceneObjects
 from spingi.adapters.sim_mujoco.odometry import Odometry, OdometryErrors, as_pose, compose, inverse, planar
 from spingi.adapters.sim_mujoco.rendering import HeadCamera, Renderers, Videos
-from spingi.adapters.sim_mujoco.scene import OFFSCREEN_SIZE, CompiledScene, write_scene
+from spingi.adapters.sim_mujoco.scene import OFFSCREEN_SIZE, CompiledScene, discard_scene, write_scene
 from spingi.adapters.sim_mujoco.terrain import fill_heights
 from spingi.core.ports import (
     Arm,
@@ -189,7 +189,7 @@ class SimAdapter:
         try:
             model = mujoco.MjModel.from_xml_path(str(xml_path))
         finally:
-            xml_path.unlink(missing_ok=True)  # compiled into the model; the file is no longer needed
+            discard_scene(xml_path)  # compiled into the model; the file is no longer needed
         if scene.terrain is not None:
             fill_heights(model, scene.terrain, scene.terrain_spec)
         # MJCF gives the cameras' clipping planes relative to the model's size: in a 40 m yard the head camera would

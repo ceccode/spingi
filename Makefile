@@ -1,4 +1,4 @@
-RUNTIME_TARGETS = setup test lint schemas bench \
+RUNTIME_TARGETS = setup test lint schemas bench wheel-smoke \
 	demo demo-sim demo-sim-go2 demo-sim-view demo-sim-record demo-yard demo-track
 
 .PHONY: $(RUNTIME_TARGETS)

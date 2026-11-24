@@ -10,7 +10,7 @@ All commands run from this folder. Requirements: Python 3.11+ and [uv](https://d
 make setup
 ```
 
-installs the package with its extras: `dev` (pytest, ruff), `sim` (MuJoCo, numpy, imageio, and trimesh with scipy for the viewer model export), `export` (pandas, pyarrow), `llm` (the Anthropic SDK, used only by `spingi plan` and `spingi eval-planner`) and `perception` (OpenCV, for the AprilTag perceiver). Nothing else is needed: the G1 and Go2 models are in `sim/models/`, their walking policies in `sim/policies/` (numpy weights: no PyTorch, no ONNX), the tag images in `sim/markers/`.
+installs the package with its extras: `dev` (pytest, ruff), `sim` (MuJoCo, numpy, imageio, and trimesh with scipy for the viewer model export), `export` (pandas, pyarrow), `llm` (the Anthropic SDK, used only by `spingi plan` and `spingi eval-planner`) and `perception` (OpenCV, for the AprilTag perceiver). Nothing else is needed: the G1 and Go2 models are in `sim/models/`, their walking policies in `sim/policies/` (numpy weights: no PyTorch, no ONNX), the tag images in `sim/markers/`. The wheel carries all of them, with the sample scenes and plans, so an installed `spingi` simulates without the repository (ADR-0027); `make wheel-smoke` builds the wheel and proves it.
 
 ## Command line
 
@@ -26,7 +26,11 @@ spingi eval-planner [--cases plans/golden/planner_cases.yaml] [--model M] [--out
 spingi replay <episode_dir>...
 spingi skills [--robot g1|go2]
 spingi robots
+spingi scenes [--show NAME]
+spingi plans [--show NAME]
 ```
+
+A plan or a scene is a file or the name of a sample (ADR-0027): `spingi run demo_inspection_round --adapter sim` and `spingi run plans/demo_inspection_round.yaml --adapter sim` are the same command, and both run from any folder once the package is installed. `spingi scenes` and `spingi plans` list the samples; `--show NAME` prints one, to read it or to start your own from it. A scene you keep in `scenes/<name>.yaml` of the folder you work in, or a plan in `plans/<name>.yaml`, is found by its name too, before a sample of the same name.
 
 | Option | Effect |
 |--------|--------|
@@ -37,7 +41,7 @@ spingi robots
 | `--drift` | The robot does not know exactly where it is (with `--physics`, ADR-0016). Its pose estimate drifts like a walking robot's odometry: a few per cent of the distance walked, about one per cent of every turn, more on gravel and dirt, and the few centimetres of the start jitter are unknown to it. `navigate` corrects it with the scene's landmarks; without them a long patrol ends up metres off. |
 | `--camera-noise` | The head camera's frames come out as a real camera's: slightly blurred, exposure that changes, sensor noise, JPEG compression (how the Go2 streams its camera), and a calibration about 1 % off (`sim` adapter). Episodes store the JPEG. |
 | `--realistic` | As close to the real robot as the simulator gets: `--adapter sim --physics --drift --camera-noise --perception markers`. About 1.5 times slower than `--physics`: every stop takes three frames. |
-| `--scene` | Scene file; default `sim/scenes/lab_small.yaml`. |
+| `--scene` | Scene file or sample name; default `lab_small` (`sim/scenes/lab_small.yaml`). |
 | `--perception truth` (default), `--perception markers` | Who answers `detect` and `inspect`. `truth`: the simulator's ground truth, with `--noise` and `--sigma` to make it unreliable. `markers`: the AprilTags on the objects, read from the frames the head camera renders with OpenCV, as from a real camera (`sim` adapter only; the noise options do not apply). The G1 reads the box on shelf A from 0.9 m; the Go2 cannot, the shelf's edge hides it from its low camera, which is the kind of thing this mode is for. |
 | `--operator auto` (default) | Requests for a human are answered with `--on-failure` (abort, skip or retry) and the event log is printed at the end. |
 | `--operator console` | You supervise: live event lines on the terminal, prompts when a step needs you, Ctrl+C to e-stop the robot and end the run. |
@@ -65,6 +69,7 @@ Make targets wrap the common cases:
 | `make bench` | Material runner in `warehouse_small`, 100 simulated runs with 20 % perception false negatives and 0.02 m position noise, gate checked |
 | `make test`, `make lint` | Test suite, `ruff check` (CI also runs `ruff format --check`) |
 | `make schemas` | Regenerates the episode JSON schemas in `../docs/schemas/` from the pydantic models |
+| `make wheel-smoke` | Builds the wheel, installs it in a clean environment and runs the inspection round in MuJoCo from an empty folder |
 
 Sample plans and scenes:
 

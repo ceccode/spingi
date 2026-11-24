@@ -153,7 +153,7 @@ Safety layers run on the robot's own clock (simulated time in MuJoCo), so a simu
 | [docs/tutorial.md](docs/tutorial.md) | Step by step: read a scene, write a plan, run it from the fake adapter up to realistic sensors, replay it in the viewer, place landmarks, measure it with bench, model your own place |
 | [docs/runtime-spec.md](docs/runtime-spec.md) | Principles, architecture, contracts, execution model, safety layers, testing strategy, milestones |
 | [docs/episode-format.md](docs/episode-format.md) | The episode folder, manifest, trajectory, frames, compatibility rules |
-| [adr/](adr/README.md) | Architecture decisions 0001–0026 and the ones still open |
+| [adr/](adr/README.md) | Architecture decisions 0001–0027 and the ones still open |
 | [runtime/README.md](runtime/README.md) | CLI reference, scenes, plans, skills, episodes, tests, how to add a skill or an adapter |
 | [viewer/README.md](viewer/README.md) | Running, loading episodes, deploying |
 | [SECURITY.md](SECURITY.md) | Threat model and how to report a security or safety problem |
@@ -166,7 +166,7 @@ Safety layers run on the robot's own clock (simulated time in MuJoCo), so a simu
 make test
 ```
 
-runs the runtime suite (unit, adapter contract on every adapter and robot, MuJoCo scenarios kinematic and walking, golden episodes, architecture and licensing rules): 400 tests in about a minute. The viewer has `npm test` (73 tests), `npm run e2e` (the samples replayed in Chromium) and `npm run build`. How to contribute is in [CONTRIBUTING.md](CONTRIBUTING.md). CI is GitHub Actions ([.github/workflows/ci.yml](.github/workflows/ci.yml)), on every push to `main` and every pull request, without a GPU: runtime lint, format check and tests (with offscreen MuJoCo rendering through EGL), viewer install, audit of the production dependencies, tests and build.
+runs the runtime suite (unit, adapter contract on every adapter and robot, MuJoCo scenarios kinematic and walking, golden episodes, architecture and licensing rules): more than 400 tests in about a minute. The viewer has `npm test` (73 tests), `npm run e2e` (the samples replayed in Chromium) and `npm run build`. How to contribute is in [CONTRIBUTING.md](CONTRIBUTING.md). CI is GitHub Actions ([.github/workflows/ci.yml](.github/workflows/ci.yml)), on every push to `main` and every pull request, without a GPU: runtime lint, format check and tests (with offscreen MuJoCo rendering through EGL), viewer install, audit of the production dependencies, tests and build.
 
 Conventions: every architectural decision is an ADR, changed by writing a new one; the runtime never imports the viewer and the viewer never imports the runtime, they only share the episode format; `spingi.core` imports nothing from adapters, skills, planner or perception, and a test enforces it.
 

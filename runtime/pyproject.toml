@@ -46,6 +46,19 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["spingi"]
 
+# The simulator's assets and the samples sit next to the package in a checkout. The wheel carries them inside it,
+# under spingi/_assets, where spingi.assets looks first (ADR-0027). Each model and policy folder has its license.
+[tool.hatch.build.targets.wheel.force-include]
+"sim/models" = "spingi/_assets/sim/models"
+"sim/policies" = "spingi/_assets/sim/policies"
+"sim/markers" = "spingi/_assets/sim/markers"
+"sim/scenes" = "spingi/_assets/sim/scenes"
+"plans" = "spingi/_assets/plans"
+
+[tool.hatch.build.targets.sdist]
+include = ["/spingi", "/sim", "/plans", "/README.md", "/LICENSE", "/NOTICE"]
+exclude = ["_gen_*.xml", ".DS_Store"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
