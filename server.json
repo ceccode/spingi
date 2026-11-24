@@ -1,0 +1,39 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.ceccode/spingi",
+  "title": "Spingi",
+  "description": "Plan, simulate and inspect tasks for legged robots: scenes, plans, runs, episodes. Simulation only.",
+  "version": "0.2.0",
+  "websiteUrl": "https://github.com/ceccode/spingi/blob/main/docs/agents.md",
+  "repository": {
+    "url": "https://github.com/ceccode/spingi",
+    "source": "github",
+    "subfolder": "runtime"
+  },
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "spingi",
+      "version": "0.2.0",
+      "runtimeHint": "uvx",
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "--from",
+          "value": "spingi[mcp]==0.2.0",
+          "description": "The package with its mcp extra: the MCP SDK and the simulator"
+        }
+      ],
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp",
+          "description": "The subcommand that serves MCP over standard input and output"
+        }
+      ],
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

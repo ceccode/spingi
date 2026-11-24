@@ -1,16 +1,30 @@
 # Spingi runtime
 
-The Physical Agent Runtime: a Python package (`spingi`) that executes declarative plans on a robot adapter, with safety limits, retries and human escalation, and records every run as an episode. Specification in [../docs/runtime-spec.md](../docs/runtime-spec.md), decisions in [../adr](../adr/README.md), a step-by-step first program in [../docs/tutorial.md](../docs/tutorial.md).
+<!-- mcp-name: io.github.ceccode/spingi -->
 
-All commands run from this folder. Requirements: Python 3.11+ and [uv](https://docs.astral.sh/uv/).
+The Physical Agent Runtime: a Python package (`spingi`) that executes declarative plans on a robot adapter, with safety limits, retries and human escalation, and records every run as an episode. It is developed sim-first: the Unitree G1 humanoid and the Unitree Go2 quadruped run in MuJoCo, and every run can be replayed in the [Spingi Viewer](https://spingi-viewer.netlify.app). Specification in [docs/runtime-spec.md](https://github.com/ceccode/spingi/blob/main/docs/runtime-spec.md), decisions in [adr](https://github.com/ceccode/spingi/blob/main/adr/README.md), a step-by-step first program in [docs/tutorial.md](https://github.com/ceccode/spingi/blob/main/docs/tutorial.md), use from a coding agent in [docs/agents.md](https://github.com/ceccode/spingi/blob/main/docs/agents.md).
 
 ## Install
+
+To use it, from PyPI, with Python 3.11+ and [uv](https://docs.astral.sh/uv/) (or `pip install` in an environment of your own):
+
+```bash
+uv tool install "spingi[mcp]"
+```
+
+```bash
+spingi run demo_inspection_round --adapter sim --zip
+```
+
+The extras: `sim` (MuJoCo, numpy, imageio, Pillow, and trimesh with scipy for the viewer model export), `perception` (OpenCV, for the AprilTag perceiver), `mcp` (the MCP SDK with `sim` and `perception`, for `spingi mcp`), `export` (pandas, pyarrow), `llm` (the Anthropic SDK, used only by `spingi plan` and `spingi eval-planner`) and `dev` (pytest, ruff). The core package depends on pydantic and PyYAML alone and runs plans on the in-memory robot. The wheel carries the G1 and Go2 models, their walking policies (numpy weights: no PyTorch, no ONNX), the tag images and the sample scenes and plans, so an installed `spingi` simulates without the repository (ADR-0027).
+
+To work on it, from a clone of the [repository](https://github.com/ceccode/spingi), in `runtime/`:
 
 ```bash
 make setup
 ```
 
-installs the package with its extras: `dev` (pytest, ruff), `sim` (MuJoCo, numpy, imageio, and trimesh with scipy for the viewer model export), `export` (pandas, pyarrow), `llm` (the Anthropic SDK, used only by `spingi plan` and `spingi eval-planner`) `perception` (OpenCV, for the AprilTag perceiver) and `mcp` (the MCP SDK, with `sim` and `perception`, for `spingi mcp`). Nothing else is needed: the G1 and Go2 models are in `sim/models/`, their walking policies in `sim/policies/` (numpy weights: no PyTorch, no ONNX), the tag images in `sim/markers/`. The wheel carries all of them, with the sample scenes and plans, so an installed `spingi` simulates without the repository (ADR-0027); `make wheel-smoke` builds the wheel and proves it.
+installs the package with every extra; the commands below are then `uv run spingi ...` from that folder, where the samples are `plans/` and `sim/` (`sim/models/`, `sim/policies/`, `sim/markers/`, `sim/scenes/`). `make wheel-smoke` builds the wheel and proves that it works alone.
 
 ## Command line
 
@@ -207,7 +221,7 @@ Each skill declares the robot capabilities it `requires`: `navigate` needs `loco
 
 ## Episodes
 
-Every `spingi run` leaves an episode in `runs/<run_id>/` ([../docs/episode-format.md](../docs/episode-format.md)): `manifest.json`, copies of the plan and the scene, `events.jsonl` (every event with wall-clock and simulated time), `trajectory.jsonl` (robot pose at 10 Hz, object positions when they change; with `--physics` at 25 Hz with the base's height and tilt and every joint angle, so the viewer moves the legs; with `--drift` also where the robot believed it was), `terrain.json` (the ground, for scenes that have one), `frames/` (head-camera images referenced by `perception.result` and `robot.relocalized` events through `frame_ref`, a path relative to the episode folder: PNG, or the JPEG the camera sent with `--camera-noise`; written only when an OpenGL context is available), with `--camera-video` `head.mp4`, what the head camera saw at 10 frames per second, placed on the timeline by `camera_video` in the manifest, and with `--record` `run.mp4`, the third-person video. Both videos are streamed to disk while the run goes on. `manifest.json` also records the robot profile (`robot.model`, which the viewer uses to draw the right robot) and the perception noise and seed, so that `spingi replay` can run the episode again on the same robot.
+Every `spingi run` leaves an episode in `runs/<run_id>/` ([../docs/episode-format.md](https://github.com/ceccode/spingi/blob/main/docs/episode-format.md)): `manifest.json`, copies of the plan and the scene, `events.jsonl` (every event with wall-clock and simulated time), `trajectory.jsonl` (robot pose at 10 Hz, object positions when they change; with `--physics` at 25 Hz with the base's height and tilt and every joint angle, so the viewer moves the legs; with `--drift` also where the robot believed it was), `terrain.json` (the ground, for scenes that have one), `frames/` (head-camera images referenced by `perception.result` and `robot.relocalized` events through `frame_ref`, a path relative to the episode folder: PNG, or the JPEG the camera sent with `--camera-noise`; written only when an OpenGL context is available), with `--camera-video` `head.mp4`, what the head camera saw at 10 frames per second, placed on the timeline by `camera_video` in the manifest, and with `--record` `run.mp4`, the third-person video. Both videos are streamed to disk while the run goes on. `manifest.json` also records the robot profile (`robot.model`, which the viewer uses to draw the right robot) and the perception noise and seed, so that `spingi replay` can run the episode again on the same robot.
 
 ## Operator console
 
@@ -236,7 +250,7 @@ Only the answers the request offers are accepted: retry, skip or abort for a fai
 
 ## Safety in a run
 
-The session arms the safety monitor before the first step: it caps the adapter speed with `set_speed_limit`, then checks the geofence and the battery every 0.1 s of robot time (in fast simulation the adapter yields every 0.2 s of simulated time) and sends the heartbeat of the adapter watchdog, set to 500 ms of robot time in every session. Every motion command checks the e-stop and the watchdog before it acts. An e-stop is terminal: the run ends with status `estop` and nothing is retried. If a check raises, the monitor e-stops the robot (`safety.monitor_error`). If the run raises, it ends with status `error`, the robot is stopped and the episode is still written. With `--physics` a robot that falls is e-stopped by the adapter (`RobotFell`), the event log says where (`robot.fell`) and the run ends as `estop`. Run statuses: `success`, `aborted`, `invalid_plan`, `deadline`, `estop`, `error`. Decisions in [ADR-0011](../adr/0011-robot-time-and-terminal-estop.md), threat model in [SECURITY.md](../SECURITY.md).
+The session arms the safety monitor before the first step: it caps the adapter speed with `set_speed_limit`, then checks the geofence and the battery every 0.1 s of robot time (in fast simulation the adapter yields every 0.2 s of simulated time) and sends the heartbeat of the adapter watchdog, set to 500 ms of robot time in every session. Every motion command checks the e-stop and the watchdog before it acts. An e-stop is terminal: the run ends with status `estop` and nothing is retried. If a check raises, the monitor e-stops the robot (`safety.monitor_error`). If the run raises, it ends with status `error`, the robot is stopped and the episode is still written. With `--physics` a robot that falls is e-stopped by the adapter (`RobotFell`), the event log says where (`robot.fell`) and the run ends as `estop`. Run statuses: `success`, `aborted`, `invalid_plan`, `deadline`, `estop`, `error`. Decisions in [ADR-0011](https://github.com/ceccode/spingi/blob/main/adr/0011-robot-time-and-terminal-estop.md), threat model in [SECURITY.md](https://github.com/ceccode/spingi/blob/main/SECURITY.md).
 
 ## Benchmarks and the sim-to-real gate
 

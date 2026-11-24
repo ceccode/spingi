@@ -79,6 +79,10 @@ test(viewer): replay every sample in Chromium, in CI (ADR-0022)
 
 Types in use: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`. Parts: `runtime`, `viewer`, `sim`, `perception`, `console`, `tutorial`.
 
+## Releases
+
+A release is a tag; the steps are in [docs/releasing.md](docs/releasing.md). A change that people who use Spingi will notice adds a line to [CHANGELOG.md](CHANGELOG.md).
+
 ## License
 
 Spingi is licensed under the [Apache License 2.0](LICENSE). By contributing you agree that your contribution is licensed under the same terms.

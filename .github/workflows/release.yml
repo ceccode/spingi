@@ -1,0 +1,89 @@
+# A release is a tag: pushing v0.2.0 checks the package, publishes it to PyPI and makes the GitHub release (ADR-0031).
+# PyPI trusts this workflow through OpenID Connect ("trusted publishing"): no token is stored anywhere.
+# Actions are pinned to commit SHAs (the comment gives the tag); permissions are read-only unless a job says otherwise.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  # Everything that runs code from the package and its dependencies happens here, with no permission to publish.
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: runtime
+    env:
+      MUJOCO_GL: egl
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
+        with:
+          python-version: "3.12"
+      - name: The tag is the package's version, and the changelog has its notes
+        run: |
+          version="$(uv run --no-project python -c "import tomllib, pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])")"
+          test "v$version" = "$GITHUB_REF_NAME"
+          uv run --no-project python scripts/release_notes.py "$version" > /dev/null
+      - name: Install system libraries for MuJoCo rendering
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libegl1 libgl1 libglvnd0
+      - name: Install
+        run: uv sync --locked --extra dev --extra sim --extra export --extra llm --extra perception --extra mcp
+      - name: Lint and tests
+        run: uv run ruff check spingi tests scripts && uv run pytest
+      - name: The wheel alone runs a sample and builds the MCP server
+        run: uv run --no-project python scripts/wheel_smoke.py mcp
+
+  # Builds and publishes, and nothing else: the only job that can ask PyPI for a publishing token.
+  pypi:
+    needs: check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment:
+      name: pypi
+      url: https://pypi.org/project/spingi/
+    permissions:
+      contents: read
+      id-token: write  # trusted publishing
+    defaults:
+      run:
+        working-directory: runtime
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
+        with:
+          python-version: "3.12"
+      - name: Build
+        run: uv build --out-dir dist
+      - name: Publish to PyPI
+        run: uv publish --trusted-publishing always dist/*
+
+  github-release:
+    needs: pypi
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write  # to create the release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Create the release with the changelog's notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 runtime/scripts/release_notes.py "${GITHUB_REF_NAME#v}" > notes.md
+          gh release create "$GITHUB_REF_NAME" --title "Spingi ${GITHUB_REF_NAME#v}" --notes-file notes.md --verify-tag

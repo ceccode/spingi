@@ -1,11 +1,27 @@
 [project]
 name = "spingi"
-version = "0.1.0"
+version = "0.2.0"
 description = "Physical Agent Runtime: a reliable executor of simple physical tasks for legged robots, humanoids and quadrupeds, developed sim-first."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]  # copies of the repository root files, kept equal by a test
+authors = [{ name = "Spingi contributors" }]
+keywords = [
+  "robotics", "physical-ai", "embodied-ai", "humanoid", "quadruped", "legged-robots", "unitree",
+  "mujoco", "simulation", "robot-safety", "mcp", "model-context-protocol",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
   "pydantic>=2.7",
   "pyyaml>=6.0",
@@ -41,6 +57,14 @@ mcp = [
     "mcp>=2.3,<3",
     "spingi[sim,perception]",
 ]
+
+[project.urls]
+Homepage = "https://github.com/ceccode/spingi"
+Tutorial = "https://github.com/ceccode/spingi/blob/main/docs/tutorial.md"
+"Coding agents (MCP)" = "https://github.com/ceccode/spingi/blob/main/docs/agents.md"
+Viewer = "https://spingi-viewer.netlify.app"
+Changelog = "https://github.com/ceccode/spingi/blob/main/CHANGELOG.md"
+Issues = "https://github.com/ceccode/spingi/issues"
 
 [project.scripts]
 spingi = "spingi.cli:main"
