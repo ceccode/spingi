@@ -60,3 +60,12 @@ def test_nothing_in_the_package_imports_the_command_line():
         if f.name != "cli.py"
     }
     assert {k: v for k, v in offenders.items() if v} == {}
+
+
+def test_the_mcp_server_knows_spingi_only_through_the_public_api():
+    """ADR-0030: a thin skin. What it needs and the API lacks is added to the API, for every other caller too."""
+    ours = [m for m in _imports(Path("spingi/mcp_server.py")) if m.split(".")[0] == "spingi"]
+    assert set(ours) <= {"spingi", "spingi.api"}, ours
+    used = [n for n in ast.walk(ast.parse(Path("spingi/mcp_server.py").read_text())) if isinstance(n, ast.ImportFrom)]
+    from_spingi = {a.name for n in used if n.module == "spingi" for a in n.names}
+    assert from_spingi == {"__version__", "api"}

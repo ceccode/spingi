@@ -10,7 +10,7 @@ All commands run from this folder. Requirements: Python 3.11+ and [uv](https://d
 make setup
 ```
 
-installs the package with its extras: `dev` (pytest, ruff), `sim` (MuJoCo, numpy, imageio, and trimesh with scipy for the viewer model export), `export` (pandas, pyarrow), `llm` (the Anthropic SDK, used only by `spingi plan` and `spingi eval-planner`) and `perception` (OpenCV, for the AprilTag perceiver). Nothing else is needed: the G1 and Go2 models are in `sim/models/`, their walking policies in `sim/policies/` (numpy weights: no PyTorch, no ONNX), the tag images in `sim/markers/`. The wheel carries all of them, with the sample scenes and plans, so an installed `spingi` simulates without the repository (ADR-0027); `make wheel-smoke` builds the wheel and proves it.
+installs the package with its extras: `dev` (pytest, ruff), `sim` (MuJoCo, numpy, imageio, and trimesh with scipy for the viewer model export), `export` (pandas, pyarrow), `llm` (the Anthropic SDK, used only by `spingi plan` and `spingi eval-planner`) `perception` (OpenCV, for the AprilTag perceiver) and `mcp` (the MCP SDK, with `sim` and `perception`, for `spingi mcp`). Nothing else is needed: the G1 and Go2 models are in `sim/models/`, their walking policies in `sim/policies/` (numpy weights: no PyTorch, no ONNX), the tag images in `sim/markers/`. The wheel carries all of them, with the sample scenes and plans, so an installed `spingi` simulates without the repository (ADR-0027); `make wheel-smoke` builds the wheel and proves it.
 
 ## Command line
 
@@ -30,6 +30,7 @@ spingi scenes [--show NAME]
 spingi plans [--show NAME]
 spingi check <scene.yaml> [--plan plan.yaml] [--robot g1|go2] [--strict]
 spingi map <scene.yaml> [--plan plan.yaml] [--out map.png]
+spingi mcp [--root DIR] [--runs-dir DIR]
 ```
 
 A plan or a scene is a file or the name of a sample (ADR-0027): `spingi run demo_inspection_round --adapter sim` and `spingi run plans/demo_inspection_round.yaml --adapter sim` are the same command, and both run from any folder once the package is installed. `spingi scenes` and `spingi plans` list the samples; `--show NAME` prints one, to read it or to start your own from it. A scene you keep in `scenes/<name>.yaml` of the folder you work in, or a plan in `plans/<name>.yaml`, is found by its name too, before a sample of the same name.
@@ -341,6 +342,16 @@ print(report.summary.viewer)          # how to open the run in the viewer
 | `episodes()`, `episode_summary(run)`, `events(run, kinds=, offset=, limit=)`, `frame(run, ref)` | What happened in a run, by run id, `latest` or folder |
 
 `mode` says how close to the real robot the run is: `fake` (the in-memory robot, the default of `run`), `kinematic` (MuJoCo, the base glides), `physics` (the robot walks), `realistic` (walking with drifting odometry, a noisy camera and tags read from frames). A scene or a plan is named as on the command line; a plan can also be a mapping or a `TaskPlan`. A step that needs a person gets `on_failure` (`abort` by default) as the answer. Nothing is printed, and what cannot start raises before a run folder is made: `api.PlanError`, `api.SceneError`, `api.UnknownSample`, `ValueError`. In a program with an event loop use `arun` and `abench`; cancelling the task stops the robot, ends the run as aborted and still writes the episode.
+
+## MCP server
+
+`spingi mcp` serves the API above to a coding agent over the Model Context Protocol (ADR-0030): seventeen tools to know the robots and their skills, read and write scenes and plans, check them, run them in simulation and read what happened. How to connect Claude Code, Codex and OpenCode, what to ask and what each tool does is in [docs/agents.md](https://github.com/ceccode/spingi/blob/main/docs/agents.md).
+
+```bash
+uv run spingi mcp --root ~/my-robot-project
+```
+
+The server works in one folder, `--root` (default: the current one): it reads scenes and plans there and among the samples, and writes under its `scenes/` and `runs/`. It is a planner like the LLM planner: it proposes plans, the runtime validates and runs them. It reaches only the fake adapter and the simulator, has no tool that moves the robot outside a plan, answers every request for an operator with the fixed policy the call names, makes no network call and runs one session at a time. The four guides it gives an agent (`spingi/guides/`: workflow, scene, plan, landmarks) are checked by tests against the code they describe.
 
 ## Replay and golden episodes
 

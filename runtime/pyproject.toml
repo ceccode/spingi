@@ -36,6 +36,11 @@ llm = [
 perception = [
     "opencv-python-headless>=4.9",
 ]
+# The MCP server for coding agents (ADR-0030), with everything its tools can ask of the simulator.
+mcp = [
+    "mcp>=2.3,<3",
+    "spingi[sim,perception]",
+]
 
 [project.scripts]
 spingi = "spingi.cli:main"

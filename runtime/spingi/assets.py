@@ -33,6 +33,10 @@ class UnknownSample(FileNotFoundError):
     """A reference that is neither a file nor the name of a sample."""
 
 
+class OutsideWorkspace(PermissionError):
+    """A reference to a file outside the working folder, where only that folder and the samples may be read."""
+
+
 def bundled_scenes() -> dict[str, Path]:
     """The sample scenes, by name (`warehouse_small`)."""
     return _samples(SCENES_DIR)
@@ -43,14 +47,24 @@ def bundled_plans() -> dict[str, Path]:
     return _samples(PLANS_DIR)
 
 
-def resolve_scene(ref: Path | str, root: Path | str | None = None) -> Path:
-    """The scene file `ref` stands for: a path, a scene of the working folder's `scenes/`, or a sample."""
-    return _resolve(ref, root, "scenes", "sim/scenes", bundled_scenes(), "scene")
+def resolve_scene(ref: Path | str, root: Path | str | None = None, confined: bool = False) -> Path:
+    """The scene file `ref` stands for: a path, a scene of the working folder's `scenes/`, or a sample.
+    `confined`: the file must be inside the working folder or be a sample, whatever links it goes through."""
+    return _confined(_resolve(ref, root, "scenes", "sim/scenes", bundled_scenes(), "scene"), root, ref, confined)
 
 
-def resolve_plan(ref: Path | str, root: Path | str | None = None) -> Path:
+def resolve_plan(ref: Path | str, root: Path | str | None = None, confined: bool = False) -> Path:
     """The plan file `ref` stands for: a path, a plan of the working folder's `plans/`, or a sample."""
-    return _resolve(ref, root, "plans", "plans", bundled_plans(), "plan")
+    return _confined(_resolve(ref, root, "plans", "plans", bundled_plans(), "plan"), root, ref, confined)
+
+
+def _confined(path: Path, root: Path | str | None, ref: Path | str, confined: bool) -> Path:
+    if confined:
+        real = path.resolve()
+        base = (Path(root) if root is not None else Path.cwd()).resolve()
+        if not (real.is_relative_to(base) or real.is_relative_to(ASSETS_DIR.resolve())):
+            raise OutsideWorkspace(f"'{ref}' is outside the working folder {base}")
+    return path
 
 
 def leading_comment(path: Path) -> str:

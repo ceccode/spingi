@@ -33,6 +33,7 @@ Every significant architectural decision is a file in this folder: `NNNN-title.m
 | [0027](0027-the-wheel-carries-the-simulators-assets.md) | The wheel carries the simulator's assets; samples have names | Accepted | A1 |
 | [0028](0028-scenes-are-checked-like-plans.md) | A scene is checked like a plan: one schema, unknown keys are errors, geometry is looked at | Accepted | A1 |
 | [0029](0029-spingi-api-is-the-public-python-surface.md) | `spingi.api` is the public Python surface; the command line and the MCP server are skins over it | Accepted | A1 |
+| [0030](0030-agents-use-spingi-through-mcp-in-simulation.md) | Coding agents use Spingi through an MCP server, in simulation only | Accepted | A1 |
 
 Proposed, to be accepted before the first robot (M4.1): 0013 (locomotion on the robot) and 0014 (where the runtime runs), written in M4.0, the prerequisites milestone that needs no robot. 0015 replaced the simulator half of 0013: the simulator can now walk the robots with learned policies on outdoor ground, while the robot itself will still walk with the vendor's controller. Q14 of the spec (perception on the real robot) is answered in simulation by 0016: `navigate` corrects its drifting pose with AprilTags at known places, read by `MarkerPerceiver`; the drift figures and the tag plan are to be checked with the first lab results. Multi-robot missions (a dog scouting for a humanoid) are out of scope for v0 and would need their own ADR after M4 (see 0012).
 

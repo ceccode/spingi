@@ -14,6 +14,8 @@ What changed for people who use Spingi, newest first. Decisions and their reason
 - The schema of a scene file is published as `docs/schemas/scene.schema.json`.
 - A public Python API, `spingi.api` (ADR-0029): `check_scene`, `check_plan`, `run`, `bench`, `episode_summary` and the rest, by name, with plain data back. It is the stable interface; the rest of the package is internal.
 
+- **An MCP server for coding agents**, `spingi mcp` (ADR-0030): from Claude Code, Codex, OpenCode or any other MCP client an agent models a place as a scene, writes a plan, checks both, runs it in simulation and reads what happened. Seventeen tools, four guides, simulation only. See `docs/agents.md`.
+
 ### Changed
 
 - **A scene file with a key nobody declares no longer runs** (ADR-0028). `obstacle:` for `obstacles:`, or `max_sped:` in `safety:`, used to be dropped in silence; now the run ends as `INVALID_SCENE` naming the key. Numbers must be numbers: `true` and `"1"` are refused. A route must name locations of its scene.

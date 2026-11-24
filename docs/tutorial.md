@@ -562,6 +562,7 @@ Copy the scene or the plan before you change them, and pass the copy to `--scene
   uv run spingi plan "check the pump gauge and come back" --scene sim/scenes/yard_outdoor.yaml --robot go2 --out plans/from_text.yaml
   ```
   This writes a plan from a sentence with Claude. It needs the `llm` extra and an API key in `runtime/.env`, and each request is billed. Read and run the result like any other plan: the model proposes, the runtime checks and decides ([ADR-0003](../adr/0003-llm-proposes-runtime-disposes.md)).
+- **With a coding agent:** `spingi mcp` gives an agent in Claude Code, Codex or OpenCode the tools to do what this tutorial does, with you: write the scene of your place, check it, draw it, plan, run, measure. See [agents.md](agents.md).
 - **From Python:** everything in this tutorial is a function of `spingi.api`: `api.check_plan(...)`, `api.run(..., mode="physics")`, `api.bench(...)`. See [runtime/README.md](../runtime/README.md#python-api).
 - **Datasets:** `spingi export lerobot runs/<id> --out <dir>` turns episodes into a LeRobot dataset.
 - **Extending:** writing a skill or an adapter is in [runtime/README.md](../runtime/README.md#extending); the principles and contracts are in [runtime-spec.md](runtime-spec.md).
