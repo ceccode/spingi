@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+import spingi
 from spingi import cli
 from spingi.cli import main
 from spingi.core.events import EventLog
@@ -118,6 +119,13 @@ def test_a_plan_that_is_neither_a_file_nor_a_sample_ends_the_command_in_one_line
         main(["run", "plans/no_such_plan.yaml"])
     assert exit_.value.code == 2 and sessions == []
     assert "no plan 'plans/no_such_plan.yaml': not a file" in capsys.readouterr().err
+
+
+def test_version_prints_the_packages_version_and_needs_no_command(capsys):
+    with pytest.raises(SystemExit) as stop:
+        main(["--version"])
+    assert stop.value.code == 0
+    assert capsys.readouterr().out == f"spingi {spingi.__version__}\n"
 
 
 def test_scenes_and_plans_list_the_samples_and_print_one(capsys):
