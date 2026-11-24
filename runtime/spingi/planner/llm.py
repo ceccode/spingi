@@ -10,7 +10,6 @@ sees telemetry, frames or joints, and has no way to move the robot.
 from __future__ import annotations
 
 import json
-import sys
 from collections.abc import Collection
 from dataclasses import dataclass, field
 from typing import Any
@@ -21,6 +20,8 @@ from spingi.core.plan import TaskPlan, validate_plan
 from spingi.core.skill import SkillRegistry
 from spingi.core.types import WorldState
 from spingi.planner.schema import drop_nulls, plan_schema
+from spingi.scenes import describe_world
+from spingi.skills import summary
 
 DEFAULT_MODEL = "claude-opus-5-5"
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
@@ -64,36 +65,8 @@ class PlanningResult:
     usage: list[dict[str, Any]] = field(default_factory=list)
 
 
-def describe_world(state: WorldState, routes: dict[str, list[str]] | None = None) -> str:
-    lines = ["Locations (name: x, y in metres):"]
-    for name, loc in state.locations.items():
-        lines.append(f"- {name}: {loc.pose.x:.2f}, {loc.pose.y:.2f}")
-    lines.append("Known objects (id, class, position):")
-    if state.objects:
-        for oid, obj in state.objects.items():
-            where = f"{obj.pose.x:.2f}, {obj.pose.y:.2f}, {obj.pose.z:.2f}" if obj.pose else "position unknown"
-            lines.append(f"- {oid}, class {obj.cls}, at {where}")
-    else:
-        lines.append("- none")
-    lines.append(
-        f"Robot: at {state.robot.pose.x:.2f}, {state.robot.pose.y:.2f}, battery {state.robot.battery_pct:.0f}%"
-    )
-    lines.append(f"Holding: {state.robot.holding.id if state.robot.holding else 'nothing'}")
-    if routes:
-        lines.append("Routes (from->to: waypoints to pass through, in order):")
-        for key, via in routes.items():
-            lines.append(f"- {key}: {', '.join(via)}")
-    return "\n".join(lines)
-
-
 def describe_skills(registry: SkillRegistry) -> str:
-    lines = []
-    for name in registry.names():
-        skill = registry.get(name)
-        doc = (sys.modules[type(skill).__module__].__doc__ or "").strip()  # first line: "name(params): what it does"
-        summary = doc.splitlines()[0] if doc else name
-        lines.append(f"- {summary}")
-    return "\n".join(lines)
+    return "\n".join(f"- {summary(registry.get(name))}" for name in registry.names())
 
 
 class LLMPlanner:

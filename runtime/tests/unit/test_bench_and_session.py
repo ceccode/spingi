@@ -7,7 +7,7 @@ from spingi.bench import bench, format_report
 from spingi.cli import main
 from spingi.core.human import ScriptedHuman
 from spingi.scenes import load_world
-from spingi.session import SessionConfig, run_session
+from spingi.session import MODES, SessionConfig, run_session
 
 PLAN = Path("plans/demo_material_runner.yaml")
 SCENE = Path("sim/scenes/warehouse_small.yaml")
@@ -106,3 +106,13 @@ async def test_on_the_fake_adapter_the_camera_sees_only_what_is_in_view(tmp_path
     result = await run_session(SessionConfig(plan=plan, scene=scene, runs_dir=tmp_path), ScriptedHuman())
     assert result.ok
     assert [e.data["anomalies"] for e in result.log.find("perception.result")] == [[], ["absent:toy"]]
+
+
+def test_every_mode_is_a_session_the_runtime_accepts():
+    """`fake`, `kinematic`, `physics`, `realistic`: each one more thing the simulator stops pretending about."""
+    configs = {mode: SessionConfig(plan=PLAN, scene=SCENE, **settings) for mode, settings in MODES.items()}
+    assert list(configs) == ["fake", "kinematic", "physics", "realistic"]
+    assert [c.adapter for c in configs.values()] == ["fake", "sim", "sim", "sim"]
+    assert [c.locomotion for c in configs.values()] == ["kinematic", "kinematic", "physics", "physics"]
+    real = configs["realistic"]
+    assert (real.odometry, real.perception, real.camera_noise) == ("drift", "markers", True)

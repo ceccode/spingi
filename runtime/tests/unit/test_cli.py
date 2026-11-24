@@ -128,7 +128,9 @@ def test_scenes_and_plans_list_the_samples_and_print_one(capsys):
     assert main(["plans", "--show", "yard_patrol"]) == 0
     assert capsys.readouterr().out == Path("plans/yard_patrol.yaml").read_text()
     assert main(["plans", "--show", "nothing"]) == 1
-    assert "no sample 'nothing'; known: demo_inspection_round" in capsys.readouterr().err
+    assert "no plan 'nothing': not a file, not in plans/, and not one of the samples (demo_" in (
+        capsys.readouterr().err
+    )
 
 
 def test_a_scene_file_that_is_not_a_scene_is_refused_before_any_robot_starts(sessions, tmp_path, capsys):

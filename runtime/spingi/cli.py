@@ -27,23 +27,15 @@ import asyncio
 import sys
 from pathlib import Path
 
-from spingi.assets import (
-    DEFAULT_SCENE,
-    PLANS_DIR,
-    UnknownSample,
-    bundled_plans,
-    bundled_scenes,
-    resolve_plan,
-    resolve_scene,
-    summary,
-)
+from spingi import api
+from spingi.assets import DEFAULT_SCENE, PLANS_DIR, UnknownSample, resolve_plan, resolve_scene
 from spingi.core.events import EventLog
 from spingi.core.human import ScriptedHuman
-from spingi.core.plan import PlanError, load_plan, validate_plan
+from spingi.core.plan import PlanError, load_plan
 from spingi.dotenv import load_dotenv
 from spingi.robots import DEFAULT_ROBOT, PROFILES, get_profile
-from spingi.scenes import SceneError, SceneFile, load_scene
-from spingi.session import SessionConfig, new_run_id, run_session
+from spingi.scenes import SceneError, load_scene
+from spingi.session import MODES, SessionConfig, new_run_id, run_session
 from spingi.skills import default_registry
 
 ROBOTS = sorted(PROFILES)
@@ -67,9 +59,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "robots":
         return _robots()
     if args.cmd == "scenes":
-        return _samples(bundled_scenes(), args.show)
+        return _samples(api.scenes(), api.read_scene, args.show)
     if args.cmd == "plans":
-        return _samples(bundled_plans(), args.show)
+        return _samples(api.plans(), api.read_plan, args.show)
     if args.cmd == "check":
         return _check(args)
     if args.cmd == "map":
@@ -197,31 +189,29 @@ def _sample_or_file(resolve, value: str) -> Path:
         raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
-def _samples(samples: dict[str, Path], show: str | None) -> int:
+def _samples(samples: list[api.Sample], read, show: str | None) -> int:
     if show is not None:
-        if show not in samples:
-            print(f"no sample '{show}'; known: {', '.join(sorted(samples))}", file=sys.stderr)
+        try:
+            print(read(show), end="")
+        except UnknownSample as exc:
+            print(exc, file=sys.stderr)
             return 1
-        print(samples[show].read_text(encoding="utf-8"), end="")
         return 0
-    width = max(len(name) for name in samples)
-    for name, path in samples.items():
-        print(f"{name:<{width}}  {summary(path)}")
+    width = max(len(sample.name) for sample in samples)
+    for sample in samples:
+        print(f"{sample.name:<{width}}  {sample.summary}")
     return 0
 
 
 def _skills(args) -> int:
-    registry = default_registry()
-    if args.robot:
-        registry = registry.subset(get_profile(args.robot).capabilities)
-    for name in registry.names():
-        print(name, registry.get(name).Params.model_json_schema().get("properties", {}))
+    for skill in api.skills(args.robot):
+        print(skill.name, skill.parameters.get("properties", {}))
     return 0
 
 
 def _robots() -> int:
-    for profile in PROFILES.values():
-        print(f"{profile.alias:<4} {profile.name:<12} {profile.kind:<10} {', '.join(sorted(profile.capabilities))}")
+    for robot in api.robots():
+        print(f"{robot.alias:<4} {robot.name:<12} {robot.kind:<10} {', '.join(robot.capabilities)}")
     return 0
 
 
@@ -267,20 +257,21 @@ def _session_args(p: argparse.ArgumentParser) -> None:
 
 
 def _config(args, **settings) -> SessionConfig:
-    """The session the shared options ask for; `settings` are those of one command (`run` records videos, ...)."""
-    real = args.realistic
-    if real and args.adapter == "fake":
+    """The session the shared options ask for; `settings` are those of one command (`run` records videos, ...).
+    `--realistic` is the mode of that name (`session.MODES`); the single flags add to it."""
+    if args.realistic and args.adapter == "fake":
         raise SystemExit("--realistic simulates the robot's sensors: it needs --adapter sim")
+    mode = MODES["realistic"] if args.realistic else {}
     try:
         return SessionConfig(
             plan=args.plan,
             scene=args.scene,
-            adapter=args.adapter or ("sim" if real else "fake"),
+            adapter=args.adapter or mode.get("adapter", "fake"),
             robot=args.robot,
-            perception="markers" if real else args.perception,
-            locomotion="physics" if args.physics or real else "kinematic",
-            odometry="drift" if args.drift or real else "truth",
-            camera_noise=args.camera_noise or real,
+            perception=mode.get("perception", args.perception),
+            locomotion="physics" if args.physics else mode.get("locomotion", "kinematic"),
+            odometry="drift" if args.drift else mode.get("odometry", "truth"),
+            camera_noise=args.camera_noise or mode.get("camera_noise", False),
             runs_dir=args.runs_dir,
             perception_noise=args.noise,
             position_sigma_m=args.sigma,
@@ -356,37 +347,24 @@ def _refuse_scene(path: Path) -> bool:
     return False
 
 
-def _checked(args) -> tuple[SceneFile | None, list[str], list]:
-    """The scene, the errors of the scene or of the plan in it, and the warnings of both."""
-    from spingi.scene_check import check_plan, check_scene
-
-    try:
-        scene = load_scene(args.scene)
-    except SceneError as exc:
-        return None, [f"scene: {error}" for error in exc.errors], []
-    warnings = check_scene(scene)
-    if args.plan is None:
-        return scene, [], warnings
-    try:
-        plan = load_plan(args.plan)
-    except PlanError as exc:
-        return scene, [str(exc)], warnings
-    capabilities = get_profile(getattr(args, "robot", DEFAULT_ROBOT)).capabilities
-    errors = validate_plan(plan, default_registry(), capabilities, scene.locations)
-    return scene, [f"plan: {error}" for error in errors], [*warnings, *check_plan(plan, scene)]
-
-
 def _check(args) -> int:
-    scene, errors, warnings = _checked(args)
-    if scene is not None:
+    scene = api.check_scene(args.scene)
+    errors = [f"scene: {error}" for error in scene.errors]
+    warnings = list(scene.warnings)
+    if scene.valid:
+        d = scene.description
         parts = [
-            _count(len(scene.locations), "location"),
-            _count(len(scene.obstacles), "obstacle"),
-            _count(len(scene.objects), "object"),
-            _count(len(scene.landmarks), "landmark"),
-            *(["terrain"] if scene.terrain else []),
+            _count(len(d.locations), "location"),
+            _count(len(d.obstacles), "obstacle"),
+            _count(len(d.objects), "object"),
+            _count(len(d.landmarks), "landmark"),
+            *(["terrain"] if d.terrain else []),
         ]
         print(f"scene {args.scene}: {', '.join(parts)}")
+        if args.plan is not None:
+            plan = api.check_plan(args.plan, args.scene, args.robot)
+            errors += [e if e.startswith("invalid plan") else f"plan: {e}" for e in plan.errors]
+            warnings += plan.warnings
     for error in errors:
         print(f"error: {error}")
     for warning in warnings:
@@ -404,20 +382,19 @@ def _count(n: int, what: str) -> str:
 
 
 def _map(args) -> int:
-    scene, errors, warnings = _checked(args)
-    if scene is None:
-        for error in errors:
-            print(f"error: {error}", file=sys.stderr)
-        return 1
     try:
-        from spingi.scene_map import write_map
-
-        out = args.out or Path(f"{args.scene.stem}-map.png")
-        write_map(scene, out, warnings, title=args.scene.stem)
+        drawn = api.scene_map(args.scene, plan=args.plan, out=args.out or Path(f"{args.scene.stem}-map.png"))
+    except SceneError as exc:
+        for error in exc.errors:
+            print(f"error: scene: {error}", file=sys.stderr)
+        return 1
+    except PlanError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     except (ImportError, RuntimeError) as exc:  # Pillow comes with the sim extra
         print(f"no map: {exc}", file=sys.stderr)
         return 2
-    print(f"map: {out} · {_count(len(warnings), 'warning')} marked")
+    print(f"map: {drawn.path} · {_count(len(drawn.warnings), 'warning')} marked")
     return 0
 
 

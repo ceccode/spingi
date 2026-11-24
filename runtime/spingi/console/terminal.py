@@ -100,11 +100,19 @@ class ConsoleReporter:
         self._out = out or sys.stdout
 
     def __call__(self, event: Event) -> None:
-        line = describe(event)
-        if line is not None:
-            t = event.data.get("sim_t")
-            stamp = f"{t:7.1f}s" if isinstance(t, (int, float)) else "        "
-            print(f"[{stamp}] {safe(line)}", file=self._out, flush=True)
+        text = line(event)
+        if text is not None:
+            print(text, file=self._out, flush=True)
+
+
+def line(event: Event) -> str | None:
+    """The console's line for an event, with its robot time; None for the events the console does not show."""
+    text = describe(event)
+    if text is None:
+        return None
+    t = event.data.get("sim_t")
+    stamp = f"{t:7.1f}s" if isinstance(t, (int, float)) else "        "
+    return f"[{stamp}] {safe(text)}"
 
 
 def describe(event: Event) -> str | None:

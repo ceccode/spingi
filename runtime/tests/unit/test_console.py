@@ -4,7 +4,7 @@ import io
 import pytest
 
 from spingi.console import ConsoleHuman, ConsoleReporter
-from spingi.console.terminal import describe
+from spingi.console.terminal import describe, line
 from spingi.core.events import Event, EventLog
 from spingi.core.plan import TaskPlan
 from spingi.core.ports import HumanRequest
@@ -105,3 +105,13 @@ async def test_operator_request_text_is_sanitised():
     req = HumanRequest(run_id="r", step_index=1, skill="pick", reason="bad\x1b]0;title\x07 reason")
     await ConsoleHuman(input_fn=lambda p: "a", out=out).ask(req, timeout_s=5)
     assert "\x1b" not in out.getvalue() and "\x07" not in out.getvalue()
+
+
+def test_a_line_of_the_console_is_available_without_a_console():
+    """What the reporter prints, for a program that wants the same words (the API's timeline)."""
+    walking = Event(
+        ts=0.0, run_id="r", kind="step.start", data={"index": 1, "skill": "say", "params": {}, "sim_t": 12.34}
+    )
+    assert line(walking) == "[   12.3s] step 1  say {}"
+    assert line(Event(ts=0.0, run_id="r", kind="say", data={"text": "a\x1b[2Jb"})) == '[        ]    says "a?[2Jb"'
+    assert line(Event(ts=0.0, run_id="r", kind="adapter.call", data={})) is None

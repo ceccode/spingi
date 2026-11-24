@@ -344,6 +344,28 @@ def parse_landmarks(raw: dict) -> list[Landmark]:
     return out
 
 
+def describe_world(state: WorldState, routes: dict[str, list[str]] | None = None) -> str:
+    lines = ["Locations (name: x, y in metres):"]
+    for name, loc in state.locations.items():
+        lines.append(f"- {name}: {loc.pose.x:.2f}, {loc.pose.y:.2f}")
+    lines.append("Known objects (id, class, position):")
+    if state.objects:
+        for oid, obj in state.objects.items():
+            where = f"{obj.pose.x:.2f}, {obj.pose.y:.2f}, {obj.pose.z:.2f}" if obj.pose else "position unknown"
+            lines.append(f"- {oid}, class {obj.cls}, at {where}")
+    else:
+        lines.append("- none")
+    lines.append(
+        f"Robot: at {state.robot.pose.x:.2f}, {state.robot.pose.y:.2f}, battery {state.robot.battery_pct:.0f}%"
+    )
+    lines.append(f"Holding: {state.robot.holding.id if state.robot.holding else 'nothing'}")
+    if routes:
+        lines.append("Routes (from->to: waypoints to pass through, in order):")
+        for key, via in routes.items():
+            lines.append(f"- {key}: {', '.join(via)}")
+    return "\n".join(lines)
+
+
 def json_schema() -> dict[str, Any]:
     """The schema of a scene file, published in docs/schemas/scene.schema.json."""
     return SceneFile.model_json_schema()

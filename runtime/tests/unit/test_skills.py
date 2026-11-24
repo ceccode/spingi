@@ -3,6 +3,7 @@ from pydantic import BaseModel
 
 from spingi.core.skill import Skill, SkillParams, SkillRegistry
 from spingi.core.types import Pose2D, RobotState
+from spingi.skills import default_registry, summary
 from spingi.skills.navigate import NavigateParams, NavigateSkill
 from tests.conftest import world
 
@@ -47,3 +48,11 @@ def test_navigate_postcondition_checks_tolerance():
     far = world(robot=RobotState(pose=Pose2D(x=1.0, y=2.0)))
     assert skill.postconditions(params, near).ok
     assert not skill.postconditions(params, far).ok
+
+
+def test_every_skill_says_what_it_does_in_one_line():
+    """`name(params): what it does`, the first line of the skill's module: what a planner and the API are given."""
+    registry = default_registry()
+    for name in registry.names():
+        line = summary(registry.get(name))
+        assert line.startswith(f"{name}(") and "): " in line and "\n" not in line, name

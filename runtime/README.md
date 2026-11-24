@@ -309,6 +309,39 @@ uv run spingi plan "Check that the red box is on shelf A" --scene sim/scenes/war
 
 **Evaluation.** `plans/golden/planner_cases.yaml` holds ten requests with the expected plan: deliveries, an inspection round, a route through the aisle, a speed limit, a confirmation step, and two requests that cannot be done (the right answer is a single `say` explaining why). Two plans are equivalent when they use the same skills in the same order and the same parameters, with defaults filled in; announcement texts, confirmation prompts and failure policies are not compared, and a reference by step name equals the same reference by index. `spingi eval-planner` runs the ten requests and prints the pass rate; `--min-pass-rate` sets the exit code. Each run makes about ten API calls. Last result (2026-10-04, `claude-opus-5-5`): 10/10, nine at the first attempt; for the unknown blue crate the first plan failed validation and the corrected one explained that no such object is known. A test checks offline that every golden plan is valid and runs in simulation.
 
+## Python API
+
+Everything above is also a function of one module, `spingi.api` (ADR-0029). It is the public interface: its names and the models it returns change only with a version that says so, while the rest of the package is internal.
+
+```python
+from spingi import api
+
+check = api.check_plan("yard_patrol", "yard_outdoor", robot="go2")
+print(check.valid, check.errors, [w.message for w in check.warnings])
+
+report = api.run("yard_patrol", "yard_outdoor", robot="go2", mode="physics")
+print(report.status, report.steps_completed, report.sim_time_s)
+for line in report.summary.timeline:
+    print(line)
+print(report.summary.viewer)          # how to open the run in the viewer
+```
+
+| Function | What it gives |
+|----------|---------------|
+| `robots()`, `skills(robot=None)` | The robot profiles, and the skills with their parameters, for one robot or all |
+| `plan_schema(robot)`, `scene_schema()` | The JSON schemas of a plan for that robot and of a scene file |
+| `scenes()`, `plans()`, `read_scene(name)`, `read_plan(name)` | The samples and the files of the working folder's `scenes/` and `plans/`; the YAML of one |
+| `describe_scene(scene)` | Locations, objects, obstacles, landmarks, routes, limits and ground, as data and as the planner's text |
+| `check_scene(scene)` or `check_scene(text=...)` | Whether it is a scene, the errors, the warnings of its geometry |
+| `scene_map(scene, plan=None, out=None)` | The scene from above as a PNG, with what is marked on it |
+| `save_scene(name, text)` | Writes `scenes/<name>.yaml` once the text is a scene |
+| `parse_plan(text or mapping)`, `check_plan(plan, scene, robot)` | A plan from data; what a run would refuse, in the run's own words, and what the plan would meet in the scene |
+| `run(plan, scene, robot=, mode=, ...)`, `arun(...)` | One run: its status, its episode, a summary with every step, the timeline, the metrics and the frames |
+| `bench(plan, scene, runs=, ...)`, `abench(...)` | Many runs and the sim-to-real gate: `report.passed` |
+| `episodes()`, `episode_summary(run)`, `events(run, kinds=, offset=, limit=)`, `frame(run, ref)` | What happened in a run, by run id, `latest` or folder |
+
+`mode` says how close to the real robot the run is: `fake` (the in-memory robot, the default of `run`), `kinematic` (MuJoCo, the base glides), `physics` (the robot walks), `realistic` (walking with drifting odometry, a noisy camera and tags read from frames). A scene or a plan is named as on the command line; a plan can also be a mapping or a `TaskPlan`. A step that needs a person gets `on_failure` (`abort` by default) as the answer. Nothing is printed, and what cannot start raises before a run folder is made: `api.PlanError`, `api.SceneError`, `api.UnknownSample`, `ValueError`. In a program with an event loop use `arun` and `abench`; cancelling the task stops the robot, ends the run as aborted and still writes the episode.
+
 ## Replay and golden episodes
 
 `spingi replay <episode>` runs a recorded episode again with the plan, scene, adapter, perception noise, seed and operator answers it recorded, then compares the behaviour: steps, skill outcomes, retries, operator requests and answers, safety events, final status, final position within 5 cm. Timestamps are not compared.
