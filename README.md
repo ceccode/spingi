@@ -12,7 +12,7 @@ Spingi is a **Physical Agent Runtime** for legged robots, humanoids and quadrupe
 
 This repository is a neutral open-source toolkit. Applications built on top of it live elsewhere; this repo keeps sample plans and scenes that show how to use the system.
 
-Status: **runtime 0.2.0: two robots that walk in simulation, indoors and outdoors (M4.0 in progress), installable from PyPI and usable from a coding agent · viewer v0.5** · 2026-11-24
+Status: **runtime 0.2.1: two robots that walk in simulation, indoors and outdoors (M4.0 in progress), installable from PyPI and usable from a coding agent · viewer v0.5** · 2026-11-24
 
 ## What is in the box
 

@@ -2,6 +2,12 @@
 
 What changed for people who use Spingi, newest first. Decisions and their reasons are in the [ADRs](adr/README.md); the milestones are in the [spec](docs/runtime-spec.md#12-milestones).
 
+## 0.2.1 (2026-11-24)
+
+### Added
+
+- `spingi --version` prints the installed version, the first thing a bug report needs.
+
 ## 0.2.0 (2026-11-24)
 
 The first version on PyPI: Spingi installs with one line, simulates without the repository, and can be used from a coding agent.
