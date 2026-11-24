@@ -2,10 +2,13 @@
 
 What changed for people who use Spingi, newest first. Decisions and their reasons are in the [ADRs](adr/README.md); the milestones are in the [spec](docs/runtime-spec.md#12-milestones).
 
-## Unreleased
+## 0.2.0 (2026-11-24)
+
+The first version on PyPI: Spingi installs with one line, simulates without the repository, and can be used from a coding agent.
 
 ### Added
 
+- **On PyPI**: `uv tool install "spingi[mcp]"` or `pip install "spingi[sim]"`. A release is a tag, published through trusted publishing (ADR-0031).
 - The package carries the robot models, the walking policies, the tag images and the sample scenes and plans: an installed `spingi` simulates without the repository (ADR-0027).
 - A plan or a scene can be named instead of pointed at: `spingi run demo_inspection_round --adapter sim` runs from any folder. `spingi scenes` and `spingi plans` list the samples, `--show NAME` prints one.
 
@@ -24,6 +27,8 @@ What changed for people who use Spingi, newest first. Decisions and their reason
 
 - The repository says how to get the code, how to contribute and how to report a problem: `CONTRIBUTING.md`, a code of conduct, issue and pull request templates, this changelog.
 - The package and the command line describe Spingi as a runtime for legged robots, humanoids and quadrupeds.
+
+- An object's position in a scene must give its height, `z`: it always had to, and the error now says so.
 
 ### Fixed
 

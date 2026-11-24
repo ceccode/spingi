@@ -1,6 +1,7 @@
 # spingi
 
 [![ci](https://github.com/ceccode/spingi/actions/workflows/ci.yml/badge.svg)](https://github.com/ceccode/spingi/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/spingi.svg)](https://pypi.org/project/spingi/)
 [![license: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 *Spingi* is Italian for "push!", the word you shout at someone who should keep going. Pronounced *speen-jee*.
@@ -11,7 +12,7 @@ Spingi is a **Physical Agent Runtime** for legged robots, humanoids and quadrupe
 
 This repository is a neutral open-source toolkit. Applications built on top of it live elsewhere; this repo keeps sample plans and scenes that show how to use the system.
 
-Status: **runtime M4.0 in progress, two robots that walk in simulation, indoors and outdoors · viewer v0.5** · 2026-11-24
+Status: **runtime 0.2.0: two robots that walk in simulation, indoors and outdoors (M4.0 in progress), installable from PyPI and usable from a coding agent · viewer v0.5** · 2026-11-24
 
 ## What is in the box
 
@@ -23,9 +24,21 @@ Status: **runtime M4.0 in progress, two robots that walk in simulation, indoors 
 
 ## Quick start
 
-Requirements: Python 3.11+ with [uv](https://docs.astral.sh/uv/), Node 20+ for the viewer. No GPU, no robot.
+Requirements: Python 3.11+ with [uv](https://docs.astral.sh/uv/). No GPU, no robot.
 
 ### 1. Run a plan in simulation
+
+```bash
+uv tool install "spingi[mcp]"
+```
+
+```bash
+spingi run demo_inspection_round --adapter sim --zip
+```
+
+This installs the `spingi` command with the simulator, runs the inspection round on the G1 in MuJoCo as fast as the CPU allows and leaves an episode in `runs/<run_id>/` of the folder you are in, with a `.zip` to replay. `spingi plans` and `spingi scenes` list the samples the package carries.
+
+The rest of this page uses a clone of the repository, where the samples are files you can read and change, and commands run from `runtime/` with `uv run` (with the installed command, drop `uv run`; a sample's path names it there too):
 
 ```bash
 git clone https://github.com/ceccode/spingi.git
@@ -39,7 +52,7 @@ cd spingi/runtime && make setup
 make demo-sim
 ```
 
-This runs the inspection round on the G1 in MuJoCo as fast as the CPU allows and leaves an episode in `runtime/runs/<run_id>/`. `make demo-sim-go2` runs the same round on the Go2 quadruped. To watch it live in the MuJoCo viewer (macOS uses `mjpython`, already included):
+runs the same round and leaves its episode in `runtime/runs/<run_id>/`. `make demo-sim-go2` runs it on the Go2 quadruped. To watch it live in the MuJoCo viewer (macOS uses `mjpython`, already included):
 
 ```bash
 make demo-sim-view
@@ -71,17 +84,17 @@ To see what the robot saw, add `--camera-video`: the head camera is recorded at 
 
 ### Or let your coding agent do it
 
-Spingi has an MCP server, so an agent in Claude Code, Codex, OpenCode or any other MCP client can model your place as a scene, write a plan, check both, run it in simulation and tell you how often it works ([docs/agents.md](docs/agents.md)). From a clone, in Claude Code:
+Spingi has an MCP server, so an agent in Claude Code, Codex, OpenCode or any other MCP client can model your place as a scene, write a plan, check both, run it in simulation and tell you how often it works ([docs/agents.md](docs/agents.md) has Codex, OpenCode and the others). In Claude Code:
 
 ```bash
-claude mcp add spingi -- uv run --project /path/to/spingi/runtime spingi mcp
+claude mcp add spingi -- spingi mcp
 ```
 
 Then ask: *"Here is my warehouse: 8 by 6 metres, two shelves along the north wall with a box on each, a bench by the east wall. Make a scene of it and check both boxes are in place."* The agent writes the scene, the checks tell it what its first draft gets wrong, it shows you a map and runs the round. Everything stays in simulation and on your machine; the agent never moves the robot outside a validated plan ([ADR-0030](adr/0030-agents-use-spingi-through-mcp-in-simulation.md)).
 
 ### 2. Replay the episode in the browser
 
-Open **https://spingi-viewer.netlify.app** and drop the `.zip` onto the page, or pick one of the bundled samples. Nothing is uploaded: the episode is read in your browser. To run the viewer locally, from the repository root:
+Open **https://spingi-viewer.netlify.app** and drop the `.zip` onto the page, or pick one of the bundled samples. Nothing is uploaded: the episode is read in your browser. To run the viewer locally (Node 20+), from the repository root:
 
 ```bash
 cd viewer && npm install && npm run dev
@@ -176,12 +189,13 @@ Safety layers run on the robot's own clock (simulated time in MuJoCo), so a simu
 | [docs/tutorial.md](docs/tutorial.md) | Step by step: read a scene, write a plan, run it from the fake adapter up to realistic sensors, replay it in the viewer, place landmarks, measure it with bench, model your own place |
 | [docs/runtime-spec.md](docs/runtime-spec.md) | Principles, architecture, contracts, execution model, safety layers, testing strategy, milestones |
 | [docs/episode-format.md](docs/episode-format.md) | The episode folder, manifest, trajectory, frames, compatibility rules |
-| [adr/](adr/README.md) | Architecture decisions 0001–0030 and the ones still open |
+| [adr/](adr/README.md) | Architecture decisions 0001–0031 and the ones still open |
 | [runtime/README.md](runtime/README.md) | CLI reference, scenes, plans, skills, episodes, tests, how to add a skill or an adapter |
 | [viewer/README.md](viewer/README.md) | Running, loading episodes, deploying |
 | [SECURITY.md](SECURITY.md) | Threat model and how to report a security or safety problem |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Set up, the checks before a pull request, the rules of the house |
 | [CHANGELOG.md](CHANGELOG.md) | What changed, version by version |
+| [docs/releasing.md](docs/releasing.md) | How a version is released: a tag, PyPI, the MCP Registry |
 
 ## Development
 
@@ -189,7 +203,7 @@ Safety layers run on the robot's own clock (simulated time in MuJoCo), so a simu
 make test
 ```
 
-runs the runtime suite (unit, adapter contract on every adapter and robot, MuJoCo scenarios kinematic and walking, golden episodes, architecture and licensing rules): more than 400 tests in about a minute. The viewer has `npm test` (73 tests), `npm run e2e` (the samples replayed in Chromium) and `npm run build`. How to contribute is in [CONTRIBUTING.md](CONTRIBUTING.md). CI is GitHub Actions ([.github/workflows/ci.yml](.github/workflows/ci.yml)), on every push to `main` and every pull request, without a GPU: runtime lint, format check and tests (with offscreen MuJoCo rendering through EGL), viewer install, audit of the production dependencies, tests and build.
+runs the runtime suite (unit, adapter contract on every adapter and robot, MuJoCo scenarios kinematic and walking, golden episodes, architecture, licensing and release rules, the public API and the MCP server through a client): about 600 tests in about a minute. The viewer has `npm test` (73 tests), `npm run e2e` (the samples replayed in Chromium) and `npm run build`. How to contribute is in [CONTRIBUTING.md](CONTRIBUTING.md). CI is GitHub Actions ([.github/workflows/ci.yml](.github/workflows/ci.yml)), on every push to `main` and every pull request, without a GPU: runtime lint, format check and tests (with offscreen MuJoCo rendering through EGL), viewer install, audit of the production dependencies, tests and build.
 
 Conventions: every architectural decision is an ADR, changed by writing a new one; the runtime never imports the viewer and the viewer never imports the runtime, they only share the episode format; `spingi.core` imports nothing from adapters, skills, planner or perception, and a test enforces it.
 
