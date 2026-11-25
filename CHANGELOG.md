@@ -2,6 +2,22 @@
 
 What changed for people who use Spingi, newest first. Decisions and their reasons are in the [ADRs](adr/README.md); the milestones are in the [spec](docs/runtime-spec.md#12-milestones).
 
+## 0.3.0 (2026-11-25)
+
+What the first patrol an agent wrote for a real request showed: the default simulation hid two mistakes, and the program around the runs had to read lines meant for a person.
+
+### Added
+
+- `spingi check --plan` and `validate_plan` warn about **time**: a `navigate`, or the whole plan, with less time than a robot that walks needs. Walking takes up to twice the distance over the speed, and a `navigate` has 60 s unless the step gives it a `deadline_s`; a run that succeeds with the gliding base ends as `DEADLINE` with `--physics`.
+- They warn about **tags**: an `inspect` or a `detect` of a class whose objects have no `marker_id`. With `--perception markers` and `--realistic` the camera recognises an object by its tag alone, so `present:` never passes and `absent:` always does.
+- `spingi run --json` prints the run's report as one JSON object and nothing else, for a program to read: what `spingi.api.run` returns. A file refused before the run gives `ok: false`, the status and its `errors`.
+- In the API, each step of a run's summary has the `anomalies` of its inspection, and `RunReport.of(result)` makes the report of a session a program ran itself.
+- The guides tell an agent that a plan is not done at `kinematic`, how much time a walk needs, and how to write a program that starts runs.
+
+### Changed
+
+- `spingi check --strict` exits with status 1 for the two new warnings: a plan that passed it may no longer.
+
 ## 0.2.1 (2026-11-24)
 
 ### Added
