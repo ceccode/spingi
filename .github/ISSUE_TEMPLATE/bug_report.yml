@@ -43,6 +43,6 @@ body:
     attributes:
       label: Version and system
       description: The commit or the package version (`spingi --version`), the operating system, the Python version (or the browser, for the viewer).
-      placeholder: "spingi 0.2.1 · macOS 15 · Python 3.12"
+      placeholder: "spingi 0.3.0 · macOS 15 · Python 3.12"
     validations:
       required: true

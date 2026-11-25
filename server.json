@@ -3,7 +3,7 @@
   "name": "io.github.ceccode/spingi",
   "title": "Spingi",
   "description": "Plan, simulate and inspect tasks for legged robots: scenes, plans, runs, episodes. Simulation only.",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "websiteUrl": "https://github.com/ceccode/spingi/blob/main/docs/agents.md",
   "repository": {
     "url": "https://github.com/ceccode/spingi",
@@ -14,13 +14,13 @@
     {
       "registryType": "pypi",
       "identifier": "spingi",
-      "version": "0.2.1",
+      "version": "0.3.0",
       "runtimeHint": "uvx",
       "runtimeArguments": [
         {
           "type": "named",
           "name": "--from",
-          "value": "spingi[mcp]==0.2.1",
+          "value": "spingi[mcp]==0.3.0",
           "description": "The package with its mcp extra: the MCP SDK and the simulator"
         }
       ],
