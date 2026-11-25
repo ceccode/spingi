@@ -31,7 +31,7 @@ installs the package with every extra; the commands below are then `uv run sping
 ```
 spingi run <plan.yaml> [--scene S] [--adapter fake|sim] [--robot g1|go2] [--physics] [--drift] [--camera-noise] [--perception truth|markers]
            [--realistic] [--operator auto|console] [--on-failure abort|skip|retry] [--noise P] [--sigma M] [--seed K] [--runs-dir D]
-           [--view] [--record] [--camera-video] [--realtime] [--zip] [--quiet]
+           [--view] [--record] [--camera-video] [--realtime] [--zip] [--quiet] [--json]
 spingi bench <plan.yaml> [--scene S] [--adapter fake|sim] [--robot g1|go2] [--physics] [--drift] [--camera-noise] [--perception truth|markers]
              [--realistic] [--runs N] [--noise P] [--sigma M] [--seed K] [--on-failure abort|skip|retry] [--runs-dir D] [--gate] [--keep-failed]
 spingi export lerobot <episode_dir>... --out <dataset_dir> [--fps 10]
@@ -190,6 +190,8 @@ OK · 0 errors, 1 warning
 | an object in view from no location | no stop is within 3 m of it and facing it within 40°; the warning gives the heading that would |
 | an `inspect` or a `detect` with nothing of that class in view | the robot would look from the wrong place |
 | a stop that looks at an object and has no landmark to read | only in scenes with landmarks: with `--drift` the robot cannot correct its pose there |
+| a `navigate`, or the whole plan, with less time than a walk needs | a robot that walks takes up to twice the distance over the speed (1.4 to 1.8 times on the samples), and a `navigate` has 60 s unless the step gives it a `deadline_s`: a run that succeeds with the gliding base ends as `DEADLINE` with `--physics` |
+| an `inspect` or a `detect` of a class whose objects have no `marker_id` | with `--perception markers` and `--realistic` the camera recognises an object by its tag alone: without one `present:` never passes and `absent:` always does |
 
 ```bash
 uv run spingi map sim/scenes/yard_outdoor.yaml
@@ -358,6 +360,22 @@ print(report.summary.viewer)          # how to open the run in the viewer
 | `episodes()`, `episode_summary(run)`, `events(run, kinds=, offset=, limit=)`, `frame(run, ref)` | What happened in a run, by run id, `latest` or folder |
 
 `mode` says how close to the real robot the run is: `fake` (the in-memory robot, the default of `run`), `kinematic` (MuJoCo, the base glides), `physics` (the robot walks), `realistic` (walking with drifting odometry, a noisy camera and tags read from frames). A scene or a plan is named as on the command line; a plan can also be a mapping or a `TaskPlan`. A step that needs a person gets `on_failure` (`abort` by default) as the answer. Nothing is printed, and what cannot start raises before a run folder is made: `api.PlanError`, `api.SceneError`, `api.UnknownSample`, `ValueError`. In a program with an event loop use `arun` and `abench`; cancelling the task stops the robot, ends the run as aborted and still writes the episode.
+
+### From a program of your own
+
+A service that starts a run when something happens (a schedule, a camera's alarm, a spoken command) has two ways in, and neither reads the lines meant for a person.
+
+`spingi run ... --json` prints the run's report as one JSON object and nothing else: the `RunReport` that `api.run` returns, with the status, each step with its attempts and the checks of an inspection that did not pass (`anomalies`), the timeline, the metrics and where the episode and its `.zip` are. The exit status is 0 for a run that succeeded. A plan or a scene file that is not one gives `{"ok": false, "status": "invalid_plan" | "invalid_scene", "errors": [...]}` and no episode.
+
+```bash
+spingi run yard_patrol --scene yard_outdoor --robot go2 --adapter sim --zip --json
+```
+
+`import spingi` works in the environment where the package is installed. `uv tool install` keeps it in an environment of its own, which gives you the command and not the module: for a script, add the package to the script's project (`uv add "spingi[sim]"`), or run the script with it:
+
+```bash
+uv run --with "spingi[sim]" python my_service.py
+```
 
 ## MCP server
 

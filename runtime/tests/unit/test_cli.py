@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 import spingi
-from spingi import cli
+from spingi import api, cli
 from spingi.cli import main
 from spingi.core.events import EventLog
 from spingi.core.human import ScriptedHuman
@@ -78,6 +78,52 @@ def test_a_run_prints_its_summary_and_exits_with_its_status(tmp_path, capsys):
 
     assert main(run("--runs-dir", str(tmp_path), "--quiet", "--noise", "1.0")) == 1
     assert capsys.readouterr().out.strip().splitlines()[-1].startswith("ABORTED · ")
+
+
+def test_json_prints_the_report_of_the_api_and_nothing_else(tmp_path, capsys):
+    assert main(run("--runs-dir", str(tmp_path), "--zip", "--json")) == 0
+    out = capsys.readouterr()
+    report = api.RunReport.model_validate_json(out.out)  # the whole of standard output is one report
+    assert (report.status, report.ok, report.steps_completed, report.steps_total) == ("success", True, 8, 8)
+    assert Path(report.episode_dir).parent == tmp_path and Path(report.archive).is_file()
+    assert report == api.RunReport.of(_ended(report)) and out.err == ""
+    assert report.summary.timeline[-1].endswith("run end: success · 8 steps completed")
+
+    assert main(run("--runs-dir", str(tmp_path), "--noise", "1.0", "--json")) == 1
+    failed = json.loads(capsys.readouterr().out)
+    assert (failed["status"], failed["ok"]) == ("aborted", False) and failed["summary"]["steps"][-1]["reason"]
+
+
+def _ended(report: api.RunReport) -> SessionResult:
+    """The session a report came from, as far as the report says."""
+    return SessionResult(
+        run_id=report.run_id, run_dir=Path(report.episode_dir), status=report.status,
+        steps_completed=report.steps_completed, steps_total=report.steps_total, log=EventLog(run_id=report.run_id),
+        archive=Path(report.archive), sim_time_s=report.sim_time_s,
+    )  # fmt: skip
+
+
+def test_json_says_why_a_file_is_refused_before_the_run(tmp_path, capsys):
+    plan = tmp_path / "typo.yaml"
+    plan.write_text("id: typo\nsteps:\n  - skill: say\n    params: { text: hi }\n    on_failre: { then: abort }\n")
+    assert main(["run", str(plan), "--runs-dir", str(tmp_path / "runs"), "--json"]) == 1
+    assert json.loads(capsys.readouterr().out) == {
+        "ok": False,
+        "status": "invalid_plan",
+        "errors": [f"invalid plan ({plan}): steps.0.on_failre: Extra inputs are not permitted"],
+    }
+    scene = tmp_path / "scene.yaml"
+    scene.write_text("locations: {}\nobstacle: []\n")
+    assert main(["run", str(PLAN), "--scene", str(scene), "--runs-dir", str(tmp_path / "runs"), "--json"]) == 1
+    refused = json.loads(capsys.readouterr().out)
+    assert (refused["ok"], refused["status"]) == (False, "invalid_scene") and "obstacle" in refused["errors"][0]
+    assert not (tmp_path / "runs").exists()
+
+
+def test_json_is_not_for_a_person_at_the_console(tmp_path):
+    with pytest.raises(SystemExit, match="--json prints one JSON object and nothing else: not with --operator console"):
+        main(run("--runs-dir", str(tmp_path), "--operator", "console", "--json"))
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_a_misspelled_parameter_ends_the_run_as_an_invalid_plan(tmp_path, capsys):

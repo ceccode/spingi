@@ -97,7 +97,7 @@ The agent writes the scene, and the checks tell it what a first draft gets wrong
 | `validate_scene` | Why a file is not a scene, and what a robot would meet in it |
 | `preview_scene` | The scene from above as an image, with the warnings in red |
 | `save_scene` | Writes `scenes/<name>.yaml` once it is a scene |
-| `validate_plan` | What a run would refuse, in the run's own words, and what the plan would meet in the scene |
+| `validate_plan` | What a run would refuse, in the run's own words, and what the plan would meet in the scene: a wall on the way, nothing in view, too little time for a robot that walks, an object without the tag a real camera needs |
 | `run_plan` | One run in simulation: status, every step with its attempts and reason, timeline, metrics, the `.zip` for the viewer |
 | `bench_plan` | Many runs and the sim-to-real gate |
 | `get_episode`, `get_events`, `get_episode_frame` | What happened in a run; its event log in pages; a frame the robot's camera took, as an image |
@@ -120,6 +120,7 @@ These are decisions, written in [ADR-0030](../adr/0030-agents-use-spingi-through
 
 - A run takes from under a second to a minute or two; twenty walking runs of a long patrol take a few minutes. Raise the client's tool timeout as shown above.
 - One run at a time: a second call waits for the first.
+- One plan per run, from the scene's start pose, and nothing interrupts a run to start another. A patrol that repeats, or a robot that answers a camera's alarm or a spoken command, is a program around Spingi. The agent can write it: it starts runs with `spingi run --json` or `spingi.api` and reads their reports ([how](../runtime/README.md#from-a-program-of-your-own)).
 - Frames exist only where the machine can render them (an OpenGL context).
 - What the simulator cannot model, a scene cannot hold: rotated walls, pits, water, overhangs. See the `scene` guide.
 - A scene of a real home or workplace is personal data. It stays on your machine; keep it out of public repositories.
