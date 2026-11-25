@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import sys
 from pathlib import Path
 
@@ -110,6 +111,12 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--realtime", action="store_true", help="simulate in real time instead of as fast as possible")
     run.add_argument("--zip", action="store_true", help="also create runs/<id>.zip with the episode")
     run.add_argument("--quiet", action="store_true", help="print only the final summary")
+    run.add_argument(
+        "--json",
+        action="store_true",
+        help="print the run's report as one JSON object and nothing else, for a program to read: what "
+        "spingi.api.run returns (not with --operator console)",
+    )
 
     bench = sub.add_parser("bench", help="run a plan many times with perception noise and check the sim-to-real gate")
     _session_args(bench)
@@ -300,7 +307,27 @@ async def _run(args) -> int:
         record_camera=args.camera_video,
         zip_episode=args.zip,
     )
+    if args.json and args.operator == "console":
+        raise SystemExit("spingi run: --json prints one JSON object and nothing else: not with --operator console")
+    if args.json:
+        return await _run_as_json(cfg, args.on_failure)
     return await _run_with_operator(cfg, args.operator, on_failure=args.on_failure, quiet=args.quiet)
+
+
+async def _run_as_json(cfg: SessionConfig, on_failure: str) -> int:
+    """Runs one session and prints its report, `api.RunReport`, as the only thing on standard output. A plan or a
+    scene file that is not one is refused before the run, as everywhere: `ok` false, the status and its `errors`,
+    and no episode."""
+    refused = _refusal(cfg.plan, cfg.scene)
+    if refused is not None:
+        status, errors = refused
+        print(json.dumps({"ok": False, "status": status.lower(), "errors": errors}, indent=2))
+        return 1
+    run_id = new_run_id()
+    log = EventLog(run_id=run_id, path=cfg.runs_dir / run_id / "events.jsonl")
+    result = await run_session(cfg, ScriptedHuman(default=on_failure), log=log)
+    print(api.RunReport.of(result).model_dump_json(indent=2))
+    return 0 if result.ok else 1
 
 
 async def _run_with_operator(cfg: SessionConfig, operator: str, on_failure: str = "abort", quiet: bool = False) -> int:
@@ -333,27 +360,39 @@ async def _run_with_operator(cfg: SessionConfig, operator: str, on_failure: str 
     return 0 if result.ok else 1
 
 
-def _refuse_plan(path: Path) -> bool:
-    """A plan file that is not a TaskPlan (an unknown key, a value out of range) ends the command as INVALID_PLAN,
-    in one line, before a robot is started or a run folder is made. A TaskPlan whose steps are wrong for the skills
-    is the executor's to refuse, and its episode records why."""
+def _refusal(plan: Path | None, scene: Path | None) -> tuple[str, list[str]] | None:
+    """Why a run cannot start: the status it ends with and the lines that say why, or None.
+
+    A plan file that is not a TaskPlan (an unknown key, a value out of range) ends the command as INVALID_PLAN, a
+    scene file that is not a scene as INVALID_SCENE (ADR-0028), before a robot is started or a run folder is made.
+    A TaskPlan whose steps are wrong for the skills is the executor's to refuse, and its episode records why."""
     try:
-        load_plan(path)
+        if plan is not None:
+            load_plan(plan)
     except PlanError as exc:
-        print(f"\nINVALID_PLAN · {exc}")
-        return True
-    return False
+        return "INVALID_PLAN", [str(exc)]
+    try:
+        if scene is not None:
+            load_scene(scene)
+    except SceneError as exc:
+        return "INVALID_SCENE", [str(exc)]
+    return None
+
+
+def _refuse_plan(path: Path) -> bool:
+    """Says in one line why a plan file is refused; see `_refusal`."""
+    return _say_refused(_refusal(path, None))
 
 
 def _refuse_scene(path: Path) -> bool:
-    """A scene file that is not a scene (an unknown key, a value out of range) ends the command as INVALID_SCENE,
-    in one line, before a robot is started or a run folder is made (ADR-0028)."""
-    try:
-        load_scene(path)
-    except SceneError as exc:
-        print(f"\nINVALID_SCENE · {exc}")
-        return True
-    return False
+    """Says in one line why a scene file is refused; see `_refusal`."""
+    return _say_refused(_refusal(None, path))
+
+
+def _say_refused(refused: tuple[str, list[str]] | None) -> bool:
+    if refused is not None:
+        print(f"\n{refused[0]} · {'; '.join(refused[1])}")
+    return refused is not None
 
 
 def _check(args) -> int:

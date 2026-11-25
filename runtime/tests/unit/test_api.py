@@ -13,10 +13,11 @@ from spingi.core.localization import FACING_LIMIT_RAD
 from spingi.core.plan import validate_plan
 from spingi.metrics import Gate
 from spingi.perception.view import HEAD_CAMERA
+from spingi.scene_check import WALK_TIME_FACTOR
 from spingi.scenes import load_scene
 from spingi.session import MODES
 from spingi.skills import default_registry
-from spingi.skills.navigate import LANDMARK_HALF_FOV_RAD, TAG_READ_RANGE
+from spingi.skills.navigate import LANDMARK_HALF_FOV_RAD, TAG_READ_RANGE, NavigateSkill
 
 GOLDEN = Path("tests/golden/episodes/inspection_round")
 TWO_STEPS = {
@@ -183,6 +184,7 @@ def test_a_run_leaves_an_episode_and_says_what_happened(tmp_path, capsys):
     assert summary.steps[1].params == {"to": "shelf_A"}
     assert summary.timeline[-1].endswith("run end: success · 9 steps completed")
     assert summary.metrics.anomalies == 1 and summary.metrics.human_requests == 0
+    assert {s.index: s.anomalies for s in summary.steps if s.skill == "inspect"} == {2: [], 6: ["present:red_box"]}
     assert summary.viewer == f"open {api.VIEWER_URL} and drop {report.archive} on the page"
     json.dumps(report.model_dump())
 
@@ -345,6 +347,9 @@ def test_what_the_guides_say_about_the_robot_is_what_the_code_does():
     gate = Gate()
     assert (gate.min_success_rate, gate.max_needs_human_per_100, gate.max_fatal_runs) == (0.95, 5.0, 0)
     assert "at least 95 % success, at most 5 operator requests per 100 runs" in workflow
+    assert f"A `navigate` has {NavigateSkill.default_deadline_s:g} seconds unless the step has its own" in plan
+    assert WALK_TIME_FACTOR == 2 and "A robot that walks takes up to twice the distance over the speed" in plan
+    assert "`spingi run <plan> --scene <scene> --json`" in workflow and "`anomalies`" in workflow
     for skill in api.skills():
         assert f"`{skill.name}`" in plan, skill.name
     for mode in MODES:

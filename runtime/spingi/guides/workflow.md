@@ -9,8 +9,8 @@ You write plans and scenes. The runtime checks them, runs them and reports. You 
 1. **Know the robot.** `list_robots`, then `list_skills` for that robot. The Go2 has no arm: no `pick`, no `place`.
 2. **Know the place.** `list_scenes` and `describe_scene`: the locations are the only places a plan can send the robot to. For a new place, write a scene: `get_guide` topic `scene`.
 3. **Write the plan.** `get_guide` topic `plan`; `read_plan` shows a sample to start from.
-4. **Check before running.** `validate_plan` gives the errors a run would give, in the same words, and warnings: a leg that crosses an obstacle, a look with nothing in view. Fix every error. Read every warning: most are mistakes, a few are intended.
-5. **Run, from cheap to real.** `run_plan` with mode `kinematic` first: seconds, exactly repeatable. Then `physics`: the robot walks, drifts, can be blocked and can fall. Then `realistic`: it also does not know exactly where it is, and reads AprilTags to find out.
+4. **Check before running.** `validate_plan` gives the errors a run would give, in the same words, and warnings: a leg that crosses an obstacle, a look with nothing in view, a time budget that a walking robot may not keep, an object the camera cannot recognise without a tag. Fix every error. Read every warning: most are mistakes, a few are intended.
+5. **Run, from cheap to real.** `run_plan` with mode `kinematic` first: seconds, exactly repeatable. Then `physics`: the robot walks, drifts, can be blocked and can fall. Then `realistic`: it also does not know exactly where it is, and reads AprilTags to find out. A plan is not done at `kinematic`: the gliding base keeps deadlines a walking robot misses, and sees objects a real camera needs a tag to recognise.
 6. **Read what happened.** The result has each step with its attempts and reason, a timeline, and the frames the camera took. `get_episode_frame` shows you one. `get_events` pages through the event log.
 7. **Show the person.** Give them the `.zip` path from the result and the viewer's address: they drop the file on the page and watch the run. `preview_scene` gives a map they can compare with their floor plan.
 8. **Measure.** One success proves little. `bench_plan` runs the plan many times with different seeds and checks the gate: at least 95 % success, at most 5 operator requests per 100 runs, no fall, no safety violation.
@@ -27,6 +27,10 @@ You write plans and scenes. The runtime checks them, runs them and reports. You 
 ## When a step needs a person
 
 A step can fail in a way that asks for an operator. Here nobody is at the console: the answer is the `on_failure` you pass to `run_plan` (`abort` by default, or `skip`, or `retry`), the same every time, and the result counts the requests. Do not design a plan that depends on an operator answering well.
+
+## When the person wants more than one run
+
+A patrol that repeats, a robot that answers an alarm or a command: Spingi runs one plan from start to end, so the program that decides which plan to run next, and when, is yours to write. Do not read the lines Spingi prints for a person. Use `spingi run <plan> --scene <scene> --json`, which prints the run's report as one JSON object (status, steps with their `anomalies`, the episode and its `.zip`), or `from spingi import api` and `api.run(...)` in a Python environment that has the package (`uv run --with "spingi[sim]" python service.py`). Each run starts from the scene's start pose: say so to the person.
 
 ## What the results are
 

@@ -51,6 +51,7 @@ The Go2 has locomotion and a camera, no arm. The G1 has all three.
 - **Straight lines.** If the leg from where the robot is to `to` crosses an obstacle, list the waypoints in `via`. The scene's `routes` say which. `validate_plan` warns about a leg that crosses a box.
 - **Failure policy.** `on_failure: { retry: N, then: needs_human | abort | skip }`. Navigation and detection can fail for a moment: give them `retry: 2`. Use `skip` only for a step the task can live without, such as one stop of a patrol.
 - **Speed.** `max_speed` asks; the scene's `safety.max_speed` caps. Slow down (0.5 to 0.6) on rough ground, ramps and kerbs.
+- **Time.** A `navigate` has 60 seconds unless the step has its own `deadline_s`, and the plan's `deadline_s` is the budget of the whole run. A robot that walks takes up to twice the distance over the speed: 19 m at 0.6 m/s take about 35 s gliding and about 50 s walking. Give a long `navigate` a `deadline_s`, and the plan twice its walking time. `validate_plan` warns when a budget is tight.
 - **Keep it minimal.** No `say` unless the person asked for an announcement; no `wait_for_human` unless a person must do or confirm something.
 - **If it cannot be done** with these skills, locations and objects, say so to the person instead of writing a plan that pretends.
 
@@ -66,4 +67,6 @@ When a run does not succeed, the result says which step, how many attempts and w
 | navigation stopped short, an obstacle in the way | Add a waypoint in `via` |
 | left the geofence, `estop` | A location or a leg too close to the fence |
 | the robot fell (`physics`, `realistic`) | Slower `max_speed`, a gentler route, or a ground this robot cannot walk |
+| `deadline` in `physics` or `realistic`, after a success in `kinematic` | Walking is slower than gliding: raise the plan's `deadline_s`, give the long `navigate` its own |
+| an inspection that finds nothing in `realistic` and found it in `kinematic` | The object has no `marker_id`: the camera recognises objects by their tag |
 | `anomalies present:<cls>` in an inspection | The check found the object missing: the report of the inspection, not a failure of the plan |

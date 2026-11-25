@@ -48,7 +48,7 @@ from spingi.scene_check import check_plan as _plan_warnings
 from spingi.scene_check import check_scene as _scene_warnings
 from spingi.scenes import SceneError, SceneFile, describe_world, load_scene, parse_scene, read_scene_yaml
 from spingi.scenes import json_schema as scene_schema
-from spingi.session import MODES, Mode, SessionConfig, new_run_id, run_session
+from spingi.session import MODES, Mode, SessionConfig, SessionResult, new_run_id, run_session
 from spingi.skills import default_registry
 from spingi.skills import summary as _skill_summary
 
@@ -312,6 +312,7 @@ class StepSummary(BaseModel):
     outcome: str = Field(description="success, skipped, or how the last attempt ended")
     attempts: int
     reason: str = ""
+    anomalies: list[str] = Field(default_factory=list, description="the checks of an inspection that did not pass")
     sim_t_start: float | None = None
     sim_t_end: float | None = None
 
@@ -351,6 +352,24 @@ class RunReport(BaseModel):
     camera_video: str | None
     summary: EpisodeSummary
 
+    @classmethod
+    def of(cls, result: SessionResult) -> RunReport:
+        """The report of a session that has ended. `run` returns it; a skin that runs sessions of its own, as the
+        command line does for its operator console, makes the same report with this."""
+        return cls(
+            run_id=result.run_id,
+            status=result.status,
+            ok=result.ok,
+            steps_completed=result.steps_completed,
+            steps_total=result.steps_total,
+            sim_time_s=None if result.sim_time_s is None else round(result.sim_time_s, 3),
+            episode_dir=str(result.run_dir),
+            archive=str(result.archive) if result.archive else None,
+            video=str(result.video) if result.video else None,
+            camera_video=str(result.camera_video) if result.camera_video else None,
+            summary=_summary(result.run_dir),
+        )
+
 
 async def arun(
     plan: PlanSource,
@@ -387,19 +406,7 @@ async def arun(
     if on_event is not None:
         log.subscribe(on_event)
     result = await run_session(cfg, ScriptedHuman(default=on_failure), log=log, stop_button=False)
-    return RunReport(
-        run_id=result.run_id,
-        status=result.status,
-        ok=result.ok,
-        steps_completed=result.steps_completed,
-        steps_total=result.steps_total,
-        sim_time_s=None if result.sim_time_s is None else round(result.sim_time_s, 3),
-        episode_dir=str(result.run_dir),
-        archive=str(result.archive) if result.archive else None,
-        video=str(result.video) if result.video else None,
-        camera_video=str(result.camera_video) if result.camera_video else None,
-        summary=_summary(result.run_dir),
-    )
+    return RunReport.of(result)
 
 
 def run(plan: PlanSource, scene: Path | str = DEFAULT_SCENE, **options: Any) -> RunReport:
@@ -696,6 +703,8 @@ def _steps(log: list[Event]) -> list[StepSummary]:
                 str(d.get("reason") or ""),
                 d.get("sim_t"),
             )
+        elif steps and event.kind == "perception.result":
+            steps[-1].anomalies = [str(a) for a in d.get("anomalies") or []]  # of the last look, if a step retries
         elif steps and event.kind == "skill.precondition_failed":
             steps[-1].outcome, steps[-1].reason = "precondition_failed", str(d.get("reason") or "")
         elif steps and event.kind == "step.end":
