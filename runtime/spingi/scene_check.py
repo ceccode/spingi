@@ -4,6 +4,9 @@ The schema says whether a file is a scene. These checks say whether the scene is
 tutorial tells people to look at, checked before a run is spent finding it out. Plane geometry only, on the same
 rules the runtime uses: the camera's view (`perception.view`), the landmarks `navigate` expects (`core.localization`).
 
+A plan is also checked for what the gliding base of the default simulation hides and a walking robot with a real
+camera meets: a time budget that only gliding keeps, an object the camera can recognise only by a tag it lacks.
+
 A warning does not stop anything. A wall across the way is a mistake in most scenes and the point of `lab_blocked`.
 """
 
@@ -20,11 +23,15 @@ from spingi.core.plan import TaskPlan, parse_ref
 from spingi.core.types import Landmark, Pose2D
 from spingi.perception.view import HEAD_CAMERA
 from spingi.scenes import SceneFile, SceneObstacle, ScenePose
-from spingi.skills.navigate import LANDMARK_HALF_FOV_RAD, TAG_READ_RANGE
+from spingi.skills.navigate import LANDMARK_HALF_FOV_RAD, TAG_READ_RANGE, NavigateParams, NavigateSkill
 
 CLEARANCE_M = 0.3  # half a walking robot's width and a little more: a leg nearer than this to a box touches it
 TOUCH_M = 0.15  # a place nearer than this to a box has the robot's body in it; stops stand 0.3 m from tables
 FENCE_MARGIN_M = 0.3  # a walking robot stops this far off its target on a bad day: nearer to the fence, it leaves it
+# A robot that walks takes longer than the distance over the speed it is asked for: it turns, starts and stops, and
+# does not hold the speed. On the sample plans with --physics the navigate steps of a run take 1.4 to 1.8 times that,
+# G1 and Go2 alike; a budget below twice it is one a walking robot may not keep.
+WALK_TIME_FACTOR = 2.0
 
 WarningCode = Literal[
     "outside_geofence",
@@ -36,6 +43,8 @@ WarningCode = Literal[
     "object_out_of_view",
     "stop_without_landmark",
     "nothing_in_view",
+    "tight_deadline",
+    "object_without_marker",
 ]
 Point = tuple[float, float]
 
@@ -59,19 +68,22 @@ def check_scene(scene: SceneFile) -> list[SceneWarning]:
 
 
 def check_plan(plan: TaskPlan, scene: SceneFile) -> list[SceneWarning]:
-    """What this plan would meet in this scene: legs that cross an obstacle, looks that have nothing in view.
+    """What this plan would meet in this scene: legs that cross an obstacle, looks that have nothing in view, a
+    time budget that a walking robot may not keep, an object the camera has no tag to recognise.
 
     The plan is taken as valid (`validate_plan`): a step that names an unknown location, or takes a parameter from
     an earlier step's evidence, is skipped here. The robot is followed from its start through every `navigate`.
     """
-    warnings: list[SceneWarning] = []
+    warnings: list[SceneWarning | None] = []
     at_name, at = "the start", scene.robot.pose
+    walked_m = glide_s = 0.0
     for i, step in enumerate(plan.steps):
         params = step.params
         if step.skill == "navigate":
             names = [*_names(params.get("via")), *_names(params.get("to"))]
             if not names or any(n not in scene.locations for n in names):
                 continue
+            start, length = at, 0.0
             for name in names:
                 target = scene.locations[name].pose
                 hit = _first_obstacle_on(scene, at, target)
@@ -79,8 +91,15 @@ def check_plan(plan: TaskPlan, scene: SceneFile) -> list[SceneWarning]:
                     leg = f"the leg from {at_name} to {name} crosses {_obstacle(*hit)}"
                     text = f"step {i} (navigate): {leg}: add a waypoint with via"
                     warnings.append(_warn("leg_crosses_obstacle", text, at, target))
+                length += _dist(at, target.x, target.y)
                 at_name, at = name, target
+            speed = _speed(scene, params)
+            walked_m, glide_s = walked_m + length, glide_s + length / speed
+            warnings.append(_step_out_of_time(i, step.deadline_s, length, speed, start, at))
         elif step.skill == "inspect":
+            checks = [c.partition(":") for c in params.get("checks") or [] if isinstance(c, str)]
+            classes = [cls for kind, _, cls in checks if kind in ("present", "absent") and cls]
+            warnings += [_no_marker(scene, i, "inspect", cls) for cls in dict.fromkeys(classes)]
             (name,) = _names(params.get("target")) or [None]
             if name not in scene.locations:
                 continue
@@ -88,7 +107,9 @@ def check_plan(plan: TaskPlan, scene: SceneFile) -> list[SceneWarning]:
             wanted = [c.removeprefix("present:") for c in params.get("checks") or [] if _is_present_check(c)]
             warnings += [_nothing_in_view(scene, i, "inspect", cls, name, pose) for cls in wanted]
         elif step.skill == "detect" and isinstance(params.get("cls"), str) and parse_ref(params["cls"]) is None:
+            warnings.append(_no_marker(scene, i, "detect", params["cls"]))
             warnings.append(_nothing_in_view(scene, i, "detect", params["cls"], at_name, at))
+    warnings.append(_plan_out_of_time(plan.deadline_s, walked_m, glide_s))
     return [w for w in warnings if w is not None]
 
 
@@ -210,6 +231,62 @@ def _nothing_in_view(
         return _warn("nothing_in_view", f"{head}: the scene has no '{cls}' with a known position", pose)
     oid, p = min(candidates, key=lambda item: _dist(pose, item[1].x, item[1].y))
     return _warn("nothing_in_view", f"{head}: '{oid}' is {_out_of_view(pose, p.x, p.y)}", pose, (p.x, p.y))
+
+
+def _speed(scene: SceneFile, params: dict[str, object]) -> float:
+    """The speed a `navigate` asks for, as the runtime applies it: its own `max_speed` under the scene's cap."""
+    asked = params.get("max_speed")
+    default: float = NavigateParams.model_fields["max_speed"].default
+    speed = float(asked) if isinstance(asked, int | float) and asked > 0 else default
+    return min(speed, scene.safety.max_speed or speed)
+
+
+def _walking(seconds: float) -> str:
+    return (
+        f"{seconds:.0f} s for a base that glides and up to {seconds * WALK_TIME_FACTOR:.0f} s for a robot that walks "
+        "(--physics, --realistic)"
+    )
+
+
+def _step_out_of_time(
+    step: int, deadline_s: float | None, length: float, speed: float, start: ScenePose, end: ScenePose
+) -> SceneWarning | None:
+    budget = NavigateSkill.default_deadline_s if deadline_s is None else deadline_s
+    seconds = length / speed
+    if seconds * WALK_TIME_FACTOR <= budget:
+        return None
+    has = f"the step has {budget:g} s" + (", navigate's default" if deadline_s is None else "")
+    text = (
+        f"step {step} (navigate): {length:.1f} m at {speed:g} m/s take {_walking(seconds)}; {has}: give the step a "
+        "longer deadline_s, or split it in two"
+    )
+    return _warn("tight_deadline", text, start, end)
+
+
+def _plan_out_of_time(deadline_s: float | None, length: float, seconds: float) -> SceneWarning | None:
+    if deadline_s is None or seconds * WALK_TIME_FACTOR <= deadline_s:
+        return None
+    text = (
+        f"the plan walks {length:.1f} m: {_walking(seconds)}, before anything else it does; its deadline_s is "
+        f"{deadline_s:g} s: a run that walks may end as DEADLINE. Raise it"
+    )
+    return _warn("tight_deadline", text)
+
+
+def _no_marker(scene: SceneFile, step: int, skill: str, cls: str) -> SceneWarning | None:
+    """Objects of a class the step looks for that carry no tag. The perceivers that answer from the scene's truth
+    find them; the one that reads frames (`--perception markers`, `--realistic`) recognises an object by its tag
+    alone, so `present:` never passes and `absent:` always does."""
+    bare = [(oid, o) for oid, o in scene.objects.items() if o.cls == cls and o.marker_id is None]
+    if not bare:
+        return None
+    names = ", ".join(f"'{oid}'" for oid, _ in bare)
+    text = (
+        f"step {step} ({skill}): {names} of class '{cls}' {'has' if len(bare) == 1 else 'have'} no marker_id: a camera "
+        f"that reads tags (--perception markers, --realistic) does not recognise {'it' if len(bare) == 1 else 'them'}, "
+        f"so the step sees no '{cls}' whatever is there. Give the object a marker_id"
+    )
+    return _warn("object_without_marker", text, *((o.pose.x, o.pose.y) for _, o in bare if o.pose is not None))
 
 
 def _names(value: object) -> list[str]:

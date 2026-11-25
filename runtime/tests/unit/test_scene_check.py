@@ -192,7 +192,7 @@ def test_the_robot_is_followed_from_leg_to_leg():
 
 
 def test_an_inspection_from_where_nothing_is_in_view():
-    gauge = {"gauge_01": {"cls": "gauge", "pose": {"x": 4, "y": 2, "z": 0.5}}}
+    gauge = {"gauge_01": {"cls": "gauge", "marker_id": 1, "pose": {"x": 4, "y": 2, "z": 0.5}}}
     looking_away = scene(objects=gauge)
     inspect = plan({"skill": "inspect", "params": {"target": "shelf", "checks": ["present:gauge", "absent:leak"]}})
     (warning,) = check_plan(inspect, looking_away)
@@ -208,7 +208,7 @@ def test_an_inspection_from_where_nothing_is_in_view():
 
 
 def test_a_detect_looks_from_where_the_robot_stands():
-    box = {"box_1": {"cls": "box", "pose": {"x": 5, "y": 0, "z": 1}}}
+    box = {"box_1": {"cls": "box", "marker_id": 2, "pose": {"x": 5, "y": 0, "z": 1}}}
     world = scene(objects=box)
     from_the_start = plan({"skill": "detect", "params": {"cls": "box"}})
     assert check_plan(from_the_start, world)[0].message.startswith(
@@ -228,6 +228,73 @@ def test_what_is_only_known_at_run_time_is_left_to_the_run():
         {"skill": "inspect", "params": {"target": "nowhere", "checks": ["present:box"]}},
     )
     assert codes(check_plan(unknown, world)) == ["nothing_in_view"]  # only the detect, from the start
+
+
+# --- what a gliding base hides -----------------------------------------------------------------------------------
+FAR = {"dock": {"pose": {"x": 0, "y": 0}}, "bend": {"pose": {"x": 4, "y": 3}}, "shelf": {"pose": {"x": 8, "y": 0}}}
+
+
+def test_a_long_walk_needs_more_than_the_minute_a_navigate_has():
+    slow = {"skill": "navigate", "params": {"to": "shelf", "max_speed": 0.2}}
+    (warning,) = check_plan(plan(slow), scene(locations=FAR))
+    assert warning.code == "tight_deadline" and warning.where == [(0.0, 0.0), (8.0, 0.0)]
+    assert warning.message == (
+        "step 0 (navigate): 8.0 m at 0.2 m/s take 40 s for a base that glides and up to 80 s for a robot that walks "
+        "(--physics, --realistic); the step has 60 s, navigate's default: give the step a longer deadline_s, or split "
+        "it in two"
+    )
+    assert check_plan(plan({**slow, "deadline_s": 80}), scene(locations=FAR)) == []
+    (short,) = check_plan(plan({**slow, "deadline_s": 50}), scene(locations=FAR))
+    assert "; the step has 50 s: give the step" in short.message
+    assert check_plan(plan({"skill": "navigate", "params": {"to": "shelf"}}), scene(locations=FAR)) == []  # 0.5 m/s
+
+
+def test_the_time_of_a_walk_counts_every_leg_and_the_scenes_speed_cap():
+    fence = {"x_min": -2, "x_max": 10, "y_min": -5, "y_max": 5}
+    capped = scene(locations=FAR, safety={"geofence": fence, "max_speed": 0.3})
+    around = plan({"skill": "navigate", "params": {"to": "shelf", "via": ["bend"], "max_speed": 1.0}})
+    (warning,) = check_plan(around, capped)
+    assert warning.message.startswith(
+        "step 0 (navigate): 10.0 m at 0.3 m/s take 33 s for a base that glides and up to 67"
+    )
+    assert warning.where == [(0.0, 0.0), (8.0, 0.0)]
+    assert check_plan(around, scene(locations=FAR)) == []  # at the 1.0 m/s the step asks for
+
+
+def test_a_plan_whose_budget_only_a_gliding_base_keeps():
+    steps = [{"skill": "navigate", "params": {"to": "shelf"}}, {"skill": "navigate", "params": {"to": "dock"}}]
+    there_and_back = TaskPlan.model_validate({"id": "p", "deadline_s": 30, "steps": steps})
+    (warning,) = check_plan(there_and_back, scene())
+    assert warning.code == "tight_deadline" and warning.where == []
+    assert warning.message == (
+        "the plan walks 8.0 m: 16 s for a base that glides and up to 32 s for a robot that walks (--physics, "
+        "--realistic), before anything else it does; its deadline_s is 30 s: a run that walks may end as DEADLINE. "
+        "Raise it"
+    )
+    assert check_plan(there_and_back.model_copy(update={"deadline_s": 32}), scene()) == []
+    assert check_plan(there_and_back.model_copy(update={"deadline_s": None}), scene()) == []
+
+
+def test_an_object_without_a_tag_is_invisible_to_a_camera_that_reads_tags():
+    parcel = {"parcel_1": {"cls": "parcel", "pose": {"x": 5, "y": 0, "z": 0.2}}}
+    look = plan({"skill": "inspect", "params": {"target": "shelf", "checks": ["absent:parcel", "present:parcel"]}})
+    (warning,) = check_plan(look, scene(objects=parcel))  # said once for the class, however many checks name it
+    assert warning.code == "object_without_marker" and warning.where == [(5.0, 0.0)]
+    assert warning.message == (
+        "step 0 (inspect): 'parcel_1' of class 'parcel' has no marker_id: a camera that reads tags (--perception "
+        "markers, --realistic) does not recognise it, so the step sees no 'parcel' whatever is there. Give the "
+        "object a marker_id"
+    )
+    tagged = {"parcel_1": {**parcel["parcel_1"], "marker_id": 4}}
+    assert check_plan(look, scene(objects=tagged)) == []
+    detect = plan({"skill": "navigate", "params": {"to": "shelf"}}, {"skill": "detect", "params": {"cls": "parcel"}})
+    assert codes(check_plan(detect, scene(objects=parcel))) == ["object_without_marker"]
+    two = {**tagged, "parcel_2": {"cls": "parcel", "pose": {"x": 5, "y": 0.5, "z": 0.2}}, "parcel_3": {"cls": "parcel"}}
+    (both,) = check_plan(look, scene(objects=two))  # the tagged one is fine; one of the others has no known place
+    assert "'parcel_2', 'parcel_3' of class 'parcel' have no marker_id" in both.message
+    assert "does not recognise them" in both.message and both.where == [(5.0, 0.5)]
+    other_class = plan({"skill": "inspect", "params": {"target": "shelf", "checks": ["absent:leak", "door closed"]}})
+    assert check_plan(other_class, scene(objects=parcel)) == []
 
 
 # --- the samples -------------------------------------------------------------------------------------------------
